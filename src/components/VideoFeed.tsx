@@ -292,7 +292,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     >
       {/* Draggable container with all videos */}
       <motion.div
-        {...bind()}
+        {...(bind() as any)}
         style={{ y }}
         className="absolute inset-0"
       >
