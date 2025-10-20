@@ -32,6 +32,8 @@ export interface SoraProfile {
   user_id: string;
   username: string;
   display_name?: string | null;
+  profile_picture_url?: string | null;
+  is_default_profile_picture?: boolean;
   permalink: string;
   follower_count: number;
   following_count: number;
