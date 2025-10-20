@@ -23,9 +23,11 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number>(0);
   const touchEndY = useRef<number>(0);
+  const animationDirectionRef = useRef<'up' | 'down'>('down');
 
   const goToNext = () => {
     if (currentIndex < items.length - 1) {
+      animationDirectionRef.current = 'down';
       setScrollDirection('down');
       setCurrentIndex(currentIndex + 1);
       
@@ -38,6 +40,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
 
   const goToPrevious = () => {
     if (currentIndex > 0) {
+      animationDirectionRef.current = 'up';
       setScrollDirection('up');
       setCurrentIndex(currentIndex - 1);
     }
@@ -125,19 +128,19 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
       className="relative w-full h-screen overflow-hidden bg-black"
       tabIndex={0}
     >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentIndex}
-          initial={{ y: scrollDirection === 'down' ? '100%' : '-100%' }}
-          animate={{ y: 0 }}
-          exit={{ y: scrollDirection === 'down' ? '-100%' : '100%' }}
-          transition={{ 
-            type: 'tween',
-            duration: 0.3,
-            ease: 'easeOut'
-          }}
-          className="absolute inset-0"
-        >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentIndex}
+            initial={{ y: animationDirectionRef.current === 'down' ? '100%' : '-100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: animationDirectionRef.current === 'down' ? '-100%' : '100%' }}
+            transition={{ 
+              type: 'tween',
+              duration: 0.3,
+              ease: 'easeOut'
+            }}
+            className="absolute inset-0"
+          >
           <VideoPost 
             item={items[currentIndex]} 
             isActive={true}
