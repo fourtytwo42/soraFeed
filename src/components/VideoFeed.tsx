@@ -160,6 +160,16 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   const handleKeyDown = (e: KeyboardEvent) => {
     if (isScrolling) return;
     
+    // Don't trigger navigation if user is typing in an input field
+    const activeElement = document.activeElement;
+    const isTyping = activeElement && (
+      activeElement.tagName === 'INPUT' || 
+      activeElement.tagName === 'TEXTAREA' ||
+      activeElement.isContentEditable
+    );
+    
+    if (isTyping) return;
+    
     if (e.key === 'ArrowDown' || e.key === ' ') {
       e.preventDefault();
       setIsScrolling(true);
