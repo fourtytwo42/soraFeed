@@ -285,8 +285,8 @@ export default function FeedLoader() {
       
       {/* Feed Type Selector */}
       <div className="fixed top-6 left-6 z-50">
-        <div className="flex flex-col gap-3">
-          <div className="flex bg-black/50 rounded-full p-1 backdrop-blur-sm flex-shrink-0">
+        <div className="flex flex-col gap-3 items-start">
+          <div className="flex bg-black/50 rounded-full p-1 backdrop-blur-sm w-fit">
             <button
               onClick={() => handleFeedTypeChange('latest')}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
@@ -331,7 +331,7 @@ export default function FeedLoader() {
 
           {/* Search Input - Only show when search is selected */}
           {feedType === 'search' && (
-            <div className="flex gap-2 bg-black/50 rounded-full p-1 backdrop-blur-sm">
+            <div className="flex gap-2 bg-black/50 rounded-full p-1 backdrop-blur-sm w-fit">
               <input
                 type="text"
                 value={searchInput}
