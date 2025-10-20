@@ -167,7 +167,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
       <button
         onClick={goToNext}
         disabled={currentIndex === items.length - 1}
-        className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+        className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
       >
         <ChevronDown size={28} />
       </button>
