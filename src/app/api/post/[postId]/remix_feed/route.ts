@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SoraFeedResponse } from '@/types/sora';
+import { serverCache } from '@/lib/serverCache';
 
 const SORA_BASE_URL = 'https://sora.chatgpt.com/backend/project_y';
 
@@ -9,6 +10,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { searchParams } = new URL(request.url);
     const cursor = searchParams.get('cursor');
     const limit = searchParams.get('limit') || '20';
+
+    // Check cache for remix feeds (only cache when no cursor is provided)
+    if (!cursor) {
+      const cacheKey = `remix:${postId}:${limit}`;
+      const cached = serverCache.get<SoraFeedResponse>(cacheKey);
+      
+      if (cached) {
+        console.log('✅ Cache hit for remix feed:', postId);
+        return NextResponse.json(cached);
+      }
+    }
 
     console.log('🔍 Fetching Sora remix feed for post:', postId, 'with params:', { limit, cursor: cursor ? 'present' : 'none' });
 
@@ -66,6 +78,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const data: SoraFeedResponse = await soraResponse.json();
     console.log('✅ Successfully fetched remix feed with', data.items?.length || 0, 'video remixes');
+
+    // Cache remix feed (only cache when no cursor is provided)
+    if (!cursor) {
+      const cacheKey = `remix:${postId}:${limit}`;
+      serverCache.set(cacheKey, data);
+      console.log('💾 Cached remix feed for post:', postId);
+    }
 
     return NextResponse.json(data);
   } catch (error) {

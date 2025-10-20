@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SoraFeedResponse } from '@/types/sora';
+import { serverCache } from '@/lib/serverCache';
 
 const SORA_BASE_URL = 'https://sora.chatgpt.com/backend/project_y';
 
@@ -9,6 +10,17 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get('limit') || '16';
     const cut = searchParams.get('cut') || 'nf2_latest';
     const cursor = searchParams.get('cursor');
+
+    // Check cache for top videos (only cache when no cursor is provided)
+    if (cut === 'nf2_top' && !cursor) {
+      const cacheKey = `feed:${cut}:${limit}`;
+      const cached = serverCache.get<SoraFeedResponse>(cacheKey);
+      
+      if (cached) {
+        console.log('✅ Cache hit for top videos feed');
+        return NextResponse.json(cached);
+      }
+    }
 
     console.log('🔍 Fetching Sora feed with params:', { limit, cut, cursor: cursor ? 'present' : 'none' });
 
@@ -93,6 +105,13 @@ export async function GET(request: NextRequest) {
 
     const data: SoraFeedResponse = await response.json();
     console.log('✅ Successfully fetched feed with', data.items?.length || 0, 'items');
+
+    // Cache top videos (only cache when no cursor is provided)
+    if (cut === 'nf2_top' && !cursor) {
+      const cacheKey = `feed:${cut}:${limit}`;
+      serverCache.set(cacheKey, data);
+      console.log('💾 Cached top videos feed');
+    }
 
     return NextResponse.json(data);
 
