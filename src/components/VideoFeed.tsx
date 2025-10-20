@@ -48,7 +48,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: V
       goToPrevious();
     }
     
-    setTimeout(() => setIsScrolling(false), 500);
+    setTimeout(() => setIsScrolling(false), 300);
   };
 
   const handleTouchStart = (e: TouchEvent) => {
@@ -74,7 +74,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: V
         goToPrevious();
       }
       
-      setTimeout(() => setIsScrolling(false), 500);
+      setTimeout(() => setIsScrolling(false), 300);
     }
   };
 
@@ -85,12 +85,12 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: V
       e.preventDefault();
       setIsScrolling(true);
       goToNext();
-      setTimeout(() => setIsScrolling(false), 500);
+      setTimeout(() => setIsScrolling(false), 300);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setIsScrolling(true);
       goToPrevious();
-      setTimeout(() => setIsScrolling(false), 500);
+      setTimeout(() => setIsScrolling(false), 300);
     }
   };
 
@@ -127,8 +127,8 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: V
           exit={{ y: '-100%' }}
           transition={{ 
             type: 'tween',
-            duration: 0.5,
-            ease: 'easeInOut'
+            duration: 0.3,
+            ease: 'easeOut'
           }}
           className="absolute inset-0"
         >
