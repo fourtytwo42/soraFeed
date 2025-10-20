@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchFeed } from '@/lib/api';
 import VideoFeed from './VideoFeed';
+import RefreshButton from './RefreshButton';
 import { mockFeedData } from '@/lib/mockData';
 
 export default function FeedLoader() {
@@ -11,34 +12,34 @@ export default function FeedLoader() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadFeed() {
-      try {
-        setLoading(true);
-        setError(null);
-        console.log('🔄 Loading real feed data...');
-        
-        const data = await fetchFeed();
-        console.log('✅ Loaded', data.items?.length || 0, 'feed items');
-        
-        if (data.items && data.items.length > 0) {
-          setItems(data.items);
-        } else {
-          console.warn('⚠️ No items in feed response, using mock data');
-          setItems(mockFeedData.items);
-        }
-      } catch (err) {
-        console.error('❌ Failed to load feed:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load feed');
-        
-        // Fallback to mock data on error
-        console.log('🔄 Falling back to mock data');
+  const loadFeed = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('🔄 Loading real feed data...');
+      
+      const data = await fetchFeed();
+      console.log('✅ Loaded', data.items?.length || 0, 'feed items');
+      
+      if (data.items && data.items.length > 0) {
+        setItems(data.items);
+      } else {
+        console.warn('⚠️ No items in feed response, using mock data');
         setItems(mockFeedData.items);
-      } finally {
-        setLoading(false);
       }
+    } catch (err) {
+      console.error('❌ Failed to load feed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load feed');
+      
+      // Fallback to mock data on error
+      console.log('🔄 Falling back to mock data');
+      setItems(mockFeedData.items);
+    } finally {
+      setLoading(false);
     }
+  };
 
+  useEffect(() => {
     loadFeed();
   }, []);
 
@@ -74,10 +75,11 @@ export default function FeedLoader() {
   return (
     <>
       {error && (
-        <div className="fixed top-4 left-4 right-4 bg-yellow-500/90 text-black px-4 py-2 rounded-lg z-50 text-sm">
+        <div className="fixed top-4 left-4 right-20 bg-yellow-500/90 text-black px-4 py-2 rounded-lg z-50 text-sm">
           ⚠️ Using fallback data: {error}
         </div>
       )}
+      <RefreshButton onRefresh={loadFeed} />
       <VideoFeed items={items} />
     </>
   );
