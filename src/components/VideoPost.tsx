@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useDrag } from '@use-gesture/react';
 import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchRemixFeed } from '@/lib/api';
@@ -24,10 +25,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
   const [loadingRemixes, setLoadingRemixes] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const [isWheelScrolling, setIsWheelScrolling] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -177,111 +174,42 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     }
   };
 
-  const handleDragStart = (clientX: number, clientY: number) => {
-    setIsDragging(true);
-    setDragStart({ x: clientX, y: clientY });
-    setDragOffset({ x: 0, y: 0 });
-    setDragDirection(null);
-  };
-
-  const handleDragMove = (clientX: number, clientY: number) => {
-    if (!isDragging) return;
-    
-    const deltaX = clientX - dragStart.x;
-    const deltaY = clientY - dragStart.y;
-    
-    // Determine drag direction if not set (after minimum movement)
-    if (!dragDirection && (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10)) {
-      if (Math.abs(deltaX) > Math.abs(deltaY)) {
-        setDragDirection('horizontal');
-      } else {
-        setDragDirection('vertical');
-      }
-    }
-    
-    // Constrain movement to the determined direction (rail system)
-    if (dragDirection === 'horizontal') {
-      // Only allow horizontal movement for remix navigation
-      setDragOffset({ x: deltaX, y: 0 });
-    } else if (dragDirection === 'vertical') {
-      // Only allow vertical movement for feed navigation
-      setDragOffset({ x: 0, y: deltaY });
-    } else {
-      // No direction determined yet, allow free movement until direction is locked
-      setDragOffset({ x: deltaX, y: deltaY });
-    }
-  };
-
-  const handleDragEnd = (clientX: number, clientY: number) => {
-    if (!isDragging) return;
-    
-    const deltaX = clientX - dragStart.x;
-    const deltaY = clientY - dragStart.y;
-    const threshold = 50;
-
-    // Use the locked drag direction if available, otherwise determine from final delta
-    const finalDirection = dragDirection || (Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical');
-
-    if (finalDirection === 'horizontal') {
-      // Horizontal swipe - remix navigation
-      if (Math.abs(deltaX) > threshold && hasRemixes) {
-        if (deltaX > 0 && canGoLeft) {
-          goToPreviousRemix();
-        } else if (deltaX < 0 && canGoRight) {
-          goToNextRemix();
-        }
-      }
-    } else if (finalDirection === 'vertical') {
-      // Vertical swipe - feed navigation
-      if (Math.abs(deltaY) > threshold) {
-        if (deltaY > 0) {
-          onPrevious();
+  // Use-gesture drag handler
+  const bind = useDrag(
+    ({ direction: [dx, dy], distance, down, cancel }) => {
+      const threshold = 50;
+      
+      // Only trigger navigation when drag is released and meets threshold
+      if (!down && distance > threshold) {
+        // Determine if it's primarily horizontal or vertical movement
+        if (Math.abs(dx) > Math.abs(dy)) {
+          // Horizontal swipe - remix navigation
+          if (hasRemixes) {
+            if (dx > 0 && canGoLeft) {
+              goToPreviousRemix();
+            } else if (dx < 0 && canGoRight) {
+              goToNextRemix();
+            }
+          }
         } else {
-          onNext();
+          // Vertical swipe - feed navigation
+          if (dy < 0) {
+            // Swipe up = next video (down direction)
+            onNext();
+          } else if (dy > 0) {
+            // Swipe down = previous video (up direction)
+            onPrevious();
+          }
         }
       }
+    },
+    {
+      axis: undefined, // Allow both directions
+      threshold: 10, // Minimum movement to start detecting
+      rubberband: false, // Disable rubberband effect
+      preventScroll: true, // Prevent default scroll behavior
     }
-
-    setIsDragging(false);
-    setDragOffset({ x: 0, y: 0 });
-    setDragDirection(null);
-  };
-
-  // Mouse events
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    handleDragStart(e.clientX, e.clientY);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    handleDragMove(e.clientX, e.clientY);
-  };
-
-  const handleMouseUp = (e: React.MouseEvent) => {
-    handleDragEnd(e.clientX, e.clientY);
-  };
-
-  const handleMouseLeave = (e: React.MouseEvent) => {
-    if (isDragging) {
-      handleDragEnd(e.clientX, e.clientY);
-    }
-  };
-
-  // Touch events
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragStart(touch.clientX, touch.clientY);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    handleDragMove(touch.clientX, touch.clientY);
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const touch = e.changedTouches[0];
-    handleDragEnd(touch.clientX, touch.clientY);
-  };
+  );
 
   // Mouse wheel events
   const handleWheel = (e: React.WheelEvent) => {
@@ -342,24 +270,15 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     return `${Math.floor(diff / 86400)}d`;
   };
 
-  return (
-    <div 
-      className="relative w-full h-full flex items-center justify-center bg-black group cursor-pointer select-none"
-      onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={handleMouseLeave}
-      onClick={() => setShowControls(!showControls)}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onWheel={handleWheel}
-      style={{
-        transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : 'none',
-        transition: isDragging ? 'none' : 'transform 0.2s ease-out'
-      }}
-    >
+    return (
+      <div 
+        {...bind()}
+        className="relative w-full h-full flex items-center justify-center bg-black group cursor-pointer select-none"
+        onMouseEnter={() => setShowControls(true)}
+        onMouseLeave={() => setShowControls(false)}
+        onClick={() => setShowControls(!showControls)}
+        onWheel={handleWheel}
+      >
       {/* Video */}
       <video
         ref={videoRef}
