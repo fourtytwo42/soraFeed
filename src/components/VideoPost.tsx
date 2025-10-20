@@ -13,7 +13,7 @@ interface VideoPostProps {
   onPrevious: () => void;
 }
 
-export default function VideoPost({ item, isActive }: VideoPostProps) {
+export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
@@ -23,6 +23,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   const [loadingRemixes, setLoadingRemixes] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Get current item (original post or remix)
@@ -140,6 +141,15 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   const handleDragStart = (clientX: number, clientY: number) => {
     setIsDragging(true);
     setDragStart({ x: clientX, y: clientY });
+    setDragOffset({ x: 0, y: 0 });
+  };
+
+  const handleDragMove = (clientX: number, clientY: number) => {
+    if (!isDragging) return;
+    
+    const deltaX = clientX - dragStart.x;
+    const deltaY = clientY - dragStart.y;
+    setDragOffset({ x: deltaX, y: deltaY });
   };
 
   const handleDragEnd = (clientX: number, clientY: number) => {
@@ -171,6 +181,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     }
 
     setIsDragging(false);
+    setDragOffset({ x: 0, y: 0 });
   };
 
   // Mouse events
@@ -179,8 +190,18 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     handleDragStart(e.clientX, e.clientY);
   };
 
+  const handleMouseMove = (e: React.MouseEvent) => {
+    handleDragMove(e.clientX, e.clientY);
+  };
+
   const handleMouseUp = (e: React.MouseEvent) => {
     handleDragEnd(e.clientX, e.clientY);
+  };
+
+  const handleMouseLeave = (e: React.MouseEvent) => {
+    if (isDragging) {
+      handleDragEnd(e.clientX, e.clientY);
+    }
   };
 
   // Touch events
@@ -189,9 +210,46 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     handleDragStart(touch.clientX, touch.clientY);
   };
 
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    handleDragMove(touch.clientX, touch.clientY);
+  };
+
   const handleTouchEnd = (e: React.TouchEvent) => {
     const touch = e.changedTouches[0];
     handleDragEnd(touch.clientX, touch.clientY);
+  };
+
+  // Mouse wheel events
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    
+    // Check if it's horizontal scroll (shift+wheel or horizontal wheel)
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      // Horizontal scroll - remix navigation
+      if (hasRemixes) {
+        if (e.deltaX > 0 || (e.shiftKey && e.deltaY > 0)) {
+          // Scroll right - next remix
+          if (canGoRight) {
+            goToNextRemix();
+          }
+        } else if (e.deltaX < 0 || (e.shiftKey && e.deltaY < 0)) {
+          // Scroll left - previous remix
+          if (canGoLeft) {
+            goToPreviousRemix();
+          }
+        }
+      }
+    } else {
+      // Vertical scroll - feed navigation
+      if (e.deltaY > 0) {
+        // Scroll down - next video
+        onNext();
+      } else if (e.deltaY < 0) {
+        // Scroll up - previous video
+        onPrevious();
+      }
+    }
   };
 
   const formatCount = (count: number): string => {
@@ -217,12 +275,19 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     <div 
       className="relative w-full h-full flex items-center justify-center bg-black group cursor-pointer select-none"
       onMouseEnter={() => setShowControls(true)}
-      onMouseLeave={() => setShowControls(false)}
+      onMouseLeave={handleMouseLeave}
       onClick={() => setShowControls(!showControls)}
       onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onWheel={handleWheel}
+      style={{
+        transform: isDragging ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : 'none',
+        transition: isDragging ? 'none' : 'transform 0.2s ease-out'
+      }}
     >
       {/* Video */}
       <video
