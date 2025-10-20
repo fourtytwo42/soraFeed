@@ -98,8 +98,8 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
     if (!video) return;
 
     if (isActive) {
-      // Show controls only on first video load
-      if (isFirstVideoRef.current) {
+      // Show controls only on first video load (desktop only)
+      if (isFirstVideoRef.current && !isMobile) {
         setShowControls(true);
         hasUserInteractedRef.current = true;
         isFirstVideoRef.current = false;
@@ -114,7 +114,7 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
       video.pause();
       setIsPlaying(false);
     }
-  }, [isActive]);
+  }, [isActive, isMobile]);
 
   // Load remix feed when video becomes active and we don't have remixes yet
   useEffect(() => {
@@ -431,11 +431,12 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
     }
   }, [isPlaying]);
 
-  // Keep controls visible when video is paused (only if user has interacted), and auto-hide when playing
+  // Keep controls visible when video is paused, and auto-hide when playing
   useEffect(() => {
     if (!isPlaying) {
-      // Only show controls when paused if user has interacted with this video
-      if (hasUserInteractedRef.current) {
+      // On mobile: always show controls when paused
+      // On desktop: only show controls when paused if user has interacted
+      if (isMobile || hasUserInteractedRef.current) {
         setShowControls(true);
       }
       if (controlsTimeoutRef.current) {
@@ -450,7 +451,7 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
         setShowControls(false);
       }, 3000);
     }
-  }, [isPlaying]);
+  }, [isPlaying, isMobile]);
 
   // Handle any interaction (mouse, touch, etc.)
   const handleInteraction = useCallback(() => {
