@@ -1,7 +1,16 @@
 import { SoraFeedResponse, SoraRemixTree } from '@/types/sora';
 
-export async function fetchFeed(limit: number = 16, cut: string = 'nf2_latest'): Promise<SoraFeedResponse> {
-  const response = await fetch(`/api/feed?limit=${limit}&cut=${cut}`, {
+export async function fetchFeed(limit: number = 16, cut: string = 'nf2_latest', cursor?: string): Promise<SoraFeedResponse> {
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+    cut,
+  });
+  
+  if (cursor) {
+    params.append('cursor', cursor);
+  }
+  
+  const response = await fetch(`/api/feed?${params.toString()}`, {
     cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',

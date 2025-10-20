@@ -8,8 +8,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const limit = searchParams.get('limit') || '16';
     const cut = searchParams.get('cut') || 'nf2_latest';
+    const cursor = searchParams.get('cursor');
 
-    console.log('🔍 Fetching Sora feed with params:', { limit, cut });
+    console.log('🔍 Fetching Sora feed with params:', { limit, cut, cursor: cursor ? 'present' : 'none' });
 
     // Check if we have required environment variables
     const requiredEnvVars = [
@@ -51,7 +52,17 @@ export async function GET(request: NextRequest) {
       'Pragma': 'no-cache'
     };
 
-    const url = `${SORA_BASE_URL}/feed?limit=${limit}&cut=${cut}`;
+    // Build URL with optional cursor parameter
+    const urlParams = new URLSearchParams({
+      limit,
+      cut,
+    });
+    
+    if (cursor) {
+      urlParams.append('cursor', cursor);
+    }
+    
+    const url = `${SORA_BASE_URL}/feed?${urlParams.toString()}`;
     console.log('📡 Making request to:', url);
 
     const response = await fetch(url, {

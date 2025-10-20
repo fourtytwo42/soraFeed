@@ -14,11 +14,18 @@ export default function FeedLoader() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [feedType, setFeedType] = useState<FeedType>('latest');
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadFeed = async (type: FeedType = feedType) => {
+  const loadFeed = async (type: FeedType = feedType, reset: boolean = true) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (reset) {
+        setLoading(true);
+        setError(null);
+        setCursor(null);
+        setHasMore(true);
+      }
       console.log(`🔄 Loading ${type} feed data...`);
       
       // Map feed type to API cut parameter
@@ -27,20 +34,63 @@ export default function FeedLoader() {
       console.log('✅ Loaded', data.items?.length || 0, 'feed items');
       
       if (data.items && data.items.length > 0) {
-        setItems(data.items);
+        if (reset) {
+          setItems(data.items);
+        } else {
+          setItems(prev => [...prev, ...data.items]);
+        }
+        setCursor(data.cursor || null);
+        setHasMore(!!data.cursor);
       } else {
-        console.warn('⚠️ No items in feed response, using mock data');
-        setItems(mockFeedData.items);
+        if (reset) {
+          console.warn('⚠️ No items in feed response, using mock data');
+          setItems(mockFeedData.items);
+          setCursor(null);
+          setHasMore(false);
+        }
       }
     } catch (err) {
       console.error('❌ Failed to load feed:', err);
       setError(err instanceof Error ? err.message : 'Failed to load feed');
       
-      // Fallback to mock data on error
-      console.log('🔄 Falling back to mock data');
-      setItems(mockFeedData.items);
+      if (reset) {
+        // Fallback to mock data on error
+        console.log('🔄 Falling back to mock data');
+        setItems(mockFeedData.items);
+        setCursor(null);
+        setHasMore(false);
+      }
     } finally {
-      setLoading(false);
+      if (reset) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const loadMoreFeed = async () => {
+    if (!hasMore || loadingMore || !cursor) return;
+    
+    try {
+      setLoadingMore(true);
+      console.log('🔄 Loading more feed data with cursor...');
+      
+      const cut = feedType === 'top' ? 'nf2' : 'nf2_latest';
+      const data = await fetchFeed(16, cut, cursor);
+      console.log('✅ Loaded', data.items?.length || 0, 'more feed items');
+      
+      if (data.items && data.items.length > 0) {
+        setItems(prev => [...prev, ...data.items]);
+        setCursor(data.cursor || null);
+        setHasMore(!!data.cursor);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error('❌ Failed to load more feed:', err);
+      // Don't show error for pagination failures, just stop loading more
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -115,7 +165,12 @@ export default function FeedLoader() {
       </div>
       
       <RefreshButton onRefresh={() => loadFeed(feedType)} />
-      <VideoFeed items={items} />
+      <VideoFeed 
+        items={items} 
+        onLoadMore={loadMoreFeed}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+      />
     </>
   );
 }

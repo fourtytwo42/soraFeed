@@ -8,9 +8,12 @@ import VideoPost from './VideoPost';
 
 interface VideoFeedProps {
   items: SoraFeedItem[];
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
-export default function VideoFeed({ items }: VideoFeedProps) {
+export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: VideoFeedProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -20,6 +23,11 @@ export default function VideoFeed({ items }: VideoFeedProps) {
   const goToNext = () => {
     if (currentIndex < items.length - 1) {
       setCurrentIndex(currentIndex + 1);
+      
+      // Load more when approaching the end
+      if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
+        onLoadMore();
+      }
     }
   };
 
@@ -162,6 +170,16 @@ export default function VideoFeed({ items }: VideoFeedProps) {
           />
         ))}
       </div>
+
+      {/* Loading More Indicator */}
+      {loadingMore && (
+        <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20">
+          <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2 backdrop-blur-sm">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+            <span className="text-white text-sm">Loading more...</span>
+          </div>
+        </div>
+      )}
 
       {/* Swipe Hint - Mobile */}
       <div className="md:hidden absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white/70 text-sm z-20">

@@ -46,6 +46,7 @@ export interface SoraFeedItem {
 
 export interface SoraFeedResponse {
   items: SoraFeedItem[];
+  cursor?: string | null;
 }
 
 export interface SoraRemixTree {
