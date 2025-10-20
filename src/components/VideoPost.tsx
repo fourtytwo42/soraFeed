@@ -27,19 +27,27 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
 
   // Get current item (original post or remix)
   const getCurrentItem = (): SoraFeedItem => {
-    if (currentRemixIndex === 0 || !remixTree) {
+    if (currentRemixIndex === 0 || !videoRemixes.length) {
       return item; // Original post
     }
-    return remixTree.children.items[currentRemixIndex - 1]; // Remix (index - 1 because 0 is original)
+    return videoRemixes[currentRemixIndex - 1]; // Video remix (index - 1 because 0 is original)
   };
 
   const currentItem = getCurrentItem();
   const currentVideoUrl = currentItem.post.attachments[0]?.encodings?.md?.path || 
                           currentItem.post.attachments[0]?.encodings?.source?.path;
   
-  const hasRemixes = (remixTree?.children?.items?.length || 0) > 0;
+  // Only show remix navigation if remixes actually have video attachments
+  const videoRemixes = remixTree?.children?.items?.filter(remix => 
+    remix.post.attachments && 
+    remix.post.attachments.length > 0 && 
+    remix.post.attachments[0].encodings &&
+    (remix.post.attachments[0].encodings.md?.path || remix.post.attachments[0].encodings.source?.path)
+  ) || [];
+  
+  const hasRemixes = videoRemixes.length > 0;
   const canGoLeft = currentRemixIndex > 0;
-  const canGoRight = currentRemixIndex < (remixTree?.children?.items?.length || 0);
+  const canGoRight = currentRemixIndex < videoRemixes.length;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -123,14 +131,14 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   };
 
   const goToNextRemix = () => {
-    const maxIndex = remixTree?.children?.items?.length || 0;
+    const maxIndex = videoRemixes.length;
     if (currentRemixIndex < maxIndex) {
       setCurrentRemixIndex(currentRemixIndex + 1);
     }
   };
 
   const goToRemixIndex = (index: number) => {
-    const maxIndex = remixTree?.children?.items?.length || 0;
+    const maxIndex = videoRemixes.length;
     if (index >= 0 && index <= maxIndex) {
       setCurrentRemixIndex(index);
     }
@@ -310,7 +318,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             transition={{ duration: 0.2 }}
             className="absolute top-4 left-4 z-10 px-3 py-1 rounded-full bg-black/50 text-white text-sm"
           >
-            {currentRemixIndex === 0 ? 'Original' : `Remix ${currentRemixIndex}/${remixTree?.children?.items?.length || 0}`}
+            {currentRemixIndex === 0 ? 'Original' : `Remix ${currentRemixIndex}/${videoRemixes.length}`}
           </motion.div>
         </>
       )}
@@ -404,7 +412,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
               <Copy size={20} />
             </button>
             <span className="text-white text-xs font-semibold bg-black/50 rounded-full px-2 py-1 mt-1">
-              {remixTree?.children?.items?.length || 0}
+              {videoRemixes.length}
             </span>
           </div>
         )}
@@ -456,7 +464,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           />
           
           {/* Remix tabs */}
-          {remixTree?.children?.items?.map((_, index) => (
+          {videoRemixes.map((_, index) => (
             <button
               key={index}
               onClick={(e) => {
@@ -499,7 +507,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             />
             
             {/* Remix dots - limit to 10 to avoid overcrowding */}
-            {remixTree?.children?.items?.slice(0, 10).map((_, index) => (
+            {videoRemixes.slice(0, 10).map((_, index) => (
               <button
                 key={index}
                 onClick={(e) => {
@@ -514,8 +522,8 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
               />
             ))}
             
-            {/* Show "..." if there are more than 10 remixes */}
-            {(remixTree?.children?.items?.length || 0) > 10 && (
+            {/* Show "..." if there are more than 10 video remixes */}
+            {videoRemixes.length > 10 && (
               <span className="text-white/70 text-xs ml-1">...</span>
             )}
           </div>
