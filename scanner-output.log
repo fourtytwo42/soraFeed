@@ -1,0 +1,62 @@
+
+> sora-feed-app@0.1.0 scanner
+> node scripts/scanner.js
+
+[dotenv@17.2.3] injecting env (9) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+🚀 Sora Feed Scanner Starting...
+📊 Database: sora_feed
+🔧 Initializing database...
+✅ Database initialized successfully
+
+🔍 [2025-10-20T13:49:12.947Z] Starting scan...
+📥 Fetched 187 posts from API
+✅ Scan complete:
+   - New posts: 187
+   - Duplicates: 0
+   - Total: 187
+   - Duration: 9717ms
+⏰ Scheduling scans every 10 seconds...
+
+🔍 [2025-10-20T13:49:32.674Z] Starting scan...
+
+🔍 [2025-10-20T13:49:42.678Z] Starting scan...
+📥 Fetched 0 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 0
+   - Total: 0
+   - Duration: 15047ms
+📥 Fetched 189 posts from API
+✅ Scan complete:
+   - New posts: 49
+   - Duplicates: 140
+   - Total: 189
+   - Duration: 7068ms
+
+🔍 [2025-10-20T13:49:52.680Z] Starting scan...
+📥 Fetched 185 posts from API
+✅ Scan complete:
+   - New posts: 113
+   - Duplicates: 72
+   - Total: 185
+   - Duration: 7735ms
+
+🔍 [2025-10-20T13:50:02.682Z] Starting scan...
+📥 Fetched 184 posts from API
+✅ Scan complete:
+   - New posts: 100
+   - Duplicates: 84
+   - Total: 184
+   - Duration: 7525ms
+
+🔍 [2025-10-20T13:50:12.682Z] Starting scan...
+📥 Fetched 186 posts from API
+✅ Scan complete:
+   - New posts: 84
+   - Duplicates: 102
+   - Total: 186
+   - Duration: 8044ms
+
+🔍 [2025-10-20T13:50:22.682Z] Starting scan...
+
+🔍 [2025-10-20T13:50:32.687Z] Starting scan...

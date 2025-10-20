@@ -19,11 +19,13 @@ function fetchSoraFeed() {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'sora.chatgpt.com',
-      path: '/backend/project_y/feed/latest?limit=200',
+      path: '/backend/project_y/feed?limit=200&cut=nf2_latest',
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'User-Agent': 'SoraFeedScanner/1.0'
+        'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
+        'User-Agent': process.env.USER_AGENT || 'SoraFeedScanner/1.0',
+        'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9'
       }
     };
 
@@ -158,8 +160,8 @@ async function processPosts(feedData) {
         JSON.stringify(post),
         JSON.stringify(profile),
         post.text || null,
-        post.posted_at || 0,
-        post.updated_at || 0,
+        Math.floor(post.posted_at || 0), // Convert float to integer
+        Math.floor(post.updated_at || 0), // Convert float to integer
         0, // like_count - not in API response
         0, // view_count - not in API response
         0, // remix_count - not in API response
