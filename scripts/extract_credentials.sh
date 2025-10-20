@@ -2,8 +2,8 @@
 
 # Extract credentials from Raw-API-call.md and create .env file
 
-RAW_FILE="../Raw-API-call.md"
-ENV_FILE="../.env"
+RAW_FILE="Raw-API-call.md"
+ENV_FILE=".env"
 
 echo "🔍 Extracting credentials from Raw-API-call.md..."
 
