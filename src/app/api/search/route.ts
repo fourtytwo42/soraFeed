@@ -99,8 +99,9 @@ export async function GET(request: NextRequest) {
         remix_score
       FROM search_results
       ORDER BY 
-        -- Combined score: 60% text relevance + 40% remix score
-        (text_relevance * 0.6 + remix_score * 0.4) DESC,
+        -- Combined score: 40% text relevance + 60% remix score
+        -- Videos with more remixes are weighted higher as they're more popular/trending
+        (text_relevance * 0.4 + remix_score * 0.6) DESC,
         posted_at DESC
       LIMIT $2
     `;
