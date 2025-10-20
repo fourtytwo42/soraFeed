@@ -284,69 +284,71 @@ export default function FeedLoader() {
       <RemixCacheDebug />
       
       {/* Feed Type Selector */}
-      <div className="fixed top-6 left-6 z-50 flex flex-col gap-3">
-        <div className="flex bg-black/50 rounded-full p-1 backdrop-blur-sm">
-          <button
-            onClick={() => handleFeedTypeChange('latest')}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              feedType === 'latest'
-                ? 'bg-white text-black'
-                : 'text-white hover:bg-white/20'
-            }`}
-          >
-            Latest
-          </button>
-          <button
-            onClick={() => handleFeedTypeChange('top')}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              feedType === 'top'
-                ? 'bg-white text-black'
-                : 'text-white hover:bg-white/20'
-            }`}
-          >
-            Top
-          </button>
-          <button
-            onClick={() => handleFeedTypeChange('favorites')}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              feedType === 'favorites'
-                ? 'bg-white text-black'
-                : 'text-white hover:bg-white/20'
-            }`}
-          >
-            Favorites
-          </button>
-          <button
-            onClick={() => handleFeedTypeChange('search')}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              feedType === 'search'
-                ? 'bg-white text-black'
-                : 'text-white hover:bg-white/20'
-            }`}
-          >
-            Search
-          </button>
-        </div>
-
-        {/* Search Input - Only show when search is selected */}
-        {feedType === 'search' && (
-          <div className="flex gap-2 bg-black/50 rounded-full p-1 backdrop-blur-sm">
-            <input
-              type="text"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyPress={handleSearchKeyPress}
-              placeholder="Search videos..."
-              className="px-4 py-2 bg-white/10 text-white placeholder-white/50 rounded-full text-sm focus:outline-none focus:bg-white/20 min-w-[300px]"
-            />
+      <div className="fixed top-6 left-6 z-50">
+        <div className="flex flex-col gap-3">
+          <div className="flex bg-black/50 rounded-full p-1 backdrop-blur-sm flex-shrink-0">
             <button
-              onClick={handleSearch}
-              className="px-6 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors"
+              onClick={() => handleFeedTypeChange('latest')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
+                feedType === 'latest'
+                  ? 'bg-white text-black'
+                  : 'text-white hover:bg-white/20'
+              }`}
+            >
+              Latest
+            </button>
+            <button
+              onClick={() => handleFeedTypeChange('top')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
+                feedType === 'top'
+                  ? 'bg-white text-black'
+                  : 'text-white hover:bg-white/20'
+              }`}
+            >
+              Top
+            </button>
+            <button
+              onClick={() => handleFeedTypeChange('favorites')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
+                feedType === 'favorites'
+                  ? 'bg-white text-black'
+                  : 'text-white hover:bg-white/20'
+              }`}
+            >
+              Favorites
+            </button>
+            <button
+              onClick={() => handleFeedTypeChange('search')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
+                feedType === 'search'
+                  ? 'bg-white text-black'
+                  : 'text-white hover:bg-white/20'
+              }`}
             >
               Search
             </button>
           </div>
-        )}
+
+          {/* Search Input - Only show when search is selected */}
+          {feedType === 'search' && (
+            <div className="flex gap-2 bg-black/50 rounded-full p-1 backdrop-blur-sm">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyPress={handleSearchKeyPress}
+                placeholder="Search videos..."
+                className="px-4 py-2 bg-white/10 text-white placeholder-white/50 rounded-full text-sm focus:outline-none focus:bg-white/20 min-w-[300px]"
+              />
+              <button
+                onClick={handleSearch}
+                className="px-6 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors whitespace-nowrap"
+              >
+                Search
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       
       <VideoFeed 
