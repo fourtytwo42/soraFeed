@@ -129,6 +129,13 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     }
   };
 
+  const goToRemixIndex = (index: number) => {
+    const maxIndex = remixTree?.children?.items?.length || 0;
+    if (index >= 0 && index <= maxIndex) {
+      setCurrentRemixIndex(index);
+    }
+  };
+
   const handleDragStart = (clientX: number, clientY: number) => {
     setIsDragging(true);
     setDragStart({ x: clientX, y: clientY });
@@ -219,6 +226,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
       {/* Video */}
       <video
         ref={videoRef}
+        src={currentVideoUrl}
         className="max-w-full max-h-full object-contain"
         loop
         muted={isMuted}
@@ -462,6 +470,55 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
               }`}
             />
           ))}
+        </motion.div>
+      )}
+
+      {/* Remix Dot Indicators */}
+      {hasRemixes && showControls && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ 
+            opacity: showControls ? 1 : 0,
+            y: showControls ? 0 : 20
+          }}
+          transition={{ duration: 0.2 }}
+          className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10"
+        >
+          <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2 backdrop-blur-sm">
+            {/* Original video dot */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                goToRemixIndex(0);
+              }}
+              className={`w-2 h-2 rounded-full transition-all ${
+                currentRemixIndex === 0 
+                  ? 'bg-white scale-125' 
+                  : 'bg-white/50 hover:bg-white/70'
+              }`}
+            />
+            
+            {/* Remix dots - limit to 10 to avoid overcrowding */}
+            {remixTree?.children?.items?.slice(0, 10).map((_, index) => (
+              <button
+                key={index}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goToRemixIndex(index + 1);
+                }}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  currentRemixIndex === index + 1
+                    ? 'bg-white scale-125' 
+                    : 'bg-white/50 hover:bg-white/70'
+                }`}
+              />
+            ))}
+            
+            {/* Show "..." if there are more than 10 remixes */}
+            {(remixTree?.children?.items?.length || 0) > 10 && (
+              <span className="text-white/70 text-xs ml-1">...</span>
+            )}
+          </div>
         </motion.div>
       )}
     </div>
