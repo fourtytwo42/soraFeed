@@ -4,13 +4,13 @@ const SORA_BASE_URL = 'https://sora.chatgpt.com/backend/project_y';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { postId: string } }
+  { params }: { params: Promise<{ postId: string }> }
 ) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = searchParams.get('limit') || '20';
     const maxDepth = searchParams.get('max_depth') || '1';
-    const { postId } = params;
+    const { postId } = await params;
 
     console.log('🌳 Fetching remix tree for post:', postId);
 

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, Copy, MoreHorizontal } from 'lucide-react';
 import { SoraFeedItem, SoraRemixTree } from '@/types/sora';
 import { fetchRemixTree } from '@/lib/api';
 
@@ -15,12 +15,14 @@ interface VideoPostProps {
 
 export default function VideoPost({ item, isActive }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [remixTree, setRemixTree] = useState<SoraRemixTree | null>(null);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
   const [loadingRemixes, setLoadingRemixes] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Get current item (original post or remix)
@@ -127,6 +129,63 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     }
   };
 
+  const handleDragStart = (clientX: number, clientY: number) => {
+    setIsDragging(true);
+    setDragStart({ x: clientX, y: clientY });
+  };
+
+  const handleDragEnd = (clientX: number, clientY: number) => {
+    if (!isDragging) return;
+    
+    const deltaX = clientX - dragStart.x;
+    const deltaY = clientY - dragStart.y;
+    const threshold = 50;
+
+    // Determine if it's a horizontal or vertical swipe
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      // Horizontal swipe - remix navigation
+      if (Math.abs(deltaX) > threshold && hasRemixes) {
+        if (deltaX > 0 && canGoLeft) {
+          goToPreviousRemix();
+        } else if (deltaX < 0 && canGoRight) {
+          goToNextRemix();
+        }
+      }
+    } else {
+      // Vertical swipe - feed navigation
+      if (Math.abs(deltaY) > threshold) {
+        if (deltaY > 0) {
+          onPrevious();
+        } else {
+          onNext();
+        }
+      }
+    }
+
+    setIsDragging(false);
+  };
+
+  // Mouse events
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    handleDragStart(e.clientX, e.clientY);
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    handleDragEnd(e.clientX, e.clientY);
+  };
+
+  // Touch events
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    handleDragStart(touch.clientX, touch.clientY);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const touch = e.changedTouches[0];
+    handleDragEnd(touch.clientX, touch.clientY);
+  };
+
   const formatCount = (count: number): string => {
     if (count >= 1000000) {
       return (count / 1000000).toFixed(1) + 'M';
@@ -148,10 +207,14 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
 
   return (
     <div 
-      className="relative w-full h-full flex items-center justify-center bg-black group cursor-pointer"
+      className="relative w-full h-full flex items-center justify-center bg-black group cursor-pointer select-none"
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
       onClick={() => setShowControls(!showControls)}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       {/* Video */}
       <video
@@ -244,7 +307,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
         </>
       )}
 
-      {/* Controls */}
+      {/* Controls - positioned over video */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ 
@@ -252,8 +315,9 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           y: showControls ? 0 : 20
         }}
         transition={{ duration: 0.2 }}
-        className="absolute bottom-4 left-4 right-20 z-10"
+        className="absolute bottom-6 left-6 right-24 z-10 pointer-events-none"
       >
+        <div className="pointer-events-auto">
         {/* User Info */}
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
@@ -283,9 +347,10 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             {currentItem.post.text}
           </p>
         )}
+        </div>
       </motion.div>
 
-      {/* Right Side Actions */}
+      {/* Right Side Actions - positioned over video */}
       <motion.div 
         initial={{ opacity: 0, x: 20 }}
         animate={{ 
@@ -293,7 +358,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           x: showControls ? 0 : 20
         }}
         transition={{ duration: 0.2 }}
-        className="absolute bottom-4 right-4 flex flex-col gap-4 z-10"
+        className="absolute bottom-6 right-6 flex flex-col gap-4 z-10"
       >
         <button
           onClick={(e) => {
@@ -323,9 +388,21 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
         >
           {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
         </button>
+
+        {/* Remix Count Indicator */}
+        {hasRemixes && (
+          <div className="flex flex-col items-center">
+            <button className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all">
+              <Copy size={20} />
+            </button>
+            <span className="text-white text-xs font-semibold bg-black/50 rounded-full px-2 py-1 mt-1">
+              {remixTree?.children?.items?.length || 0}
+            </span>
+          </div>
+        )}
       </motion.div>
 
-      {/* Top Controls */}
+      {/* Top Controls - positioned over video */}
       <motion.div 
         initial={{ opacity: 0, y: -20 }}
         animate={{ 
@@ -333,7 +410,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           y: showControls ? 0 : -20
         }}
         transition={{ duration: 0.2 }}
-        className="absolute top-4 right-4 z-10"
+        className="absolute top-6 right-6 z-10"
       >
         <button
           onClick={(e) => {
@@ -345,6 +422,48 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           {isPlaying ? <Pause size={16} /> : <Play size={16} />}
         </button>
       </motion.div>
+
+      {/* Remix Selector - like vertical feed selector */}
+      {hasRemixes && (
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ 
+            opacity: showControls ? 1 : 0,
+            x: showControls ? 0 : -20
+          }}
+          transition={{ duration: 0.2 }}
+          className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2"
+        >
+          {/* Original post tab */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setCurrentRemixIndex(0);
+            }}
+            className={`w-3 h-8 rounded-full transition-all ${
+              currentRemixIndex === 0 
+                ? 'bg-white' 
+                : 'bg-white/30 hover:bg-white/50'
+            }`}
+          />
+          
+          {/* Remix tabs */}
+          {remixTree?.children?.items?.map((_, index) => (
+            <button
+              key={index}
+              onClick={(e) => {
+                e.stopPropagation();
+                setCurrentRemixIndex(index + 1);
+              }}
+              className={`w-3 h-8 rounded-full transition-all ${
+                currentRemixIndex === index + 1
+                  ? 'bg-white' 
+                  : 'bg-white/30 hover:bg-white/50'
+              }`}
+            />
+          ))}
+        </motion.div>
+      )}
     </div>
   );
 }
