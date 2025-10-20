@@ -28,6 +28,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
+  const [isWheelScrolling, setIsWheelScrolling] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Get current item (original post or remix)
@@ -284,10 +285,15 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     
+    // Throttle wheel events to prevent rapid firing
+    if (isWheelScrolling) return;
+    
     // Check if it's horizontal scroll (shift+wheel or horizontal wheel)
     if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       // Horizontal scroll - remix navigation
       if (hasRemixes) {
+        setIsWheelScrolling(true);
+        
         if (e.deltaX > 0 || (e.shiftKey && e.deltaY > 0)) {
           // Scroll right - next remix
           if (canGoRight) {
@@ -299,9 +305,12 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
             goToPreviousRemix();
           }
         }
+        
+        // Reset throttle after a short delay
+        setTimeout(() => setIsWheelScrolling(false), 300);
       }
     } else {
-      // Vertical scroll - feed navigation
+      // Vertical scroll - feed navigation (pass through to parent)
       if (e.deltaY > 0) {
         // Scroll down - next video
         onNext();
