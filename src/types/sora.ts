@@ -47,3 +47,12 @@ export interface SoraFeedItem {
 export interface SoraFeedResponse {
   items: SoraFeedItem[];
 }
+
+export interface SoraRemixTree {
+  post: SoraPost;
+  profile: SoraProfile;
+  children: {
+    items: SoraFeedItem[];
+    cursor: string | null;
+  };
+}
