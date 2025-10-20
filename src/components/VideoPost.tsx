@@ -396,43 +396,47 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
         }}
       />
 
-      {/* Horizontal Navigation for Remixes */}
-      {hasRemixes && (
+      {/* Horizontal Navigation for Remixes - Only show when remixes exist */}
+      {hasRemixes && showControls && (
         <>
           {/* Left Arrow */}
           <motion.button
             initial={{ opacity: 0, x: -20 }}
             animate={{ 
-              opacity: (showControls && canGoLeft) ? 1 : 0,
-              x: (showControls && canGoLeft) ? 0 : -20
+              opacity: showControls ? 1 : 0,
+              x: showControls ? 0 : -20
             }}
             transition={{ duration: 0.2 }}
             onClick={(e) => {
               e.stopPropagation();
               goToPreviousRemix();
             }}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
             disabled={!canGoLeft}
+            className={`absolute left-6 top-1/2 transform -translate-y-1/2 z-20 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white transition-all ${
+              canGoLeft ? 'hover:bg-black/50' : 'opacity-30 cursor-not-allowed'
+            }`}
           >
-            <ChevronLeft size={24} />
+            <ChevronLeft size={28} />
           </motion.button>
 
           {/* Right Arrow */}
           <motion.button
             initial={{ opacity: 0, x: 20 }}
             animate={{ 
-              opacity: (showControls && canGoRight) ? 1 : 0,
-              x: (showControls && canGoRight) ? 0 : 20
+              opacity: showControls ? 1 : 0,
+              x: showControls ? 0 : 20
             }}
             transition={{ duration: 0.2 }}
             onClick={(e) => {
               e.stopPropagation();
               goToNextRemix();
             }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
             disabled={!canGoRight}
+            className={`absolute right-6 top-1/2 transform -translate-y-1/2 z-20 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white transition-all ${
+              canGoRight ? 'hover:bg-black/50' : 'opacity-30 cursor-not-allowed'
+            }`}
           >
-            <ChevronRight size={24} />
+            <ChevronRight size={28} />
           </motion.button>
 
         </>
@@ -560,7 +564,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
             y: showControls ? 0 : 20
           }}
           transition={{ duration: 0.2 }}
-          className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10"
+          className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10"
         >
           <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2 backdrop-blur-sm">
             {/* Original video dot */}
