@@ -465,21 +465,22 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     };
   }, [isPlaying, showControls, hideControlsAfterDelay]);
 
-  // Download video function - uses Sora API for watermark-free downloads
+  // Download video function
   const downloadVideo = useCallback(async () => {
     const currentItem = getCurrentItem();
-    const videoId = currentItem.post.id;
+    const videoUrl = currentItem.post.attachments[0]?.encodings?.source?.path || 
+                     currentItem.post.attachments[0]?.encodings?.md?.path;
     
-    if (!videoId) {
-      console.error('No video ID found for download');
+    if (!videoUrl) {
+      console.error('No video URL found for download');
       return;
     }
 
     try {
-      console.log('🔽 Starting watermark-free video download for:', videoId);
+      console.log('🔽 Starting video download for:', currentItem.post.id);
       
-      // Fetch the video from our API endpoint (which uses Sora API)
-      const response = await fetch(`/api/video/${videoId}/download`);
+      // Fetch the video as a blob
+      const response = await fetch(videoUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch video: ${response.status}`);
       }
@@ -494,7 +495,8 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       // Generate filename
       const username = currentItem.profile.username || 'sora';
       const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-      link.download = `sora-${username}-${timestamp}.mp4`;
+      const extension = videoUrl.includes('.mp4') ? 'mp4' : 'webm';
+      link.download = `sora-${username}-${timestamp}.${extension}`;
       
       // Trigger download
       document.body.appendChild(link);
@@ -504,16 +506,12 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       // Clean up
       window.URL.revokeObjectURL(url);
       
-      console.log('✅ Watermark-free video download completed');
+      console.log('✅ Video download completed');
     } catch (error) {
       console.error('❌ Failed to download video:', error);
       
-      // Fallback: try direct download from video URL
-      const videoUrl = currentItem.post.attachments[0]?.encodings?.source?.path || 
-                       currentItem.post.attachments[0]?.encodings?.md?.path;
-      if (videoUrl) {
-        window.open(videoUrl, '_blank');
-      }
+      // Fallback: open video in new tab
+      window.open(videoUrl, '_blank');
     }
   }, [getCurrentItem]);
 
