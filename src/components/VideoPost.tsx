@@ -219,8 +219,10 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     const deltaY = clientY - dragStart.y;
     const threshold = 50;
 
-    // Determine if it's a horizontal or vertical swipe
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+    // Use the locked drag direction if available, otherwise determine from final delta
+    const finalDirection = dragDirection || (Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical');
+
+    if (finalDirection === 'horizontal') {
       // Horizontal swipe - remix navigation
       if (Math.abs(deltaX) > threshold && hasRemixes) {
         if (deltaX > 0 && canGoLeft) {
@@ -229,7 +231,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
           goToNextRemix();
         }
       }
-    } else {
+    } else if (finalDirection === 'vertical') {
       // Vertical swipe - feed navigation
       if (Math.abs(deltaY) > threshold) {
         if (deltaY > 0) {
