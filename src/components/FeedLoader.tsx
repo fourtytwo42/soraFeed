@@ -8,7 +8,7 @@ import VideoFeed from './VideoFeed';
 import RemixCacheDebug from './RemixCacheDebug';
 import { mockFeedData } from '@/lib/mockData';
 
-type FeedType = 'latest' | 'top' | 'favorites';
+type FeedType = 'latest' | 'top' | 'favorites' | 'search';
 
 export default function FeedLoader() {
   const [items, setItems] = useState<SoraFeedItem[]>([]);
@@ -18,6 +18,8 @@ export default function FeedLoader() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
 
   // Favorites management
   const getFavorites = (): SoraFeedItem[] => {
@@ -89,6 +91,33 @@ export default function FeedLoader() {
         }
         setCursor(null);
         setHasMore(false); // No pagination for favorites
+        setLoading(false);
+        return;
+      }
+      
+      // Handle search feed
+      if (type === 'search') {
+        if (!searchQuery || searchQuery.trim().length === 0) {
+          setItems([]);
+          setLoading(false);
+          setHasMore(false);
+          return;
+        }
+        
+        const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=50`);
+        if (!response.ok) {
+          throw new Error('Failed to search database');
+        }
+        const data = await response.json();
+        console.log('✅ Loaded', data.items?.length || 0, 'search results');
+        
+        if (reset) {
+          setItems(data.items || []);
+        } else {
+          setItems(prev => [...prev, ...(data.items || [])]);
+        }
+        setCursor(null);
+        setHasMore(false); // No pagination for search yet
         setLoading(false);
         return;
       }
@@ -178,6 +207,38 @@ export default function FeedLoader() {
     await loadFeed(type);
   };
 
+  const handleSearch = async () => {
+    if (searchInput.trim().length === 0) return;
+    setSearchQuery(searchInput.trim());
+    setFeedType('search');
+    setLoading(true);
+    setError(null);
+    setCursor(null);
+    setHasMore(false);
+    
+    try {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchInput.trim())}&limit=50`);
+      if (!response.ok) {
+        throw new Error('Failed to search database');
+      }
+      const data = await response.json();
+      console.log('✅ Loaded', data.items?.length || 0, 'search results');
+      setItems(data.items || []);
+    } catch (err) {
+      console.error('❌ Search error:', err);
+      setError(err instanceof Error ? err.message : 'Search failed');
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearchKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
   useEffect(() => {
     loadFeed();
   }, []);
@@ -223,37 +284,69 @@ export default function FeedLoader() {
       <RemixCacheDebug />
       
       {/* Feed Type Selector */}
-      <div className="fixed top-6 left-6 z-50 flex bg-black/50 rounded-full p-1 backdrop-blur-sm">
-        <button
-          onClick={() => handleFeedTypeChange('latest')}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-            feedType === 'latest'
-              ? 'bg-white text-black'
-              : 'text-white hover:bg-white/20'
-          }`}
-        >
-          Latest
-        </button>
-        <button
-          onClick={() => handleFeedTypeChange('top')}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-            feedType === 'top'
-              ? 'bg-white text-black'
-              : 'text-white hover:bg-white/20'
-          }`}
-        >
-          Top
-        </button>
-        <button
-          onClick={() => handleFeedTypeChange('favorites')}
-          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-            feedType === 'favorites'
-              ? 'bg-white text-black'
-              : 'text-white hover:bg-white/20'
-          }`}
-        >
-          Favorites
-        </button>
+      <div className="fixed top-6 left-6 z-50 flex flex-col gap-3">
+        <div className="flex bg-black/50 rounded-full p-1 backdrop-blur-sm">
+          <button
+            onClick={() => handleFeedTypeChange('latest')}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              feedType === 'latest'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/20'
+            }`}
+          >
+            Latest
+          </button>
+          <button
+            onClick={() => handleFeedTypeChange('top')}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              feedType === 'top'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/20'
+            }`}
+          >
+            Top
+          </button>
+          <button
+            onClick={() => handleFeedTypeChange('favorites')}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              feedType === 'favorites'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/20'
+            }`}
+          >
+            Favorites
+          </button>
+          <button
+            onClick={() => handleFeedTypeChange('search')}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              feedType === 'search'
+                ? 'bg-white text-black'
+                : 'text-white hover:bg-white/20'
+            }`}
+          >
+            Search
+          </button>
+        </div>
+
+        {/* Search Input - Only show when search is selected */}
+        {feedType === 'search' && (
+          <div className="flex gap-2 bg-black/50 rounded-full p-1 backdrop-blur-sm">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyPress={handleSearchKeyPress}
+              placeholder="Search videos..."
+              className="px-4 py-2 bg-white/10 text-white placeholder-white/50 rounded-full text-sm focus:outline-none focus:bg-white/20 min-w-[300px]"
+            />
+            <button
+              onClick={handleSearch}
+              className="px-6 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors"
+            >
+              Search
+            </button>
+          </div>
+        )}
       </div>
       
       <VideoFeed 
