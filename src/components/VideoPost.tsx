@@ -89,7 +89,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
       {/* Video */}
       <video
         ref={videoRef}
-        className="w-full h-full object-cover"
+        className="max-w-full max-h-full object-contain"
         loop
         muted={isMuted}
         playsInline
