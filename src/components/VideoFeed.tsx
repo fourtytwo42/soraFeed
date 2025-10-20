@@ -28,6 +28,16 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   const containerRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
   
+  // Reset currentIndex when items array changes (e.g., switching to favorites)
+  useEffect(() => {
+    if (items.length === 0) {
+      setCurrentIndex(0);
+    } else if (currentIndex >= items.length) {
+      setCurrentIndex(0);
+      y.set(0);
+    }
+  }, [items, currentIndex, y]);
+  
   const goToNext = () => {
     if (currentIndex < items.length - 1) {
       // Animate to next position then change index
@@ -255,6 +265,15 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     };
   }, [currentIndex, isScrolling]);
 
+  // Safety check: don't render if no items or currentIndex is out of bounds
+  if (!items || items.length === 0 || currentIndex >= items.length) {
+    return (
+      <div className="relative w-full h-screen overflow-hidden bg-black flex items-center justify-center">
+        <p className="text-white text-lg">No videos available</p>
+      </div>
+    );
+  }
+
   return (
     <div 
       ref={containerRef}
@@ -297,7 +316,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
             isInFavorites={isInFavorites}
             onRemixStatusChange={handleRemixStatusChange}
             onKeyboardNavigation={handleKeyboardNavigation}
-            preloadedRemixFeed={preloadedRemixFeeds.get(items[currentIndex].post.id)}
+            preloadedRemixFeed={items[currentIndex] ? preloadedRemixFeeds.get(items[currentIndex].post.id) : undefined}
             onControlsChange={setShowControls}
           />
         </div>
