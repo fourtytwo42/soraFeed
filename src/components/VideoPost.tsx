@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
@@ -18,19 +18,23 @@ interface VideoPostProps {
   onRemixStatusChange?: (hasRemixes: boolean) => void;
   onKeyboardNavigation?: (direction: 'left' | 'right') => void;
   preloadedRemixFeed?: SoraFeedItem[];
+  onControlsChange?: (showing: boolean) => void;
 }
 
-export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed }: VideoPostProps) {
+export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed, onControlsChange }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
   const [loadingRemixes, setLoadingRemixes] = useState(false);
   const [isWheelScrolling, setIsWheelScrolling] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const x = useMotionValue(0);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Get current item (original post or remix)
   const getCurrentItem = (): SoraFeedItem => {
@@ -103,6 +107,13 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       onRemixStatusChange(hasRemixes);
     }
   }, [hasRemixes, onRemixStatusChange]);
+
+  // Notify parent when controls visibility changes
+  useEffect(() => {
+    if (onControlsChange) {
+      onControlsChange(showControls);
+    }
+  }, [showControls, onControlsChange]);
 
   // Handle keyboard navigation for remixes
   useEffect(() => {
@@ -383,6 +394,77 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     return `${Math.floor(diff / 86400)}d`;
   };
 
+  // Handle controls auto-hide
+  const hideControlsAfterDelay = useCallback(() => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    
+    // Only auto-hide if not hovering and video is playing
+    if (!isHovering && isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  }, [isHovering, isPlaying]);
+
+  // Show controls and set up auto-hide
+  const handleShowControls = useCallback(() => {
+    setShowControls(true);
+    hideControlsAfterDelay();
+  }, [hideControlsAfterDelay]);
+
+  // Handle mouse enter
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+    setShowControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+  }, []);
+
+  // Handle mouse leave
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+    hideControlsAfterDelay();
+  }, [hideControlsAfterDelay]);
+
+  // Handle click - toggle controls and pause
+  const handleVideoClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isPlaying) {
+      video.pause();
+      setIsPlaying(false);
+    } else {
+      video.play().then(() => {
+        setIsPlaying(true);
+      }).catch(() => {
+        setIsPlaying(false);
+      });
+    }
+    
+    setShowControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+  }, [isPlaying]);
+
+  // Effect to handle control visibility based on play state
+  useEffect(() => {
+    if (showControls) {
+      hideControlsAfterDelay();
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [isPlaying, showControls, hideControlsAfterDelay]);
+
     return (
       <div className="relative w-full h-full overflow-hidden bg-black">
         {/* Draggable container with all remixes */}
@@ -390,9 +472,9 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
           {...bind()}
           style={{ x }}
           className="absolute inset-0 flex items-center justify-center group cursor-pointer select-none"
-          onMouseEnter={() => setShowControls(true)}
-          onMouseLeave={() => setShowControls(false)}
-          onClick={() => setShowControls(!showControls)}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          onClick={handleVideoClick}
           onWheel={handleWheel}
         >
           {/* Previous Remix */}
@@ -404,7 +486,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
               <video
                 src={remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.md?.path || 
                      remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.source?.path}
-                className="max-w-full h-screen object-contain"
+                className="h-screen w-auto max-w-full object-contain"
                 loop
                 muted
                 playsInline
@@ -414,21 +496,311 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
             </div>
           )}
           
-          {/* Current Video/Remix */}
+          {/* Current Video/Remix with Controls */}
           <div className="absolute inset-0 w-full h-screen flex items-center justify-center">
-            <video
-              ref={videoRef}
-              src={currentVideoUrl}
-              className="max-w-full h-screen object-contain"
-              loop
-              muted={isMuted}
-              playsInline
-              onEnded={handleVideoEnd}
-              poster={currentItem.post.attachments[0]?.encodings?.thumbnail?.path}
-              key={currentItem.post.id} // Force re-render when switching remixes
-            >
-              {currentVideoUrl && <source src={currentVideoUrl} type="video/mp4" />}
-            </video>
+            <div className="relative h-screen flex items-center justify-center">
+              <video
+                ref={videoRef}
+                src={currentVideoUrl}
+                className="h-screen w-auto max-w-full object-contain block"
+                loop
+                muted={isMuted}
+                playsInline
+                onEnded={handleVideoEnd}
+                poster={currentItem.post.attachments[0]?.encodings?.thumbnail?.path}
+                key={currentItem.post.id}
+              >
+                {currentVideoUrl && <source src={currentVideoUrl} type="video/mp4" />}
+              </video>
+
+              {/* Play/Pause Overlay - Center of video */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ 
+                  opacity: (!isPlaying && showControls) ? 1 : 0, 
+                  scale: (!isPlaying && showControls) ? 1 : 0.8 
+                }}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+              >
+                <div className="p-4 rounded-full bg-black/50 backdrop-blur-sm">
+                  <Play size={48} className="text-white ml-1" />
+                </div>
+              </motion.div>
+
+              {/* Horizontal Navigation - Left Arrow */}
+              {hasRemixes && (
+                <motion.button
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ 
+                    opacity: showControls && canGoLeft ? 1 : 0,
+                    x: showControls && canGoLeft ? 0 : -20
+                  }}
+                  transition={{ duration: 0.2 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goToPreviousRemix();
+                  }}
+                  disabled={!canGoLeft}
+                  className="absolute left-4 top-1/2 transform -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white transition-all hover:bg-black/70"
+                  style={{ pointerEvents: showControls && canGoLeft ? 'auto' : 'none' }}
+                >
+                  <ChevronLeft size={24} />
+                </motion.button>
+              )}
+
+              {/* Horizontal Navigation - Right Arrow */}
+              {hasRemixes && (
+                <motion.button
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ 
+                    opacity: showControls && canGoRight ? 1 : 0,
+                    x: showControls && canGoRight ? 0 : 20
+                  }}
+                  transition={{ duration: 0.2 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goToNextRemix();
+                  }}
+                  disabled={!canGoRight}
+                  className="absolute right-4 top-1/2 transform -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white transition-all hover:bg-black/70"
+                  style={{ pointerEvents: showControls && canGoRight ? 'auto' : 'none' }}
+                >
+                  <ChevronRight size={24} />
+                </motion.button>
+              )}
+
+              {/* Video Info Overlay - Bottom Left */}
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ 
+                  opacity: showControls ? 1 : 0,
+                  y: showControls ? 0 : 20
+                }}
+                transition={{ duration: 0.3 }}
+                className="absolute bottom-4 left-4 z-40 max-w-sm"
+                style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+              >
+                <div className="bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm">
+                  {/* User Info */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0">
+                      <User size={16} className="text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-white font-semibold text-xs truncate">
+                          {currentItem.profile.display_name || currentItem.profile.username}
+                        </span>
+                        {currentItem.profile.verified && (
+                          <CheckCircle size={12} className="text-blue-500 flex-shrink-0" />
+                        )}
+                        <span className="text-white/70 text-xs flex-shrink-0">
+                          {formatTimeAgo(currentItem.post.posted_at)}
+                        </span>
+                      </div>
+                      <div className="text-white/60 text-xs">
+                        {formatCount(currentItem.profile.follower_count)} followers
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Caption */}
+                  {currentItem.post.text && (
+                    <div className="text-white text-xs">
+                      <p className={isDescriptionExpanded ? '' : 'line-clamp-2'}>
+                        {currentItem.post.text}
+                      </p>
+                      {currentItem.post.text.length > 100 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsDescriptionExpanded(!isDescriptionExpanded);
+                          }}
+                          className="text-white/80 hover:text-white text-xs font-semibold mt-1"
+                        >
+                          {isDescriptionExpanded ? 'less' : 'more'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+
+              {/* Action Buttons Overlay - Right Side */}
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ 
+                  opacity: showControls ? 1 : 0,
+                  x: showControls ? 0 : 20
+                }}
+                transition={{ duration: 0.3 }}
+                className="absolute bottom-4 right-4 flex flex-col gap-2.5 z-40"
+                style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+              >
+                {/* Like/Favorite Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const currentItem = getCurrentItem();
+                    if (isLiked) {
+                      if (onRemoveFromFavorites) {
+                        onRemoveFromFavorites(currentItem.post.id);
+                      }
+                      setIsLiked(false);
+                    } else {
+                      if (onAddToFavorites) {
+                        onAddToFavorites(currentItem);
+                      }
+                      setIsLiked(true);
+                    }
+                  }}
+                  className={`p-2.5 rounded-full backdrop-blur-sm transition-all ${
+                    isLiked ? 'bg-red-500 text-white' : 'bg-black/50 text-white hover:bg-black/70'
+                  }`}
+                >
+                  <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
+                </button>
+
+                {/* Share Button */}
+                <button 
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+                >
+                  <Share size={20} />
+                </button>
+
+                {/* Mute Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleMute();
+                  }}
+                  className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+                >
+                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                </button>
+
+                {/* Remix Count Indicator */}
+                {hasRemixes && (
+                  <div className="flex flex-col items-center">
+                    <button className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 19 18" className="h-5 w-5">
+                        <circle cx="9" cy="9" r="6.75" stroke="currentColor" strokeWidth="2"></circle>
+                        <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M11.25 9a4.5 4.5 0 0 0-9 0M15.75 9a4.5 4.5 0 1 1-9 0"></path>
+                      </svg>
+                    </button>
+                    <span className="text-white text-xs font-semibold bg-black/50 backdrop-blur-sm rounded-full px-2 py-0.5 mt-1">
+                      {remixFeed.length}
+                    </span>
+                  </div>
+                )}
+              </motion.div>
+
+              {/* Remix Dot Indicators - Bottom Center */}
+              {hasRemixes && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ 
+                    opacity: showControls ? 1 : 0,
+                    y: showControls ? 0 : 20
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-40"
+                  style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+                >
+                  <div className="flex items-center gap-1.5 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1.5">
+                    {(() => {
+                      const totalItems = remixFeed.length + 1; // +1 for original
+                      const maxVisible = 7;
+                      
+                      // If we can show all items, show them all
+                      if (totalItems <= maxVisible) {
+                        return (
+                          <>
+                            {/* Original video dot */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                goToRemixIndex(0);
+                              }}
+                              className={`w-1.5 h-1.5 rounded-full transition-all ${
+                                currentRemixIndex === 0 
+                                  ? 'bg-white scale-125' 
+                                  : 'bg-white/50 hover:bg-white/70'
+                              }`}
+                            />
+                            
+                            {/* All remix dots */}
+                            {remixFeed.map((_, index) => (
+                              <button
+                                key={index}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  goToRemixIndex(index + 1);
+                                }}
+                                className={`w-1.5 h-1.5 rounded-full transition-all ${
+                                  currentRemixIndex === index + 1
+                                    ? 'bg-white scale-125' 
+                                    : 'bg-white/50 hover:bg-white/70'
+                                }`}
+                              />
+                            ))}
+                          </>
+                        );
+                      }
+                      
+                      // Show a sliding window of dots
+                      const halfVisible = Math.floor((maxVisible - 2) / 2); // -2 for left/right indicators
+                      let startIndex = Math.max(0, currentRemixIndex - halfVisible);
+                      let endIndex = Math.min(totalItems - 1, startIndex + maxVisible - 2);
+                      
+                      // Adjust if we're near the end
+                      if (endIndex - startIndex < maxVisible - 2) {
+                        startIndex = Math.max(0, endIndex - (maxVisible - 2));
+                      }
+                      
+                      const showLeftIndicator = startIndex > 0;
+                      const showRightIndicator = endIndex < totalItems - 1;
+                      
+                      return (
+                        <>
+                          {/* Left indicator */}
+                          {showLeftIndicator && (
+                            <span className="text-white/70 text-xs">‹</span>
+                          )}
+                          
+                          {/* Visible dots */}
+                          {Array.from({ length: endIndex - startIndex + 1 }, (_, i) => {
+                            const dotIndex = startIndex + i;
+                            const isOriginal = dotIndex === 0;
+                            
+                            return (
+                              <button
+                                key={dotIndex}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  goToRemixIndex(dotIndex);
+                                }}
+                                className={`w-1.5 h-1.5 rounded-full transition-all ${
+                                  currentRemixIndex === dotIndex
+                                    ? 'bg-white scale-125' 
+                                    : 'bg-white/50 hover:bg-white/70'
+                                }`}
+                              />
+                            );
+                          })}
+                          
+                          {/* Right indicator */}
+                          {showRightIndicator && (
+                            <span className="text-white/70 text-xs">›</span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </motion.div>
+              )}
+            </div>
           </div>
 
           {/* Next Remix */}
@@ -443,7 +815,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                     remixFeed[0]?.post.attachments[0]?.encodings?.source?.path
                   : remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.md?.path || 
                     remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.source?.path}
-                className="max-w-full h-screen object-contain"
+                className="h-screen w-auto max-w-full object-contain"
                 loop
                 muted
                 playsInline
@@ -485,234 +857,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
             />
           )}
         </div>
-
-        {/* Play/Pause Overlay */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ 
-            opacity: (!isPlaying && showControls) ? 1 : 0, 
-            scale: (!isPlaying && showControls) ? 1 : 0.8 
-          }}
-          className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
-        >
-          <div className="p-4 rounded-full bg-black/50 backdrop-blur-sm">
-            <Play size={48} className="text-white ml-1" />
-          </div>
-        </motion.div>
-
-        {/* Click to play/pause */}
-        <div 
-          className="absolute inset-0 z-20"
-          onClick={(e) => {
-            e.stopPropagation();
-            togglePlayPause();
-          }}
-        />
-
-        {/* Horizontal Navigation for Remixes */}
-        {hasRemixes && showControls && (
-          <>
-            {/* Left Arrow */}
-            <motion.button
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ 
-                opacity: showControls ? 1 : 0,
-                x: showControls ? 0 : -20
-              }}
-              transition={{ duration: 0.2 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                goToPreviousRemix();
-              }}
-              disabled={!canGoLeft}
-              className={`absolute left-6 top-1/2 transform -translate-y-1/2 z-40 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white transition-all ${
-                canGoLeft ? 'hover:bg-black/50' : 'opacity-30 cursor-not-allowed'
-              }`}
-            >
-              <ChevronLeft size={28} />
-            </motion.button>
-
-            {/* Right Arrow */}
-            <motion.button
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ 
-                opacity: showControls ? 1 : 0,
-                x: showControls ? 0 : 20
-              }}
-              transition={{ duration: 0.2 }}
-              onClick={(e) => {
-                e.stopPropagation();
-                goToNextRemix();
-              }}
-              disabled={!canGoRight}
-              className={`absolute right-6 top-1/2 transform -translate-y-1/2 z-40 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white transition-all ${
-                canGoRight ? 'hover:bg-black/50' : 'opacity-30 cursor-not-allowed'
-              }`}
-            >
-              <ChevronRight size={28} />
-            </motion.button>
-          </>
-        )}
-
-        {/* Controls - positioned over video */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ 
-            opacity: showControls ? 1 : 0,
-            y: showControls ? 0 : 20
-          }}
-          transition={{ duration: 0.2 }}
-          className="absolute bottom-6 left-6 right-24 z-40 pointer-events-none"
-        >
-          <div className="pointer-events-auto">
-            {/* User Info */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                <User size={20} className="text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-white font-semibold">
-                    {currentItem.profile.display_name || currentItem.profile.username}
-                  </span>
-                  {currentItem.profile.verified && (
-                    <CheckCircle size={16} className="text-blue-500" />
-                  )}
-                  <span className="text-white/70 text-sm">
-                    {formatTimeAgo(currentItem.post.posted_at)}
-                  </span>
-                </div>
-                <div className="text-white/70 text-sm">
-                  {formatCount(currentItem.profile.follower_count)} followers
-                </div>
-              </div>
-            </div>
-
-            {/* Caption */}
-            {currentItem.post.text && (
-              <p className="text-white text-sm mb-2 line-clamp-3">
-                {currentItem.post.text}
-              </p>
-            )}
-          </div>
-        </motion.div>
-
-        {/* Right Side Actions - positioned over video */}
-        <motion.div 
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ 
-            opacity: showControls ? 1 : 0,
-            x: showControls ? 0 : 20
-          }}
-          transition={{ duration: 0.2 }}
-          className="absolute bottom-6 right-6 flex flex-col gap-4 z-40"
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const currentItem = getCurrentItem();
-              if (isLiked) {
-                // Remove from favorites
-                if (onRemoveFromFavorites) {
-                  onRemoveFromFavorites(currentItem.post.id);
-                }
-                setIsLiked(false);
-              } else {
-                // Add to favorites
-                if (onAddToFavorites) {
-                  onAddToFavorites(currentItem);
-                }
-                setIsLiked(true);
-              }
-            }}
-            className={`p-3 rounded-full transition-all ${
-              isLiked ? 'bg-red-500 text-white' : 'bg-black/50 text-white hover:bg-black/70'
-            }`}
-          >
-            <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
-          </button>
-
-          <button 
-            onClick={(e) => e.stopPropagation()}
-            className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
-          >
-            <Share size={20} />
-          </button>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleMute();
-            }}
-            className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
-          >
-            {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-          </button>
-
-          {/* Remix Count Indicator */}
-          {hasRemixes && (
-            <div className="flex flex-col items-center">
-              <button className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 19 18" className="h-5 w-5">
-                  <circle cx="9" cy="9" r="6.75" stroke="currentColor" strokeWidth="2"></circle>
-                  <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M11.25 9a4.5 4.5 0 0 0-9 0M15.75 9a4.5 4.5 0 1 1-9 0"></path>
-                </svg>
-              </button>
-              <span className="text-white text-xs font-semibold bg-black/50 rounded-full px-2 py-1 mt-1">
-                {remixFeed.length}
-              </span>
-            </div>
-          )}
-        </motion.div>
-
-        {/* Remix Dot Indicators */}
-        {hasRemixes && showControls && (
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ 
-              opacity: showControls ? 1 : 0,
-              y: showControls ? 0 : 20
-            }}
-            transition={{ duration: 0.2 }}
-            className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-40"
-          >
-            <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2 backdrop-blur-sm">
-              {/* Original video dot */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  goToRemixIndex(0);
-                }}
-                className={`w-2 h-2 rounded-full transition-all ${
-                  currentRemixIndex === 0 
-                    ? 'bg-white scale-125' 
-                    : 'bg-white/50 hover:bg-white/70'
-                }`}
-              />
-              
-              {/* Remix dots - limit to 10 to avoid overcrowding */}
-              {remixFeed.slice(0, 10).map((_, index) => (
-                <button
-                  key={index}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    goToRemixIndex(index + 1);
-                  }}
-                  className={`w-2 h-2 rounded-full transition-all ${
-                    currentRemixIndex === index + 1
-                      ? 'bg-white scale-125' 
-                      : 'bg-white/50 hover:bg-white/70'
-                  }`}
-                />
-              ))}
-              
-              {/* Show "..." if there are more than 10 video remixes */}
-              {remixFeed.length > 10 && (
-                <span className="text-white/70 text-xs ml-1">...</span>
-              )}
-            </div>
-          </motion.div>
-        )}
       </div>
   );
 }

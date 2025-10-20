@@ -23,6 +23,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const [currentVideoHasRemixes, setCurrentVideoHasRemixes] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const [preloadedRemixFeeds, setPreloadedRemixFeeds] = useState<Map<string, SoraFeedItem[]>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
@@ -297,6 +298,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
             onRemixStatusChange={handleRemixStatusChange}
             onKeyboardNavigation={handleKeyboardNavigation}
             preloadedRemixFeed={preloadedRemixFeeds.get(items[currentIndex].post.id)}
+            onControlsChange={setShowControls}
           />
         </div>
 
@@ -348,24 +350,36 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
 
       {/* Navigation Arrows - Top and Bottom */}
       {/* Up Arrow - Top of Screen */}
-      <button
+      <motion.button
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ 
+          opacity: showControls && currentIndex > 0 ? 1 : 0,
+          y: showControls && currentIndex > 0 ? 0 : -20
+        }}
+        transition={{ duration: 0.3 }}
         onClick={goToPrevious}
         disabled={currentIndex === 0}
-        className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all pointer-events-auto"
+        className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+        style={{ pointerEvents: showControls && currentIndex > 0 ? 'auto' : 'none' }}
       >
         <ChevronUp size={28} />
-      </button>
+      </motion.button>
       
-      {/* Down Arrow - Conditional positioning based on remixes */}
-      <button
+      {/* Down Arrow - Fixed position above remix indicator area */}
+      <motion.button
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ 
+          opacity: showControls && currentIndex < items.length - 1 ? 1 : 0,
+          y: showControls && currentIndex < items.length - 1 ? 0 : 20
+        }}
+        transition={{ duration: 0.3 }}
         onClick={goToNext}
         disabled={currentIndex === items.length - 1}
-        className={`absolute left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all pointer-events-auto ${
-          currentVideoHasRemixes ? 'bottom-20' : 'bottom-6'
-        }`}
+        className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+        style={{ pointerEvents: showControls && currentIndex < items.length - 1 ? 'auto' : 'none' }}
       >
         <ChevronDown size={28} />
-      </button>
+      </motion.button>
 
       {/* Loading More Indicator */}
       {loadingMore && (
