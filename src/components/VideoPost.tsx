@@ -571,7 +571,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                 ref={videoRef}
                 src={currentVideoUrl}
                 className="h-screen w-auto max-w-full object-contain block"
-                loop
                 muted={isMuted}
                 playsInline
                 onEnded={handleVideoEnd}
