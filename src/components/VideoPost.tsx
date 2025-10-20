@@ -343,7 +343,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
       <video
         ref={videoRef}
         src={currentVideoUrl}
-        className="max-w-full max-h-full object-contain"
+        className="w-full h-screen object-cover"
         loop
         muted={isMuted}
         playsInline
@@ -416,18 +416,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
             <ChevronRight size={24} />
           </motion.button>
 
-          {/* Remix Indicator */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ 
-              opacity: showControls ? 1 : 0,
-              y: showControls ? 0 : -20
-            }}
-            transition={{ duration: 0.2 }}
-            className="absolute top-4 left-4 z-10 px-3 py-1 rounded-full bg-black/50 text-white text-sm"
-          >
-            {currentRemixIndex === 0 ? 'Original' : `Remix ${currentRemixIndex}/${remixFeed.length}`}
-          </motion.div>
         </>
       )}
 
@@ -547,47 +535,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
         </button>
       </motion.div>
 
-      {/* Remix Selector - like vertical feed selector */}
-      {hasRemixes && (
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ 
-            opacity: showControls ? 1 : 0,
-            x: showControls ? 0 : -20
-          }}
-          transition={{ duration: 0.2 }}
-          className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-2"
-        >
-          {/* Original post tab */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setCurrentRemixIndex(0);
-            }}
-            className={`w-3 h-8 rounded-full transition-all ${
-              currentRemixIndex === 0 
-                ? 'bg-white' 
-                : 'bg-white/30 hover:bg-white/50'
-            }`}
-          />
-          
-          {/* Remix tabs */}
-          {remixFeed.map((_, index) => (
-            <button
-              key={index}
-              onClick={(e) => {
-                e.stopPropagation();
-                setCurrentRemixIndex(index + 1);
-              }}
-              className={`w-3 h-8 rounded-full transition-all ${
-                currentRemixIndex === index + 1
-                  ? 'bg-white' 
-                  : 'bg-white/30 hover:bg-white/50'
-              }`}
-            />
-          ))}
-        </motion.div>
-      )}
 
       {/* Remix Dot Indicators */}
       {hasRemixes && showControls && (
