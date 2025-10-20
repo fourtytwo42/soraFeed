@@ -19,12 +19,14 @@ interface VideoFeedProps {
 export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onAddToFavorites, onRemoveFromFavorites, isInFavorites }: VideoFeedProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [scrollDirection, setScrollDirection] = useState<'up' | 'down'>('down');
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number>(0);
   const touchEndY = useRef<number>(0);
 
   const goToNext = () => {
     if (currentIndex < items.length - 1) {
+      setScrollDirection('down');
       setCurrentIndex(currentIndex + 1);
       
       // Load more when approaching the end
@@ -36,6 +38,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
 
   const goToPrevious = () => {
     if (currentIndex > 0) {
+      setScrollDirection('up');
       setCurrentIndex(currentIndex - 1);
     }
   };
@@ -125,9 +128,9 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
       <AnimatePresence mode="wait">
         <motion.div
           key={currentIndex}
-          initial={{ y: '100%' }}
+          initial={{ y: scrollDirection === 'down' ? '100%' : '-100%' }}
           animate={{ y: 0 }}
-          exit={{ y: '-100%' }}
+          exit={{ y: scrollDirection === 'down' ? '-100%' : '100%' }}
           transition={{ 
             type: 'tween',
             duration: 0.3,
