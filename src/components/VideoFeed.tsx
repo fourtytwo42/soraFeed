@@ -11,9 +11,12 @@ interface VideoFeedProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  onAddToFavorites?: (item: SoraFeedItem) => void;
+  onRemoveFromFavorites?: (postId: string) => void;
+  isInFavorites?: (postId: string) => boolean;
 }
 
-export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: VideoFeedProps) {
+export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onAddToFavorites, onRemoveFromFavorites, isInFavorites }: VideoFeedProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -137,6 +140,9 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: V
             isActive={true}
             onNext={goToNext}
             onPrevious={goToPrevious}
+            onAddToFavorites={onAddToFavorites}
+            onRemoveFromFavorites={onRemoveFromFavorites}
+            isInFavorites={isInFavorites}
           />
         </motion.div>
       </AnimatePresence>

@@ -6,7 +6,7 @@ import { fetchFeed } from '@/lib/api';
 import VideoFeed from './VideoFeed';
 import { mockFeedData } from '@/lib/mockData';
 
-type FeedType = 'latest' | 'top';
+type FeedType = 'latest' | 'top' | 'favorites';
 
 export default function FeedLoader() {
   const [items, setItems] = useState<SoraFeedItem[]>([]);
@@ -17,6 +17,55 @@ export default function FeedLoader() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Favorites management
+  const getFavorites = (): SoraFeedItem[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem('soraFeedFavorites');
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+      return [];
+    }
+  };
+
+  const saveFavorites = (favorites: SoraFeedItem[]) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('soraFeedFavorites', JSON.stringify(favorites));
+    } catch (error) {
+      console.error('Error saving favorites:', error);
+    }
+  };
+
+  const addToFavorites = (item: SoraFeedItem) => {
+    const favorites = getFavorites();
+    const isAlreadyFavorite = favorites.some(fav => fav.post.id === item.post.id);
+    if (!isAlreadyFavorite) {
+      const newFavorites = [...favorites, item];
+      saveFavorites(newFavorites);
+      // If currently viewing favorites, update the feed
+      if (feedType === 'favorites') {
+        setItems(newFavorites);
+      }
+    }
+  };
+
+  const removeFromFavorites = (postId: string) => {
+    const favorites = getFavorites();
+    const newFavorites = favorites.filter(fav => fav.post.id !== postId);
+    saveFavorites(newFavorites);
+    // If currently viewing favorites, update the feed
+    if (feedType === 'favorites') {
+      setItems(newFavorites);
+    }
+  };
+
+  const isInFavorites = (postId: string): boolean => {
+    const favorites = getFavorites();
+    return favorites.some(fav => fav.post.id === postId);
+  };
+
   const loadFeed = async (type: FeedType = feedType, reset: boolean = true) => {
     try {
       if (reset) {
@@ -26,6 +75,21 @@ export default function FeedLoader() {
         setHasMore(true);
       }
       console.log(`🔄 Loading ${type} feed data...`);
+      
+      // Handle favorites feed
+      if (type === 'favorites') {
+        const favorites = getFavorites();
+        console.log('✅ Loaded', favorites.length, 'favorite items');
+        if (reset) {
+          setItems(favorites);
+        } else {
+          setItems(prev => [...prev, ...favorites]);
+        }
+        setCursor(null);
+        setHasMore(false); // No pagination for favorites
+        setLoading(false);
+        return;
+      }
       
       // Map feed type to API cut parameter
       const cut = type === 'top' ? 'nf2_top' : 'nf2_latest';
@@ -161,6 +225,16 @@ export default function FeedLoader() {
         >
           Top
         </button>
+        <button
+          onClick={() => handleFeedTypeChange('favorites')}
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+            feedType === 'favorites'
+              ? 'bg-white text-black'
+              : 'text-white hover:bg-white/20'
+          }`}
+        >
+          Favorites
+        </button>
       </div>
       
       <VideoFeed 
@@ -168,6 +242,9 @@ export default function FeedLoader() {
         onLoadMore={loadMoreFeed}
         hasMore={hasMore}
         loadingMore={loadingMore}
+        onAddToFavorites={addToFavorites}
+        onRemoveFromFavorites={removeFromFavorites}
+        isInFavorites={isInFavorites}
       />
     </>
   );

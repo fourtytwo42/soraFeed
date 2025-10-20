@@ -11,12 +11,22 @@ interface VideoPostProps {
   isActive: boolean;
   onNext: () => void;
   onPrevious: () => void;
+  onAddToFavorites?: (item: SoraFeedItem) => void;
+  onRemoveFromFavorites?: (postId: string) => void;
+  isInFavorites?: (postId: string) => boolean;
 }
 
-export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoPostProps) {
+export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToFavorites, onRemoveFromFavorites, isInFavorites }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
+
+  // Update isLiked based on favorites when item changes
+  useEffect(() => {
+    if (isInFavorites) {
+      setIsLiked(isInFavorites(getCurrentItem().post.id));
+    }
+  }, [item, currentRemixIndex, isInFavorites]);
   const [showControls, setShowControls] = useState(false);
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
@@ -475,7 +485,20 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
         <button
           onClick={(e) => {
             e.stopPropagation();
-            setIsLiked(!isLiked);
+            const currentItem = getCurrentItem();
+            if (isLiked) {
+              // Remove from favorites
+              if (onRemoveFromFavorites) {
+                onRemoveFromFavorites(currentItem.post.id);
+              }
+              setIsLiked(false);
+            } else {
+              // Add to favorites
+              if (onAddToFavorites) {
+                onAddToFavorites(currentItem);
+              }
+              setIsLiked(true);
+            }
           }}
           className={`p-3 rounded-full transition-all ${
             isLiked ? 'bg-red-500 text-white' : 'bg-black/50 text-white hover:bg-black/70'
