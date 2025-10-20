@@ -141,23 +141,41 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore }: V
         </motion.div>
       </AnimatePresence>
 
-      {/* Navigation Arrows - Desktop */}
-      <div className="hidden md:flex absolute right-4 top-1/2 transform -translate-y-1/2 flex-col gap-4 z-20">
-        <button
-          onClick={goToPrevious}
-          disabled={currentIndex === 0}
-          className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-        >
-          <ChevronUp size={24} />
-        </button>
-        <button
-          onClick={goToNext}
-          disabled={currentIndex === items.length - 1}
-          className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-        >
-          <ChevronDown size={24} />
-        </button>
-      </div>
+      {/* Navigation Arrows - Top and Bottom */}
+      {/* Up Arrow - Top of Screen */}
+      <button
+        onClick={goToPrevious}
+        disabled={currentIndex === 0}
+        className="absolute top-6 left-1/2 transform -translate-x-1/2 z-20 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+      >
+        <ChevronUp size={28} />
+      </button>
+      
+      {/* Down Arrow - Bottom of Screen */}
+      <button
+        onClick={goToNext}
+        disabled={currentIndex === items.length - 1}
+        className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20 p-4 rounded-full bg-black/30 backdrop-blur-sm text-white hover:bg-black/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+      >
+        <ChevronDown size={28} />
+      </button>
+
+      {/* Clickable Areas for Navigation */}
+      {/* Top clickable area */}
+      <button
+        onClick={goToPrevious}
+        disabled={currentIndex === 0}
+        className="absolute top-0 left-0 right-0 h-24 z-10 bg-transparent hover:bg-black/5 disabled:cursor-not-allowed transition-all"
+        aria-label="Previous video"
+      />
+      
+      {/* Bottom clickable area */}
+      <button
+        onClick={goToNext}
+        disabled={currentIndex === items.length - 1}
+        className="absolute bottom-0 left-0 right-0 h-24 z-10 bg-transparent hover:bg-black/5 disabled:cursor-not-allowed transition-all"
+        aria-label="Next video"
+      />
 
       {/* Progress Indicator */}
       <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex flex-col gap-1 z-20">
