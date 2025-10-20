@@ -465,22 +465,21 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     };
   }, [isPlaying, showControls, hideControlsAfterDelay]);
 
-  // Download video function
+  // Download video function - uses Sora API for watermark-free downloads
   const downloadVideo = useCallback(async () => {
     const currentItem = getCurrentItem();
-    const videoUrl = currentItem.post.attachments[0]?.encodings?.source?.path || 
-                     currentItem.post.attachments[0]?.encodings?.md?.path;
+    const videoId = currentItem.post.id;
     
-    if (!videoUrl) {
-      console.error('No video URL found for download');
+    if (!videoId) {
+      console.error('No video ID found for download');
       return;
     }
 
     try {
-      console.log('🔽 Starting video download for:', currentItem.post.id);
+      console.log('🔽 Starting watermark-free video download for:', videoId);
       
-      // Fetch the video as a blob
-      const response = await fetch(videoUrl);
+      // Fetch the video from our API endpoint (which uses Sora API)
+      const response = await fetch(`/api/video/${videoId}/download`);
       if (!response.ok) {
         throw new Error(`Failed to fetch video: ${response.status}`);
       }
@@ -495,8 +494,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       // Generate filename
       const username = currentItem.profile.username || 'sora';
       const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-      const extension = videoUrl.includes('.mp4') ? 'mp4' : 'webm';
-      link.download = `sora-${username}-${timestamp}.${extension}`;
+      link.download = `sora-${username}-${timestamp}.mp4`;
       
       // Trigger download
       document.body.appendChild(link);
@@ -506,12 +504,16 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       // Clean up
       window.URL.revokeObjectURL(url);
       
-      console.log('✅ Video download completed');
+      console.log('✅ Watermark-free video download completed');
     } catch (error) {
       console.error('❌ Failed to download video:', error);
       
-      // Fallback: open video in new tab
-      window.open(videoUrl, '_blank');
+      // Fallback: try direct download from video URL
+      const videoUrl = currentItem.post.attachments[0]?.encodings?.source?.path || 
+                       currentItem.post.attachments[0]?.encodings?.md?.path;
+      if (videoUrl) {
+        window.open(videoUrl, '_blank');
+      }
     }
   }, [getCurrentItem]);
 
