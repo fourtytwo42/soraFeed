@@ -23,8 +23,21 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   const [loadingRemixes, setLoadingRemixes] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const videoUrl = item.post.attachments[0]?.encodings?.md?.path || 
-                   item.post.attachments[0]?.encodings?.source?.path;
+  // Get current item (original post or remix)
+  const getCurrentItem = (): SoraFeedItem => {
+    if (currentRemixIndex === 0 || !remixTree) {
+      return item; // Original post
+    }
+    return remixTree.children.items[currentRemixIndex - 1]; // Remix (index - 1 because 0 is original)
+  };
+
+  const currentItem = getCurrentItem();
+  const currentVideoUrl = currentItem.post.attachments[0]?.encodings?.md?.path || 
+                          currentItem.post.attachments[0]?.encodings?.source?.path;
+  
+  const hasRemixes = (remixTree?.children?.items?.length || 0) > 0;
+  const canGoLeft = currentRemixIndex > 0;
+  const canGoRight = currentRemixIndex < (remixTree?.children?.items?.length || 0);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -113,22 +126,6 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
       setCurrentRemixIndex(currentRemixIndex + 1);
     }
   };
-
-  // Get current item (original post or remix)
-  const getCurrentItem = (): SoraFeedItem => {
-    if (currentRemixIndex === 0 || !remixTree) {
-      return item; // Original post
-    }
-    return remixTree.children.items[currentRemixIndex - 1]; // Remix (index - 1 because 0 is original)
-  };
-
-  const currentItem = getCurrentItem();
-  const currentVideoUrl = currentItem.post.attachments[0]?.encodings?.md?.path || 
-                          currentItem.post.attachments[0]?.encodings?.source?.path;
-  
-  const hasRemixes = (remixTree?.children?.items?.length || 0) > 0;
-  const canGoLeft = currentRemixIndex > 0;
-  const canGoRight = currentRemixIndex < (remixTree?.children?.items?.length || 0);
 
   const formatCount = (count: number): string => {
     if (count >= 1000000) {
