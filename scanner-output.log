@@ -60,3 +60,165 @@
 🔍 [2025-10-20T13:50:22.682Z] Starting scan...
 
 🔍 [2025-10-20T13:50:32.687Z] Starting scan...
+📥 Fetched 0 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 0
+   - Total: 0
+   - Duration: 13577ms
+
+🔍 [2025-10-20T13:50:42.689Z] Starting scan...
+📥 Fetched 98 posts from API
+✅ Scan complete:
+   - New posts: 27
+   - Duplicates: 71
+   - Total: 98
+   - Duration: 13372ms
+📥 Fetched 188 posts from API
+✅ Scan complete:
+   - New posts: 138
+   - Duplicates: 50
+   - Total: 188
+   - Duration: 8862ms
+
+🔍 [2025-10-20T13:50:52.690Z] Starting scan...
+📥 Fetched 0 posts from API
+❌ Scan error: Invalid feed data structure
+
+🔍 [2025-10-20T13:51:02.693Z] Starting scan...
+📥 Fetched 187 posts from API
+✅ Scan complete:
+   - New posts: 87
+   - Duplicates: 100
+   - Total: 187
+   - Duration: 6673ms
+
+🔍 [2025-10-20T13:51:12.695Z] Starting scan...
+
+🔍 [2025-10-20T13:51:22.699Z] Starting scan...
+📥 Fetched 190 posts from API
+✅ Scan complete:
+   - New posts: 83
+   - Duplicates: 107
+   - Total: 190
+   - Duration: 10380ms
+📥 Fetched 195 posts from API
+✅ Scan complete:
+   - New posts: 74
+   - Duplicates: 121
+   - Total: 195
+   - Duration: 7990ms
+
+🔍 [2025-10-20T13:51:32.699Z] Starting scan...
+📥 Fetched 194 posts from API
+✅ Scan complete:
+   - New posts: 68
+   - Duplicates: 126
+   - Total: 194
+   - Duration: 7220ms
+
+🔍 [2025-10-20T13:51:42.699Z] Starting scan...
+📥 Fetched 187 posts from API
+✅ Scan complete:
+   - New posts: 70
+   - Duplicates: 117
+   - Total: 187
+   - Duration: 8401ms
+
+🔍 [2025-10-20T13:51:52.702Z] Starting scan...
+
+🔍 [2025-10-20T13:52:02.707Z] Starting scan...
+📥 Fetched 167 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 167
+   - Total: 167
+   - Duration: 11426ms
+📥 Fetched 184 posts from API
+✅ Scan complete:
+   - New posts: 79
+   - Duplicates: 105
+   - Total: 184
+   - Duration: 8895ms
+
+🔍 [2025-10-20T13:52:12.709Z] Starting scan...
+📥 Fetched 189 posts from API
+✅ Scan complete:
+   - New posts: 77
+   - Duplicates: 112
+   - Total: 189
+   - Duration: 7751ms
+
+🔍 [2025-10-20T13:52:22.709Z] Starting scan...
+📥 Fetched 188 posts from API
+✅ Scan complete:
+   - New posts: 66
+   - Duplicates: 122
+   - Total: 188
+   - Duration: 7879ms
+
+🔍 [2025-10-20T13:52:32.709Z] Starting scan...
+
+🔍 [2025-10-20T13:52:42.715Z] Starting scan...
+📥 Fetched 0 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 0
+   - Total: 0
+   - Duration: 13492ms
+
+🔍 [2025-10-20T13:52:52.717Z] Starting scan...
+📥 Fetched 0 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 0
+   - Total: 0
+   - Duration: 13360ms
+
+🔍 [2025-10-20T13:53:02.719Z] Starting scan...
+📥 Fetched 24 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 24
+   - Total: 24
+   - Duration: 13586ms
+📥 Fetched 186 posts from API
+✅ Scan complete:
+   - New posts: 91
+   - Duplicates: 95
+   - Total: 186
+   - Duration: 6210ms
+
+🔍 [2025-10-20T13:53:12.721Z] Starting scan...
+📥 Fetched 185 posts from API
+✅ Scan complete:
+   - New posts: 68
+   - Duplicates: 117
+   - Total: 185
+   - Duration: 6878ms
+
+🔍 [2025-10-20T13:53:22.723Z] Starting scan...
+
+🔍 [2025-10-20T13:53:32.727Z] Starting scan...
+📥 Fetched 0 posts from API
+✅ Scan complete:
+   - New posts: 0
+   - Duplicates: 0
+   - Total: 0
+   - Duration: 15125ms
+📥 Fetched 190 posts from API
+✅ Scan complete:
+   - New posts: 85
+   - Duplicates: 105
+   - Total: 190
+   - Duration: 7192ms
+
+🔍 [2025-10-20T13:53:42.728Z] Starting scan...
+📥 Fetched 190 posts from API
+✅ Scan complete:
+   - New posts: 70
+   - Duplicates: 120
+   - Total: 190
+   - Duration: 7161ms
+
+🛑 Shutting down scanner...
