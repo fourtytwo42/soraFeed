@@ -185,7 +185,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   };
 
   const handleVideoEnd = () => {
-    setIsPlaying(false);
     // Auto-scroll to next video when current video ends
     if (isActive) {
       setTimeout(() => {
