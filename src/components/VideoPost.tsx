@@ -343,7 +343,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
       <video
         ref={videoRef}
         src={currentVideoUrl}
-        className="w-full h-screen object-cover"
+        className="max-w-full h-screen object-contain"
         loop
         muted={isMuted}
         playsInline
