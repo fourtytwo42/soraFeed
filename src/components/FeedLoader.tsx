@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchFeed } from '@/lib/api';
 import VideoFeed from './VideoFeed';
-import RefreshButton from './RefreshButton';
 import { mockFeedData } from '@/lib/mockData';
 
 type FeedType = 'latest' | 'top';
@@ -164,7 +163,6 @@ export default function FeedLoader() {
         </button>
       </div>
       
-      <RefreshButton onRefresh={() => loadFeed(feedType)} />
       <VideoFeed 
         items={items} 
         onLoadMore={loadMoreFeed}

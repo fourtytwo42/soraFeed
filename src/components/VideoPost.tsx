@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, Copy, MoreHorizontal } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, RotateCcw, MoreHorizontal } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchRemixFeed } from '@/lib/api';
 
@@ -505,7 +505,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
         {hasRemixes && (
           <div className="flex flex-col items-center">
             <button className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all">
-              <Copy size={20} />
+              <RotateCcw size={20} />
             </button>
             <span className="text-white text-xs font-semibold bg-black/50 rounded-full px-2 py-1 mt-1">
               {remixFeed.length}
@@ -514,26 +514,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
         )}
       </motion.div>
 
-      {/* Top Controls - positioned over video */}
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ 
-          opacity: showControls ? 1 : 0,
-          y: showControls ? 0 : -20
-        }}
-        transition={{ duration: 0.2 }}
-        className="absolute top-6 right-6 z-10"
-      >
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            togglePlayPause();
-          }}
-          className="p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
-        >
-          {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-      </motion.div>
 
 
       {/* Remix Dot Indicators */}
