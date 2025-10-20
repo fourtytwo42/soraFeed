@@ -9,7 +9,7 @@ interface CachedData<T> {
 }
 
 class ServerCache {
-  private cache: Map<string, CachedData<any>> = new Map();
+  private cache: Map<string, CachedData<unknown>> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   /**

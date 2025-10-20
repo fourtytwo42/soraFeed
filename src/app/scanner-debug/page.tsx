@@ -45,8 +45,8 @@ export default function ScannerDebugPage() {
       const data = await response.json();
       setStats(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
       console.error('Failed to fetch stats:', err);
     } finally {
       setLoading(false);

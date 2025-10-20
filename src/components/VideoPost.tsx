@@ -861,7 +861,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                       // Show a sliding window of dots
                       const halfVisible = Math.floor((maxVisible - 2) / 2); // -2 for left/right indicators
                       let startIndex = Math.max(0, currentRemixIndex - halfVisible);
-                      let endIndex = Math.min(totalItems - 1, startIndex + maxVisible - 2);
+                      const endIndex = Math.min(totalItems - 1, startIndex + maxVisible - 2);
                       
                       // Adjust if we're near the end
                       if (endIndex - startIndex < maxVisible - 2) {

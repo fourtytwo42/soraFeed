@@ -56,11 +56,11 @@ export async function GET() {
         dailyStats: dailyStatsResult.rows
       }
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API error:', error);
     
     // If it's a PostgreSQL module error, return a helpful message
-    if (error.message?.includes('PostgreSQL module not available')) {
+    if (error instanceof Error && error.message?.includes('PostgreSQL module not available')) {
       return NextResponse.json({
         error: 'Database not configured',
         details: 'PostgreSQL dependencies not installed. Run: npm install pg @types/pg',

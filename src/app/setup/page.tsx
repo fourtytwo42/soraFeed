@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { CheckCircle, Copy, Terminal, Database, Download } from 'lucide-react';
 
 export default function SetupPage() {
@@ -70,7 +71,7 @@ export default function SetupPage() {
               </ul>
             </div>
             <div>
-              <h3 className="font-semibold text-white mb-2">📋 What you'll get</h3>
+              <h3 className="font-semibold text-white mb-2">📋 What you&apos;ll get</h3>
               <ul className="space-y-1 text-sm">
                 <li>• Automatic post indexing every 10 seconds</li>
                 <li>• Duplicate detection and prevention</li>
@@ -147,14 +148,14 @@ export default function SetupPage() {
             <div className="font-semibold">Debug Dashboard</div>
             <div className="text-sm text-purple-200">Monitor scanner status</div>
           </a>
-          <a
+          <Link
             href="/"
             className="bg-gray-800 hover:bg-gray-700 rounded-lg p-4 text-center transition-colors block"
           >
             <div className="text-2xl mb-2">🏠</div>
             <div className="font-semibold">Main App</div>
             <div className="text-sm text-gray-400">View Sora feed</div>
-          </a>
+          </Link>
           <a
             href="https://github.com/fourtytwo42/soraFeed"
             target="_blank"
@@ -178,7 +179,7 @@ export default function SetupPage() {
             </div>
             <div>
               <strong className="text-yellow-300">Permission denied?</strong>
-              <p className="text-gray-300">Set PostgreSQL password: <code className="bg-gray-800 px-2 py-1 rounded">sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'yourpassword';"</code></p>
+              <p className="text-gray-300">Set PostgreSQL password: <code className="bg-gray-800 px-2 py-1 rounded">sudo -u postgres psql -c &quot;ALTER USER postgres PASSWORD &apos;yourpassword&apos;;&quot;</code></p>
             </div>
             <div>
               <strong className="text-yellow-300">Still having issues?</strong>

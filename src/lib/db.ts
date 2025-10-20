@@ -1,5 +1,5 @@
-let Pool: any;
-let pool: any;
+let Pool: typeof import('pg').Pool;
+let pool: import('pg').Pool | undefined;
 
 // Dynamically import pg only when needed (server-side)
 async function getPool() {
@@ -31,7 +31,7 @@ async function getPool() {
   return pool;
 }
 
-export async function query(text: string, params?: any[]) {
+export async function query(text: string, params?: unknown[]) {
   const start = Date.now();
   try {
     const pool = await getPool();
