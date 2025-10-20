@@ -384,7 +384,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         <ChevronUp size={28} />
       </motion.button>
       
-      {/* Down Arrow - Fixed position above remix indicator area */}
+      {/* Down Arrow - Just above remix indicator */}
       <motion.button
         initial={{ opacity: 0, y: 20 }}
         animate={{ 
@@ -394,10 +394,10 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         transition={{ duration: 0.3 }}
         onClick={goToNext}
         disabled={currentIndex === items.length - 1}
-        className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+        className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-50 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
         style={{ pointerEvents: showControls && currentIndex < items.length - 1 ? 'auto' : 'none' }}
       >
-        <ChevronDown size={28} />
+        <ChevronDown size={24} />
       </motion.button>
 
       {/* Loading More Indicator */}
