@@ -20,18 +20,14 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
   const [scrollDirection, setScrollDirection] = useState<'up' | 'down'>('down');
-  const [animationKey, setAnimationKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number>(0);
   const touchEndY = useRef<number>(0);
-  const pendingDirection = useRef<'up' | 'down'>('down');
 
   const goToNext = () => {
     if (currentIndex < items.length - 1) {
-      pendingDirection.current = 'down';
       setScrollDirection('down');
       setCurrentIndex(currentIndex + 1);
-      setAnimationKey(prev => prev + 1);
       
       // Load more when approaching the end
       if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
@@ -42,10 +38,8 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
 
   const goToPrevious = () => {
     if (currentIndex > 0) {
-      pendingDirection.current = 'up';
       setScrollDirection('up');
       setCurrentIndex(currentIndex - 1);
-      setAnimationKey(prev => prev + 1);
     }
   };
 
@@ -133,10 +127,10 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     >
         <AnimatePresence mode="wait">
           <motion.div
-            key={`${currentIndex}-${animationKey}`}
-            initial={{ y: pendingDirection.current === 'down' ? '100%' : '-100%' }}
+            key={currentIndex}
+            initial={{ y: scrollDirection === 'down' ? '100%' : '-100%' }}
             animate={{ y: 0 }}
-            exit={{ y: pendingDirection.current === 'down' ? '-100%' : '100%' }}
+            exit={{ y: scrollDirection === 'down' ? '100%' : '-100%' }}
             transition={{ 
               type: 'tween',
               duration: 0.3,
