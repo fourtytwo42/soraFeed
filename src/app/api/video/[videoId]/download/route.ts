@@ -17,10 +17,13 @@ export async function GET(
       );
     }
 
-    console.log('📥 Downloading video from Sora API:', videoId);
+    // Convert video ID from s_ format to video_ format for Sora API
+    const apiVideoId = videoId.startsWith('s_') ? `video_${videoId.substring(2)}` : videoId;
+    
+    console.log('📥 Downloading video from Sora API:', videoId, '->', apiVideoId);
 
     // Fetch video from Sora API
-    const response = await fetch(`${SORA_API_BASE}/${videoId}/content`, {
+    const response = await fetch(`${SORA_API_BASE}/${apiVideoId}/content`, {
       headers: {
         'Authorization': `Bearer ${process.env.SORA_API_KEY}`,
       },
