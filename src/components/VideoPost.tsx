@@ -16,6 +16,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isLiked, setIsLiked] = useState(false);
+  const [showControls, setShowControls] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const videoUrl = item.post.attachments[0]?.encodings?.md?.path || 
@@ -85,7 +86,12 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   };
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center bg-black">
+    <div 
+      className="relative w-full h-full flex items-center justify-center bg-black group cursor-pointer"
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
+      onClick={() => setShowControls(!showControls)}
+    >
       {/* Video */}
       <video
         ref={videoRef}
@@ -102,7 +108,10 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
       {/* Play/Pause Overlay */}
       <motion.div
         initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: isPlaying ? 0 : 1, scale: isPlaying ? 0.8 : 1 }}
+        animate={{ 
+          opacity: (!isPlaying && showControls) ? 1 : 0, 
+          scale: (!isPlaying && showControls) ? 1 : 0.8 
+        }}
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
       >
         <div className="p-4 rounded-full bg-black/50 backdrop-blur-sm">
@@ -112,12 +121,23 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
 
       {/* Click to play/pause */}
       <div 
-        className="absolute inset-0 cursor-pointer"
-        onClick={togglePlayPause}
+        className="absolute inset-0"
+        onClick={(e) => {
+          e.stopPropagation();
+          togglePlayPause();
+        }}
       />
 
       {/* Controls */}
-      <div className="absolute bottom-4 left-4 right-20 z-10">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ 
+          opacity: showControls ? 1 : 0,
+          y: showControls ? 0 : 20
+        }}
+        transition={{ duration: 0.2 }}
+        className="absolute bottom-4 left-4 right-20 z-10"
+      >
         {/* User Info */}
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
@@ -147,12 +167,23 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             {item.post.text}
           </p>
         )}
-      </div>
+      </motion.div>
 
       {/* Right Side Actions */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-4 z-10">
+      <motion.div 
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ 
+          opacity: showControls ? 1 : 0,
+          x: showControls ? 0 : 20
+        }}
+        transition={{ duration: 0.2 }}
+        className="absolute bottom-4 right-4 flex flex-col gap-4 z-10"
+      >
         <button
-          onClick={() => setIsLiked(!isLiked)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsLiked(!isLiked);
+          }}
           className={`p-3 rounded-full transition-all ${
             isLiked ? 'bg-red-500 text-white' : 'bg-black/50 text-white hover:bg-black/70'
           }`}
@@ -160,27 +191,44 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
         </button>
 
-        <button className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all">
+        <button 
+          onClick={(e) => e.stopPropagation()}
+          className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
+        >
           <Share size={20} />
         </button>
 
         <button
-          onClick={toggleMute}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
+          }}
           className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
         >
           {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
         </button>
-      </div>
+      </motion.div>
 
       {/* Top Controls */}
-      <div className="absolute top-4 right-4 z-10">
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ 
+          opacity: showControls ? 1 : 0,
+          y: showControls ? 0 : -20
+        }}
+        transition={{ duration: 0.2 }}
+        className="absolute top-4 right-4 z-10"
+      >
         <button
-          onClick={togglePlayPause}
+          onClick={(e) => {
+            e.stopPropagation();
+            togglePlayPause();
+          }}
           className="p-2 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all"
         >
           {isPlaying ? <Pause size={16} /> : <Play size={16} />}
         </button>
-      </div>
+      </motion.div>
     </div>
   );
 }
