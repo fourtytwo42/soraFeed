@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchFeed } from '@/lib/api';
 import { remixCache } from '@/lib/remixCache';
 import VideoFeed from './VideoFeed';
 import RemixCacheDebug from './RemixCacheDebug';
 import { mockFeedData } from '@/lib/mockData';
+import { ChevronDown } from 'lucide-react';
 
 type FeedType = 'latest' | 'top' | 'favorites' | 'search';
 
@@ -20,6 +21,10 @@ export default function FeedLoader() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [showControls, setShowControls] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Favorites management
   const getFavorites = (): SoraFeedItem[] => {
@@ -204,7 +209,14 @@ export default function FeedLoader() {
 
   const handleFeedTypeChange = async (type: FeedType) => {
     setFeedType(type);
-    await loadFeed(type);
+    setIsDropdownOpen(false);
+    
+    if (type === 'search') {
+      setSearchExpanded(true);
+    } else {
+      setSearchExpanded(false);
+      await loadFeed(type);
+    }
   };
 
   const handleSearch = async () => {
@@ -239,8 +251,23 @@ export default function FeedLoader() {
     }
   };
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   useEffect(() => {
     loadFeed();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (loading) {
@@ -284,70 +311,104 @@ export default function FeedLoader() {
       <RemixCacheDebug />
       
       {/* Feed Type Selector */}
-      <div className="fixed top-6 left-6 z-50">
-        <div className="flex flex-col gap-3 items-start">
-          <div className="flex bg-black/50 rounded-full p-1 backdrop-blur-sm w-fit">
-            <button
-              onClick={() => handleFeedTypeChange('latest')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
-                feedType === 'latest'
-                  ? 'bg-white text-black'
-                  : 'text-white hover:bg-white/20'
-              }`}
-            >
-              Latest
-            </button>
-            <button
-              onClick={() => handleFeedTypeChange('top')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
-                feedType === 'top'
-                  ? 'bg-white text-black'
-                  : 'text-white hover:bg-white/20'
-              }`}
-            >
-              Top
-            </button>
-            <button
-              onClick={() => handleFeedTypeChange('favorites')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
-                feedType === 'favorites'
-                  ? 'bg-white text-black'
-                  : 'text-white hover:bg-white/20'
-              }`}
-            >
-              Favorites
-            </button>
-            <button
-              onClick={() => handleFeedTypeChange('search')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap ${
-                feedType === 'search'
-                  ? 'bg-white text-black'
-                  : 'text-white hover:bg-white/20'
-              }`}
-            >
-              Search
-            </button>
-          </div>
-
-          {/* Search Input - Only show when search is selected */}
-          {feedType === 'search' && (
-            <div className="flex gap-2 bg-black/50 rounded-full p-1 backdrop-blur-sm w-fit">
-              <input
-                type="text"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyPress={handleSearchKeyPress}
-                placeholder="Search videos..."
-                className="px-4 py-2 bg-white/10 text-white placeholder-white/50 rounded-full text-sm focus:outline-none focus:bg-white/20 min-w-[300px]"
-              />
+      <div 
+        className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 transition-opacity duration-300 ${
+          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+        style={{ 
+          maxWidth: searchExpanded ? 'min(600px, calc(100vw - 3rem))' : 'fit-content',
+          width: searchExpanded ? 'min(600px, calc(100vw - 3rem))' : 'fit-content'
+        }}
+      >
+        <div className="flex flex-col gap-3 items-center px-2">
+          {/* Dropdown Container */}
+          <div ref={dropdownRef} className="relative w-full">
+            <div className={`flex items-center bg-black/50 rounded-full p-1 backdrop-blur-sm transition-all ${
+              searchExpanded ? 'flex-nowrap' : 'flex-nowrap'
+            }`}>
+              {/* Selected Button */}
               <button
-                onClick={handleSearch}
-                className="px-6 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors whitespace-nowrap"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 flex-shrink-0 ${
+                  feedType === 'latest'
+                    ? 'bg-white text-black'
+                    : feedType === 'top'
+                    ? 'bg-white text-black'
+                    : feedType === 'favorites'
+                    ? 'bg-white text-black'
+                    : feedType === 'search'
+                    ? 'bg-white text-black'
+                    : 'text-white hover:bg-white/20'
+                }`}
               >
-                Search
+                <span>
+                  {feedType === 'latest' ? 'Latest' : 
+                   feedType === 'top' ? 'Top' : 
+                   feedType === 'favorites' ? 'Favorites' : 
+                   feedType === 'search' ? 'Search' : 'Latest'}
+                </span>
+                <ChevronDown size={16} className={`transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
+
+              {/* Search Input - Expands to the right when search is selected */}
+              {searchExpanded && (
+                <div className="flex items-center gap-2 ml-2 flex-1 min-w-0">
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyPress={handleSearchKeyPress}
+                    placeholder="Search..."
+                    className="px-4 py-2 bg-white/10 text-white placeholder-white/50 rounded-full text-sm focus:outline-none focus:bg-white/20 flex-1 min-w-0 w-0"
+                  />
+                  <button
+                    onClick={handleSearch}
+                    className="px-3 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors whitespace-nowrap flex-shrink-0"
+                  >
+                    Search
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Dropdown Menu */}
+            {isDropdownOpen && showControls && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-black/50 backdrop-blur-sm rounded-2xl p-2 min-w-full shadow-lg">
+                {feedType !== 'latest' && (
+                  <button
+                    onClick={() => handleFeedTypeChange('latest')}
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                  >
+                    Latest
+                  </button>
+                )}
+                {feedType !== 'top' && (
+                  <button
+                    onClick={() => handleFeedTypeChange('top')}
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                  >
+                    Top
+                  </button>
+                )}
+                {feedType !== 'favorites' && (
+                  <button
+                    onClick={() => handleFeedTypeChange('favorites')}
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                  >
+                    Favorites
+                  </button>
+                )}
+                {feedType !== 'search' && (
+                  <button
+                    onClick={() => handleFeedTypeChange('search')}
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                  >
+                    Search
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
@@ -359,6 +420,7 @@ export default function FeedLoader() {
         onAddToFavorites={addToFavorites}
         onRemoveFromFavorites={removeFromFavorites}
         isInFavorites={isInFavorites}
+        onControlsChange={setShowControls}
       />
     </>
   );

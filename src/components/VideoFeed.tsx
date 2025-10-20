@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { flushSync } from 'react-dom';
-import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
+import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
@@ -17,17 +16,31 @@ interface VideoFeedProps {
   onAddToFavorites?: (item: SoraFeedItem) => void;
   onRemoveFromFavorites?: (postId: string) => void;
   isInFavorites?: (postId: string) => boolean;
+  onControlsChange?: (showing: boolean) => void;
 }
 
-export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onAddToFavorites, onRemoveFromFavorites, isInFavorites }: VideoFeedProps) {
+export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onControlsChange }: VideoFeedProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
-  const [currentVideoHasRemixes, setCurrentVideoHasRemixes] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [preloadedRemixFeeds, setPreloadedRemixFeeds] = useState<Map<string, SoraFeedItem[]>>(new Map());
+  const [isMobile, setIsMobile] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
   
+  // Detect if device is mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                            (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+      setIsMobile(isMobileDevice);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // Reset currentIndex when items array changes (e.g., switching to favorites)
   useEffect(() => {
     if (items.length === 0) {
@@ -75,7 +88,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
 
   // Drag handler
   const bind = useDrag(
-    ({ down, movement: [, my], velocity: [, vy], direction: [, dy], cancel }) => {
+    ({ down, movement: [, my], velocity: [, vy] }) => {
       // Prevent dragging beyond bounds
       if (currentIndex === 0 && my > 0) {
         y.set(my * 0.2); // Rubber band effect at top
@@ -187,17 +200,27 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   // Reset y position when index changes
   useEffect(() => {
     y.set(0);
+    // Reset controls state when switching to a new video
+    setShowControls(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
 
   // Handle remix status change from current video
-  const handleRemixStatusChange = (hasRemixes: boolean) => {
-    setCurrentVideoHasRemixes(hasRemixes);
+  const handleRemixStatusChange = () => {
+    // Status tracking removed as it was unused
   };
 
   // Handle keyboard navigation for remixes
-  const handleKeyboardNavigation = (direction: 'left' | 'right') => {
+  const handleKeyboardNavigation = () => {
     // This is handled directly in VideoPost component
   };
+
+  // Notify parent when controls visibility changes
+  useEffect(() => {
+    if (onControlsChange) {
+      onControlsChange(showControls);
+    }
+  }, [showControls, onControlsChange]);
 
   // Preload remix feeds for upcoming videos
   const preloadRemixFeeds = async () => {
@@ -241,6 +264,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     }, 500);
     
     return () => clearTimeout(timeoutId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex]);
 
   // Clean up old preloaded feeds to prevent memory leaks
@@ -273,6 +297,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
       container.removeEventListener('wheel', handleWheel);
       window.removeEventListener('keydown', handleKeyDown);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex, isScrolling]);
 
   // Safety check: don't render if no items or currentIndex is out of bounds
@@ -287,7 +312,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-screen overflow-hidden bg-black"
+      className="relative w-full h-dvh overflow-hidden bg-black"
       tabIndex={0}
     >
       {/* Draggable container with all videos */}
@@ -378,38 +403,42 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         )}
       </div>
 
-      {/* Navigation Arrows - Top and Bottom */}
-      {/* Up Arrow - Top of Screen */}
-      <motion.button
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ 
-          opacity: showControls && currentIndex > 0 ? 1 : 0,
-          y: showControls && currentIndex > 0 ? 0 : -20
-        }}
-        transition={{ duration: 0.3 }}
-        onClick={goToPrevious}
-        disabled={currentIndex === 0}
-        className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
-        style={{ pointerEvents: showControls && currentIndex > 0 ? 'auto' : 'none' }}
-      >
-        <ChevronUp size={28} />
-      </motion.button>
-      
-      {/* Down Arrow - Just above remix indicator */}
-      <motion.button
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ 
-          opacity: showControls && currentIndex < items.length - 1 ? 1 : 0,
-          y: showControls && currentIndex < items.length - 1 ? 0 : 20
-        }}
-        transition={{ duration: 0.3 }}
-        onClick={goToNext}
-        disabled={currentIndex === items.length - 1}
-        className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-50 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
-        style={{ pointerEvents: showControls && currentIndex < items.length - 1 ? 'auto' : 'none' }}
-      >
-        <ChevronDown size={24} />
-      </motion.button>
+      {/* Navigation Arrows - Top and Bottom (Desktop only) */}
+      {!isMobile && (
+        <>
+          {/* Up Arrow - Under Feed Type Dropdown */}
+          <motion.button
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ 
+              opacity: showControls && currentIndex > 0 ? 1 : 0,
+              y: showControls && currentIndex > 0 ? 0 : -20
+            }}
+            transition={{ duration: 0.3 }}
+            onClick={goToPrevious}
+            disabled={currentIndex === 0}
+            className="absolute top-24 left-1/2 transform -translate-x-1/2 z-40 p-4 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+            style={{ pointerEvents: showControls && currentIndex > 0 ? 'auto' : 'none' }}
+          >
+            <ChevronUp size={28} />
+          </motion.button>
+          
+          {/* Down Arrow - Just above remix indicator */}
+          <motion.button
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ 
+              opacity: showControls && currentIndex < items.length - 1 ? 1 : 0,
+              y: showControls && currentIndex < items.length - 1 ? 0 : 20
+            }}
+            transition={{ duration: 0.3 }}
+            onClick={goToNext}
+            disabled={currentIndex === items.length - 1}
+            className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-50 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
+            style={{ pointerEvents: showControls && currentIndex < items.length - 1 ? 'auto' : 'none' }}
+          >
+            <ChevronDown size={24} />
+          </motion.button>
+        </>
+      )}
 
       {/* Loading More Indicator */}
       {loadingMore && (

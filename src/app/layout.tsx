@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sora Feed - AI Video Feed Viewer",
+  title: "Sora67",
   description: "A mobile and desktop-friendly video feed viewer for Sora AI-generated content",
 };
 

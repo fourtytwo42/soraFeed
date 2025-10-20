@@ -145,5 +145,6 @@ export async function initDatabase() {
   }
 }
 
-export default { getPool };
+const db = { getPool };
+export default db;
 

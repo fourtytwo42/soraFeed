@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
-import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal, Download } from 'lucide-react';
+import { Play, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
 
@@ -21,7 +21,7 @@ interface VideoPostProps {
   onControlsChange?: (showing: boolean) => void;
 }
 
-export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed, onControlsChange }: VideoPostProps) {
+export default function VideoPost({ item, isActive, onNext, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed, onControlsChange }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
@@ -32,17 +32,21 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
   const [loadingRemixes, setLoadingRemixes] = useState(false);
   const [isWheelScrolling, setIsWheelScrolling] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const x = useMotionValue(0);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastInteractionRef = useRef<number>(Date.now());
+  const isFirstVideoRef = useRef(true);
+  const hasUserInteractedRef = useRef(false);
 
   // Get current item (original post or remix)
-  const getCurrentItem = (): SoraFeedItem => {
+  const getCurrentItem = useCallback((): SoraFeedItem => {
     if (currentRemixIndex === 0 || !remixFeed.length) {
       return item; // Original post
     }
     return remixFeed[currentRemixIndex - 1]; // Video remix (index - 1 because 0 is original)
-  };
+  }, [currentRemixIndex, remixFeed, item]);
 
   const currentItem = getCurrentItem();
   const currentVideoUrl = currentItem.post.attachments[0]?.encodings?.md?.path || 
@@ -58,11 +62,12 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     if (isInFavorites) {
       setIsLiked(isInFavorites(getCurrentItem().post.id));
     }
-  }, [item, currentRemixIndex, remixFeed, isInFavorites]);
+  }, [item, currentRemixIndex, remixFeed, isInFavorites, getCurrentItem]);
 
   // Reset x position when remix index changes
   useEffect(() => {
     x.set(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRemixIndex]);
 
   // Reset remix state when video item changes
@@ -71,13 +76,35 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     setCurrentRemixIndex(0);
     setLoadingRemixes(false);
     x.set(0);
+    hasUserInteractedRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.post.id]);
+
+  // Detect if device is mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+                            (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+      setIsMobile(isMobileDevice);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     if (isActive) {
+      // Show controls only on first video load
+      if (isFirstVideoRef.current) {
+        setShowControls(true);
+        hasUserInteractedRef.current = true;
+        isFirstVideoRef.current = false;
+      }
+      
       video.play().then(() => {
         setIsPlaying(true);
       }).catch(() => {
@@ -99,6 +126,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
         loadRemixFeed();
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, item.post.id, preloadedRemixFeed]);
 
   // Notify parent when remix status changes
@@ -131,6 +159,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, hasRemixes, canGoLeft, canGoRight, onKeyboardNavigation]);
 
   // Handle video changes when switching remixes
@@ -143,6 +172,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
         setIsPlaying(false);
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRemixIndex, currentVideoUrl]);
 
   const loadRemixFeed = async () => {
@@ -157,22 +187,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       setRemixFeed([]);
     } finally {
       setLoadingRemixes(false);
-    }
-  };
-
-  const togglePlayPause = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (isPlaying) {
-      video.pause();
-      setIsPlaying(false);
-    } else {
-      video.play().then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
-        setIsPlaying(false);
-      });
     }
   };
 
@@ -271,9 +285,17 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
 
   // Use-gesture drag handler for horizontal remix navigation only
   const bind = useDrag(
-    ({ down, movement: [mx, my], velocity: [vx], cancel }) => {
+    ({ down, movement: [mx, my], velocity: [vx], cancel, tap }) => {
+      // Track tap interactions (but not drags)
+      if (tap) {
+        handleInteraction();
+      }
+
       // Only handle horizontal drags when there are remixes
       if (!hasRemixes) return;
+
+      // If it was a tap, don't interfere - let click handler work
+      if (tap) return;
 
       // If the drag is more vertical than horizontal, cancel and let parent handle
       if (Math.abs(my) > Math.abs(mx) && Math.abs(my) > 10) {
@@ -400,28 +422,52 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       clearTimeout(controlsTimeoutRef.current);
     }
     
-    // Only auto-hide if not hovering and video is playing
-    if (!isHovering && isPlaying) {
+    // Only auto-hide if video is playing
+    // Keep controls visible when video is paused
+    if (isPlaying) {
       controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
       }, 3000);
     }
-  }, [isHovering, isPlaying]);
+  }, [isPlaying]);
 
-  // Show controls and set up auto-hide
-  const handleShowControls = useCallback(() => {
+  // Keep controls visible when video is paused (only if user has interacted), and auto-hide when playing
+  useEffect(() => {
+    if (!isPlaying) {
+      // Only show controls when paused if user has interacted with this video
+      if (hasUserInteractedRef.current) {
+        setShowControls(true);
+      }
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    } else {
+      // When video starts playing, start the auto-hide timer
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  }, [isPlaying]);
+
+  // Handle any interaction (mouse, touch, etc.)
+  const handleInteraction = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+    hasUserInteractedRef.current = true;
     setShowControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
     hideControlsAfterDelay();
   }, [hideControlsAfterDelay]);
 
   // Handle mouse enter
   const handleMouseEnter = useCallback(() => {
     setIsHovering(true);
-    setShowControls(true);
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-  }, []);
+    handleInteraction();
+  }, [handleInteraction]);
 
   // Handle mouse leave
   const handleMouseLeave = useCallback(() => {
@@ -436,6 +482,8 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     const video = videoRef.current;
     if (!video) return;
 
+    const wasPlaying = isPlaying;
+    
     if (isPlaying) {
       video.pause();
       setIsPlaying(false);
@@ -447,23 +495,18 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       });
     }
     
-    setShowControls(true);
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-  }, [isPlaying]);
+    handleInteraction();
+  }, [isPlaying, handleInteraction]);
 
   // Effect to handle control visibility based on play state
   useEffect(() => {
-    if (showControls) {
-      hideControlsAfterDelay();
-    }
+    // Clean up timeout when component unmounts
     return () => {
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
       }
     };
-  }, [isPlaying, showControls, hideControlsAfterDelay]);
+  }, []);
 
   // Download video function
   const downloadVideo = useCallback(async () => {
@@ -533,7 +576,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
 
 
     return (
-      <div className="relative w-full h-full overflow-hidden bg-black">
+      <div className="relative w-full h-dvh overflow-hidden bg-black">
         {/* Draggable container with all remixes */}
         <motion.div
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -548,13 +591,13 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
           {/* Previous Remix */}
           {hasRemixes && canGoLeft && (
             <div 
-              className="absolute inset-0 w-full h-screen flex items-center justify-center"
+              className="absolute inset-0 w-full h-full flex items-center justify-center"
               style={{ transform: 'translateX(-100%)' }}
             >
               <video
                 src={remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.md?.path || 
                      remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.source?.path}
-                className="h-screen w-auto max-w-full object-contain"
+                className="h-full w-auto max-w-full object-contain"
                 loop
                 muted
                 playsInline
@@ -565,12 +608,12 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
           )}
           
           {/* Current Video/Remix with Controls */}
-          <div className="absolute inset-0 w-full h-screen flex items-center justify-center">
-            <div className="relative h-screen flex items-center justify-center">
+          <div className="absolute inset-0 w-full h-full flex items-center justify-center">
+            <div className="relative h-full w-auto max-w-full flex items-center justify-center">
               <video
                 ref={videoRef}
                 src={currentVideoUrl}
-                className="h-screen w-auto max-w-full object-contain block"
+                className="h-full w-auto max-w-full object-contain block"
                 muted={isMuted}
                 playsInline
                 onEnded={handleVideoEnd}
@@ -594,8 +637,8 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                 </div>
               </motion.div>
 
-              {/* Horizontal Navigation - Left Arrow */}
-              {hasRemixes && (
+              {/* Horizontal Navigation - Left Arrow (Desktop only) */}
+              {!isMobile && hasRemixes && (
                 <motion.button
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ 
@@ -605,6 +648,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                   transition={{ duration: 0.2 }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleInteraction();
                     goToPreviousRemix();
                   }}
                   disabled={!canGoLeft}
@@ -615,8 +659,8 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                 </motion.button>
               )}
 
-              {/* Horizontal Navigation - Right Arrow */}
-              {hasRemixes && (
+              {/* Horizontal Navigation - Right Arrow (Desktop only) */}
+              {!isMobile && hasRemixes && (
                 <motion.button
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ 
@@ -626,6 +670,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                   transition={{ duration: 0.2 }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleInteraction();
                     goToNextRemix();
                   }}
                   disabled={!canGoRight}
@@ -644,14 +689,21 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                   y: showControls ? 0 : 20
                 }}
                 transition={{ duration: 0.3 }}
-                className="absolute bottom-28 left-4 z-40 max-w-sm"
+                className={`absolute left-4 z-40 ${isMobile ? 'bottom-16' : 'bottom-4'}`}
                 style={{ pointerEvents: showControls ? 'auto' : 'none' }}
               >
-                <div className="bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm">
+                <motion.div 
+                  layout
+                  className={`bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm ${
+                    isDescriptionExpanded ? 'max-w-md' : 'max-w-xs'
+                  }`}
+                  transition={{ duration: 0.3 }}
+                >
                   {/* User Info */}
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {currentItem.profile.profile_picture_url && !currentItem.profile.is_default_profile_picture ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img 
                           src={currentItem.profile.profile_picture_url} 
                           alt={currentItem.profile.display_name || currentItem.profile.username}
@@ -681,11 +733,19 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
 
                   {/* Caption */}
                   {currentItem.post.text && (
-                    <div className="text-white text-xs">
+                    <div 
+                      className={`text-white text-xs ${currentItem.post.text && currentItem.post.text.length > 100 ? 'cursor-pointer' : ''}`}
+                      onClick={(e) => {
+                        if (currentItem.post.text && currentItem.post.text.length > 100) {
+                          e.stopPropagation();
+                          setIsDescriptionExpanded(!isDescriptionExpanded);
+                        }
+                      }}
+                    >
                       <p className={isDescriptionExpanded ? '' : 'line-clamp-2'}>
                         {currentItem.post.text}
                       </p>
-                      {currentItem.post.text.length > 100 && (
+                      {currentItem.post.text && currentItem.post.text.length > 100 && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -698,7 +758,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                       )}
                     </div>
                   )}
-                </div>
+                </motion.div>
               </motion.div>
 
               {/* Action Buttons Overlay - Right Side */}
@@ -718,6 +778,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      handleInteraction();
                       shareToFacebook();
                     }}
                     className="p-2.5 rounded-full bg-[#1877F2] hover:bg-[#166FE5] transition-all"
@@ -732,6 +793,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      handleInteraction();
                       shareToTwitter();
                     }}
                     className="p-2.5 rounded-full bg-[#1DA1F2] hover:bg-[#1A91DA] transition-all"
@@ -747,6 +809,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleInteraction();
                     const currentItem = getCurrentItem();
                     if (isLiked) {
                       if (onRemoveFromFavorites) {
@@ -771,6 +834,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleInteraction();
                     downloadVideo();
                   }}
                   className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
@@ -783,6 +847,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    handleInteraction();
                     toggleMute();
                   }}
                   className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
@@ -831,6 +896,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
+                                handleInteraction();
                                 goToRemixIndex(0);
                               }}
                               className={`w-1.5 h-1.5 rounded-full transition-all ${
@@ -846,6 +912,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                                 key={index}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  handleInteraction();
                                   goToRemixIndex(index + 1);
                                 }}
                                 className={`w-1.5 h-1.5 rounded-full transition-all ${
@@ -882,13 +949,13 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                           {/* Visible dots */}
                           {Array.from({ length: endIndex - startIndex + 1 }, (_, i) => {
                             const dotIndex = startIndex + i;
-                            const isOriginal = dotIndex === 0;
                             
                             return (
                               <button
                                 key={dotIndex}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  handleInteraction();
                                   goToRemixIndex(dotIndex);
                                 }}
                                 className={`w-1.5 h-1.5 rounded-full transition-all ${
@@ -916,7 +983,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
           {/* Next Remix */}
           {hasRemixes && canGoRight && (
             <div 
-              className="absolute inset-0 w-full h-screen flex items-center justify-center"
+              className="absolute inset-0 w-full h-full flex items-center justify-center"
               style={{ transform: 'translateX(100%)' }}
             >
               <video
@@ -925,7 +992,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                     remixFeed[0]?.post.attachments[0]?.encodings?.source?.path
                   : remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.md?.path || 
                     remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.source?.path}
-                className="h-screen w-auto max-w-full object-contain"
+                className="h-full w-auto max-w-full object-contain"
                 loop
                 muted
                 playsInline

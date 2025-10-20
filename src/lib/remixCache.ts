@@ -1,4 +1,4 @@
-import { SoraFeedItem, SoraFeedResponse } from '@/types/sora';
+import { SoraFeedItem } from '@/types/sora';
 import { fetchRemixFeed } from './api';
 
 interface CachedRemixFeed {
