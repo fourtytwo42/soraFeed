@@ -12,15 +12,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     console.log('🔍 Fetching Sora remix feed for post:', postId, 'with params:', { limit, cursor: cursor ? 'present' : 'none' });
 
+    // Check for minimal required environment variables
     const requiredEnvVars = [
-      'AUTH_BEARER_TOKEN',
-      'COOKIE_SESSION',
-      'CF_CLEARANCE',
-      'USER_AGENT',
-      'CF_BM',
-      'OAI_SC',
-      'OAI_DID',
-      'ACCEPT_LANGUAGE'
+      'AUTH_BEARER_TOKEN'
     ];
 
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -31,14 +25,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         { status: 500 }
       );
     }
-
-    const cookieHeader = [
-      `__Secure-next-auth.session-token=${process.env.COOKIE_SESSION}`,
-      `cf_clearance=${process.env.CF_CLEARANCE}`,
-      `__cf_bm=${process.env.CF_BM}`,
-      `oai-sc=${process.env.OAI_SC}`,
-      `oai-did=${process.env.OAI_DID}`,
-    ].filter(Boolean).join('; ');
 
     // Build URL with optional cursor parameter
     const urlParams = new URLSearchParams({
@@ -52,17 +38,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const url = `${SORA_BASE_URL}/post/${postId}/remix_feed?${urlParams.toString()}`;
 
     console.log('📡 Making request to:', url);
-    console.log('🍪 Cookie string length:', cookieHeader.length);
     console.log('🔑 Bearer token present:', !!process.env.AUTH_BEARER_TOKEN);
 
+    // Minimal headers - only Bearer token required for public remix feeds
     const soraResponse = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
         'Accept': '*/*',
         'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9',
-        'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0',
+        'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
         'Referer': `https://sora.chatgpt.com/p/${postId}`,
-        'Cookie': cookieHeader,
       },
       cache: 'no-store',
     });

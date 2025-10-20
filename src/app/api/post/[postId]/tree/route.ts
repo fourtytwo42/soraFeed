@@ -14,12 +14,9 @@ export async function GET(
 
     console.log('🌳 Fetching remix tree for post:', postId);
 
-    // Check if we have required environment variables
+    // Check for minimal required environment variables
     const requiredEnvVars = [
-      'AUTH_BEARER_TOKEN',
-      'COOKIE_SESSION', 
-      'CF_CLEARANCE',
-      'USER_AGENT'
+      'AUTH_BEARER_TOKEN'
     ];
 
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -31,31 +28,20 @@ export async function GET(
       );
     }
 
-    // Build cookie string
-    const cookieParts = [
-      `__Secure-next-auth.session-token=${process.env.COOKIE_SESSION}`,
-      `cf_clearance=${process.env.CF_CLEARANCE}`,
-      `__cf_bm=${process.env.CF_BM}`,
-      `oai-sc=${process.env.OAI_SC}`,
-      `oai-did=${process.env.OAI_DID}`,
-    ].filter(Boolean);
-    
-    const cookieString = cookieParts.join('; ');
-    console.log('🍪 Cookie string length:', cookieString.length);
     console.log('🔑 Bearer token present:', !!process.env.AUTH_BEARER_TOKEN);
 
     const url = `${SORA_BASE_URL}/post/${postId}/tree?limit=${limit}&max_depth=${maxDepth}`;
     console.log('📡 Making request to:', url);
 
+    // Minimal headers - only Bearer token required for public remix trees
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
         'Accept': '*/*',
         'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9',
-        'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://sora.chatgpt.com/explore',
-        'Cookie': cookieString,
+        'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        'Referer': `https://sora.chatgpt.com/p/${postId}`,
       },
     });
 

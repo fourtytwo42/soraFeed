@@ -12,12 +12,9 @@ export async function GET(request: NextRequest) {
 
     console.log('🔍 Fetching Sora feed with params:', { limit, cut, cursor: cursor ? 'present' : 'none' });
 
-    // Check if we have required environment variables
+    // Check for minimal required environment variables
     const requiredEnvVars = [
-      'AUTH_BEARER_TOKEN',
-      'COOKIE_SESSION', 
-      'CF_CLEARANCE',
-      'USER_AGENT'
+      'AUTH_BEARER_TOKEN'
     ];
 
     const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -29,27 +26,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Build cookie string
-    const cookies = [
-      `__Secure-next-auth.session-token=${process.env.COOKIE_SESSION}`,
-      process.env.CF_CLEARANCE ? `cf_clearance=${process.env.CF_CLEARANCE}` : null,
-      process.env.CF_BM ? `__cf_bm=${process.env.CF_BM}` : null,
-      process.env.OAI_SC ? `oai-sc=${process.env.OAI_SC}` : null,
-      process.env.OAI_DID ? `oai-did=${process.env.OAI_DID}` : null,
-    ].filter(Boolean).join('; ');
-
-    console.log('🍪 Cookie string length:', cookies.length);
     console.log('🔑 Bearer token present:', !!process.env.AUTH_BEARER_TOKEN);
 
+    // Minimal headers - only Bearer token required for public feeds
     const headers = {
       'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
       'Accept': '*/*',
       'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9',
-      'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': 'https://sora.chatgpt.com/explore',
-      'Cookie': cookies,
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache'
+      'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+      'Referer': 'https://sora.chatgpt.com/'
     };
 
     // Build URL with optional cursor parameter
