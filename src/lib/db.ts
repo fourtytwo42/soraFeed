@@ -5,6 +5,7 @@ let pool: any;
 async function getPool() {
   if (!pool && typeof window === 'undefined') {
     try {
+      // Try to import pg module
       const pg = await import('pg');
       Pool = pg.Pool;
       pool = new Pool({
@@ -19,7 +20,12 @@ async function getPool() {
       });
     } catch (error) {
       console.error('Failed to load pg module:', error);
-      throw new Error('PostgreSQL module not available. Run: npm install pg @types/pg');
+      // Return a mock pool that throws helpful errors
+      return {
+        query: () => {
+          throw new Error('PostgreSQL module not available. Please run: npm install pg @types/pg');
+        }
+      };
     }
   }
   return pool;
@@ -41,8 +47,12 @@ export async function query(text: string, params?: any[]) {
 
 export async function getClient() {
   const pool = await getPool();
-  const client = await pool.connect();
-  return client;
+  if (pool && typeof pool.connect === 'function') {
+    const client = await pool.connect();
+    return client;
+  } else {
+    throw new Error('PostgreSQL module not available. Please run: npm install pg @types/pg');
+  }
 }
 
 export async function initDatabase() {

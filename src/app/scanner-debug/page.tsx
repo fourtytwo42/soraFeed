@@ -129,10 +129,16 @@ export default function ScannerDebugPage() {
             {error.includes('PostgreSQL') && (
               <div className="mt-3 p-3 bg-gray-800 rounded text-sm">
                 <p className="text-yellow-400 font-semibold mb-2">🔧 Quick Fix:</p>
-                <p className="mb-2">Run the installation script:</p>
-                <code className="bg-gray-900 px-2 py-1 rounded">./install-scanner.sh</code>
-                <p className="mt-2 text-gray-400">Or manually install:</p>
+                <p className="mb-2">Install PostgreSQL dependencies:</p>
                 <code className="bg-gray-900 px-2 py-1 rounded">npm install pg @types/pg</code>
+                <div className="mt-3 pt-3 border-t border-gray-700">
+                  <a 
+                    href="/setup" 
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors text-white font-semibold"
+                  >
+                    📋 View Full Setup Guide
+                  </a>
+                </div>
               </div>
             )}
           </div>
