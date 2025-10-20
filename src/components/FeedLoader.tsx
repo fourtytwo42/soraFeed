@@ -29,7 +29,7 @@ export default function FeedLoader() {
       console.log(`🔄 Loading ${type} feed data...`);
       
       // Map feed type to API cut parameter
-      const cut = type === 'top' ? 'nf2' : 'nf2_latest';
+      const cut = type === 'top' ? 'nf2_top' : 'nf2_latest';
       const data = await fetchFeed(16, cut);
       console.log('✅ Loaded', data.items?.length || 0, 'feed items');
       
@@ -74,7 +74,7 @@ export default function FeedLoader() {
       setLoadingMore(true);
       console.log('🔄 Loading more feed data with cursor...');
       
-      const cut = feedType === 'top' ? 'nf2' : 'nf2_latest';
+      const cut = feedType === 'top' ? 'nf2_top' : 'nf2_latest';
       const data = await fetchFeed(16, cut, cursor);
       console.log('✅ Loaded', data.items?.length || 0, 'more feed items');
       
