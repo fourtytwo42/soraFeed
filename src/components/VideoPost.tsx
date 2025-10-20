@@ -24,6 +24,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragDirection, setDragDirection] = useState<'horizontal' | 'vertical' | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Get current item (original post or remix)
@@ -121,6 +122,15 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
   const goToPreviousRemix = () => {
     if (currentRemixIndex > 0) {
       setCurrentRemixIndex(currentRemixIndex - 1);
+      // Auto-play the new remix video
+      setTimeout(() => {
+        const video = videoRef.current;
+        if (video && isActive) {
+          video.play().catch(() => {
+            setIsPlaying(false);
+          });
+        }
+      }, 100);
     }
   };
 
@@ -128,6 +138,15 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
     const maxIndex = remixFeed.length;
     if (currentRemixIndex < maxIndex) {
       setCurrentRemixIndex(currentRemixIndex + 1);
+      // Auto-play the new remix video
+      setTimeout(() => {
+        const video = videoRef.current;
+        if (video && isActive) {
+          video.play().catch(() => {
+            setIsPlaying(false);
+          });
+        }
+      }, 100);
     }
   };
 
@@ -135,6 +154,15 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
     const maxIndex = remixFeed.length;
     if (index >= 0 && index <= maxIndex) {
       setCurrentRemixIndex(index);
+      // Auto-play the new remix video
+      setTimeout(() => {
+        const video = videoRef.current;
+        if (video && isActive) {
+          video.play().catch(() => {
+            setIsPlaying(false);
+          });
+        }
+      }, 100);
     }
   };
 
@@ -142,6 +170,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
     setIsDragging(true);
     setDragStart({ x: clientX, y: clientY });
     setDragOffset({ x: 0, y: 0 });
+    setDragDirection(null);
   };
 
   const handleDragMove = (clientX: number, clientY: number) => {
@@ -149,7 +178,27 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
     
     const deltaX = clientX - dragStart.x;
     const deltaY = clientY - dragStart.y;
-    setDragOffset({ x: deltaX, y: deltaY });
+    
+    // Determine drag direction if not set (after minimum movement)
+    if (!dragDirection && (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10)) {
+      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        setDragDirection('horizontal');
+      } else {
+        setDragDirection('vertical');
+      }
+    }
+    
+    // Constrain movement to the determined direction (rail system)
+    if (dragDirection === 'horizontal') {
+      // Only allow horizontal movement for remix navigation
+      setDragOffset({ x: deltaX, y: 0 });
+    } else if (dragDirection === 'vertical') {
+      // Only allow vertical movement for feed navigation
+      setDragOffset({ x: 0, y: deltaY });
+    } else {
+      // No direction determined yet, allow free movement until direction is locked
+      setDragOffset({ x: deltaX, y: deltaY });
+    }
   };
 
   const handleDragEnd = (clientX: number, clientY: number) => {
@@ -182,6 +231,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious }: VideoP
 
     setIsDragging(false);
     setDragOffset({ x: 0, y: 0 });
+    setDragDirection(null);
   };
 
   // Mouse events
