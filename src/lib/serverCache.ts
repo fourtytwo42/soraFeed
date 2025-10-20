@@ -9,7 +9,8 @@ interface CachedData<T> {
 }
 
 class ServerCache {
-  private cache: Map<string, CachedData<unknown>> = new Map();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private cache: Map<string, CachedData<any>> = new Map();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
   /**

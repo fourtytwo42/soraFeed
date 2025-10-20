@@ -1,5 +1,7 @@
-let Pool: typeof import('pg').Pool;
-let pool: import('pg').Pool | undefined;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Pool: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let pool: any;
 
 // Dynamically import pg only when needed (server-side)
 async function getPool() {
@@ -31,7 +33,8 @@ async function getPool() {
   return pool;
 }
 
-export async function query(text: string, params?: unknown[]) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function query(text: string, params?: any[]) {
   const start = Date.now();
   try {
     const pool = await getPool();

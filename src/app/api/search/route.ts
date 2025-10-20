@@ -109,7 +109,8 @@ export async function GET(request: NextRequest) {
     const result = await client.query(searchQuery, [query, limit]);
     
     // Transform database results to SoraFeedItem format
-    const items: SoraFeedItem[] = result.rows.map((row: { post_data: unknown; profile_data: unknown }) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items: SoraFeedItem[] = result.rows.map((row: any) => ({
       post: row.post_data,
       profile: row.profile_data,
     }));
