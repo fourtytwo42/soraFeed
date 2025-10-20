@@ -5,7 +5,7 @@ import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
-import { fetchRemixFeed } from '@/lib/api';
+import { remixCache } from '@/lib/remixCache';
 
 interface VideoPostProps {
   item: SoraFeedItem;
@@ -149,11 +149,12 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
     try {
       setLoadingRemixes(true);
       console.log('🔄 Loading remix feed for post:', item.post.id);
-      const feed = await fetchRemixFeed(item.post.id, 10);
-      setRemixFeed(feed.items || []);
-      console.log('✅ Loaded remix feed with', feed.items?.length || 0, 'video remixes');
+      const remixes = await remixCache.getRemixFeed(item.post.id);
+      setRemixFeed(remixes);
+      console.log('✅ Loaded remix feed with', remixes.length, 'video remixes');
     } catch (error) {
       console.error('❌ Failed to load remix feed:', error);
+      setRemixFeed([]);
     } finally {
       setLoadingRemixes(false);
     }

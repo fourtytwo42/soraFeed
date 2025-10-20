@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchFeed } from '@/lib/api';
+import { remixCache } from '@/lib/remixCache';
 import VideoFeed from './VideoFeed';
+import RemixCacheDebug from './RemixCacheDebug';
 import { mockFeedData } from '@/lib/mockData';
 
 type FeedType = 'latest' | 'top' | 'favorites';
@@ -104,12 +106,19 @@ export default function FeedLoader() {
         }
         setCursor(data.cursor || null);
         setHasMore(!!data.cursor);
+        
+        // Preload remix feeds for all items
+        console.log('📦 Starting remix preload for', data.items.length, 'items');
+        remixCache.preloadRemixFeeds(data.items);
       } else {
         if (reset) {
           console.warn('⚠️ No items in feed response, using mock data');
           setItems(mockFeedData.items);
           setCursor(null);
           setHasMore(false);
+          
+          // Preload remix feeds for mock data
+          remixCache.preloadRemixFeeds(mockFeedData.items);
         }
       }
     } catch (err) {
@@ -122,6 +131,9 @@ export default function FeedLoader() {
         setItems(mockFeedData.items);
         setCursor(null);
         setHasMore(false);
+        
+        // Preload remix feeds for mock data
+        remixCache.preloadRemixFeeds(mockFeedData.items);
       }
     } finally {
       if (reset) {
@@ -145,6 +157,10 @@ export default function FeedLoader() {
         setItems(prev => [...prev, ...data.items]);
         setCursor(data.cursor || null);
         setHasMore(!!data.cursor);
+        
+        // Preload remix feeds for newly loaded items
+        console.log('📦 Starting remix preload for', data.items.length, 'more items');
+        remixCache.preloadRemixFeeds(data.items);
       } else {
         setHasMore(false);
       }
@@ -202,6 +218,9 @@ export default function FeedLoader() {
           ⚠️ Using fallback data: {error}
         </div>
       )}
+      
+      {/* Remix Cache Debug Panel */}
+      <RemixCacheDebug />
       
       {/* Feed Type Selector */}
       <div className="fixed top-6 left-6 z-50 flex bg-black/50 rounded-full p-1 backdrop-blur-sm">
