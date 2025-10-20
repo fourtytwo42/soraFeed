@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, RotateCcw, MoreHorizontal } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchRemixFeed } from '@/lib/api';
 
@@ -537,7 +537,10 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
         {hasRemixes && (
           <div className="flex flex-col items-center">
             <button className="p-3 rounded-full bg-black/50 text-white hover:bg-black/70 transition-all">
-              <RotateCcw size={20} />
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 19 18" className="h-5 w-5">
+                <circle cx="9" cy="9" r="6.75" stroke="currentColor" strokeWidth="2"></circle>
+                <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M11.25 9a4.5 4.5 0 0 0-9 0M15.75 9a4.5 4.5 0 1 1-9 0"></path>
+              </svg>
             </button>
             <span className="text-white text-xs font-semibold bg-black/50 rounded-full px-2 py-1 mt-1">
               {remixFeed.length}
