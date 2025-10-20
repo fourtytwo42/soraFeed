@@ -536,7 +536,8 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
       <div className="relative w-full h-full overflow-hidden bg-black">
         {/* Draggable container with all remixes */}
         <motion.div
-          {...bind()}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          {...(bind() as any)}
           style={{ x }}
           className="absolute inset-0 flex items-center justify-center group cursor-pointer select-none"
           onMouseEnter={handleMouseEnter}
