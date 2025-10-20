@@ -3,8 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Pause, Volume2, VolumeX, Heart, Share, User, CheckCircle, ChevronLeft, ChevronRight, Copy, MoreHorizontal } from 'lucide-react';
-import { SoraFeedItem, SoraRemixTree } from '@/types/sora';
-import { fetchRemixTree } from '@/lib/api';
+import { SoraFeedItem } from '@/types/sora';
+import { fetchRemixFeed } from '@/lib/api';
 
 interface VideoPostProps {
   item: SoraFeedItem;
@@ -18,7 +18,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const [remixTree, setRemixTree] = useState<SoraRemixTree | null>(null);
+  const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
   const [loadingRemixes, setLoadingRemixes] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -27,27 +27,20 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
 
   // Get current item (original post or remix)
   const getCurrentItem = (): SoraFeedItem => {
-    if (currentRemixIndex === 0 || !videoRemixes.length) {
+    if (currentRemixIndex === 0 || !remixFeed.length) {
       return item; // Original post
     }
-    return videoRemixes[currentRemixIndex - 1]; // Video remix (index - 1 because 0 is original)
+    return remixFeed[currentRemixIndex - 1]; // Video remix (index - 1 because 0 is original)
   };
 
   const currentItem = getCurrentItem();
   const currentVideoUrl = currentItem.post.attachments[0]?.encodings?.md?.path || 
                           currentItem.post.attachments[0]?.encodings?.source?.path;
   
-  // Only show remix navigation if remixes actually have video attachments
-  const videoRemixes = remixTree?.children?.items?.filter(remix => 
-    remix.post.attachments && 
-    remix.post.attachments.length > 0 && 
-    remix.post.attachments[0].encodings &&
-    (remix.post.attachments[0].encodings.md?.path || remix.post.attachments[0].encodings.source?.path)
-  ) || [];
-  
-  const hasRemixes = videoRemixes.length > 0;
+  // All items from remix feed should be actual video remixes
+  const hasRemixes = remixFeed.length > 0;
   const canGoLeft = currentRemixIndex > 0;
-  const canGoRight = currentRemixIndex < videoRemixes.length;
+  const canGoRight = currentRemixIndex < remixFeed.length;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -60,9 +53,9 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
         setIsPlaying(false);
       });
       
-      // Fetch remix tree when video becomes active
-      if (!remixTree && !loadingRemixes) {
-        loadRemixTree();
+      // Fetch remix feed when video becomes active
+      if (remixFeed.length === 0 && !loadingRemixes) {
+        loadRemixFeed();
       }
     } else {
       video.pause();
@@ -82,15 +75,15 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
     }
   }, [currentRemixIndex, currentVideoUrl]);
 
-  const loadRemixTree = async () => {
+  const loadRemixFeed = async () => {
     try {
       setLoadingRemixes(true);
-      console.log('🔄 Loading remix tree for post:', item.post.id);
-      const tree = await fetchRemixTree(item.post.id);
-      setRemixTree(tree);
-      console.log('✅ Loaded', tree.children?.items?.length || 0, 'remixes');
+      console.log('🔄 Loading remix feed for post:', item.post.id);
+      const feed = await fetchRemixFeed(item.post.id, 10);
+      setRemixFeed(feed.items || []);
+      console.log('✅ Loaded remix feed with', feed.items?.length || 0, 'video remixes');
     } catch (error) {
-      console.error('❌ Failed to load remix tree:', error);
+      console.error('❌ Failed to load remix feed:', error);
     } finally {
       setLoadingRemixes(false);
     }
@@ -131,14 +124,14 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
   };
 
   const goToNextRemix = () => {
-    const maxIndex = videoRemixes.length;
+    const maxIndex = remixFeed.length;
     if (currentRemixIndex < maxIndex) {
       setCurrentRemixIndex(currentRemixIndex + 1);
     }
   };
 
   const goToRemixIndex = (index: number) => {
-    const maxIndex = videoRemixes.length;
+    const maxIndex = remixFeed.length;
     if (index >= 0 && index <= maxIndex) {
       setCurrentRemixIndex(index);
     }
@@ -318,7 +311,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             transition={{ duration: 0.2 }}
             className="absolute top-4 left-4 z-10 px-3 py-1 rounded-full bg-black/50 text-white text-sm"
           >
-            {currentRemixIndex === 0 ? 'Original' : `Remix ${currentRemixIndex}/${videoRemixes.length}`}
+            {currentRemixIndex === 0 ? 'Original' : `Remix ${currentRemixIndex}/${remixFeed.length}`}
           </motion.div>
         </>
       )}
@@ -412,7 +405,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
               <Copy size={20} />
             </button>
             <span className="text-white text-xs font-semibold bg-black/50 rounded-full px-2 py-1 mt-1">
-              {videoRemixes.length}
+              {remixFeed.length}
             </span>
           </div>
         )}
@@ -464,7 +457,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
           />
           
           {/* Remix tabs */}
-          {videoRemixes.map((_, index) => (
+          {remixFeed.map((_, index) => (
             <button
               key={index}
               onClick={(e) => {
@@ -507,7 +500,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             />
             
             {/* Remix dots - limit to 10 to avoid overcrowding */}
-            {videoRemixes.slice(0, 10).map((_, index) => (
+            {remixFeed.slice(0, 10).map((_, index) => (
               <button
                 key={index}
                 onClick={(e) => {
@@ -523,7 +516,7 @@ export default function VideoPost({ item, isActive }: VideoPostProps) {
             ))}
             
             {/* Show "..." if there are more than 10 video remixes */}
-            {videoRemixes.length > 10 && (
+            {remixFeed.length > 10 && (
               <span className="text-white/70 text-xs ml-1">...</span>
             )}
           </div>

@@ -40,3 +40,27 @@ export async function fetchRemixTree(postId: string, limit: number = 20, maxDept
 
   return response.json();
 }
+
+export async function fetchRemixFeed(postId: string, limit: number = 20, cursor?: string): Promise<SoraFeedResponse> {
+  const params = new URLSearchParams({
+    limit: limit.toString(),
+  });
+  
+  if (cursor) {
+    params.append('cursor', cursor);
+  }
+  
+  const response = await fetch(`/api/post/${postId}/remix_feed?${params.toString()}`, {
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Failed to fetch remix feed: ${response.status}`);
+  }
+
+  return response.json();
+}
