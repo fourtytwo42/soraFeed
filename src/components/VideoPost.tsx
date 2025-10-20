@@ -645,7 +645,7 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
                   y: showControls ? 0 : 20
                 }}
                 transition={{ duration: 0.3 }}
-                className="absolute bottom-4 left-4 z-40 max-w-sm"
+                className="absolute bottom-28 left-4 z-40 max-w-sm"
                 style={{ pointerEvents: showControls ? 'auto' : 'none' }}
               >
                 <div className="bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm">
