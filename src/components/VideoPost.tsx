@@ -20,13 +20,6 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
-
-  // Update isLiked based on favorites when item changes
-  useEffect(() => {
-    if (isInFavorites) {
-      setIsLiked(isInFavorites(getCurrentItem().post.id));
-    }
-  }, [item, currentRemixIndex, isInFavorites]);
   const [showControls, setShowControls] = useState(false);
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
@@ -53,6 +46,13 @@ export default function VideoPost({ item, isActive, onNext, onPrevious, onAddToF
   const hasRemixes = remixFeed.length > 0;
   const canGoLeft = currentRemixIndex > 0;
   const canGoRight = currentRemixIndex < remixFeed.length;
+
+  // Update isLiked based on favorites when item changes
+  useEffect(() => {
+    if (isInFavorites) {
+      setIsLiked(isInFavorites(getCurrentItem().post.id));
+    }
+  }, [item, currentRemixIndex, remixFeed, isInFavorites]);
 
   useEffect(() => {
     const video = videoRef.current;
