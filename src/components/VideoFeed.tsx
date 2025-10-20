@@ -165,7 +165,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     const isTyping = activeElement && (
       activeElement.tagName === 'INPUT' || 
       activeElement.tagName === 'TEXTAREA' ||
-      activeElement.isContentEditable
+      (activeElement as HTMLElement).isContentEditable
     );
     
     if (isTyping) return;
