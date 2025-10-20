@@ -40,14 +40,27 @@ export async function GET(request: NextRequest) {
 
     console.log('🔑 Bearer token present:', !!process.env.AUTH_BEARER_TOKEN);
 
-    // Minimal headers - only Bearer token required for public feeds
-    const headers = {
+    // Browser-like headers to avoid Cloudflare challenges
+    const headers: Record<string, string> = {
       'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
       'Accept': '*/*',
       'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br, zstd',
       'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-      'Referer': 'https://sora.chatgpt.com/'
+      'Referer': 'https://sora.chatgpt.com/',
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-origin',
+      'Priority': 'u=1, i'
     };
+
+    // Add Cloudflare cookies if available
+    if (process.env.CF_CLEARANCE) {
+      headers['Cookie'] = `cf_clearance=${process.env.CF_CLEARANCE}`;
+      if (process.env.CF_BM) {
+        headers['Cookie'] += `; __cf_bm=${process.env.CF_BM}`;
+      }
+    }
 
     // Build URL with optional cursor parameter
     const urlParams = new URLSearchParams({

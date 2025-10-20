@@ -10,6 +10,9 @@ import { remixCache } from '@/lib/remixCache';
 interface VideoPostProps {
   item: SoraFeedItem;
   isActive: boolean;
+  isUpcoming?: boolean;
+  isTargetVideo?: boolean;
+  scrollDirection?: 'up' | 'down' | null;
   onNext: () => void;
   onPrevious: () => void;
   onAddToFavorites?: (item: SoraFeedItem) => void;
@@ -21,7 +24,7 @@ interface VideoPostProps {
   onControlsChange?: (showing: boolean) => void;
 }
 
-export default function VideoPost({ item, isActive, onNext, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed, onControlsChange }: VideoPostProps) {
+export default function VideoPost({ item, isActive, isUpcoming, isTargetVideo, scrollDirection, onNext, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed, onControlsChange }: VideoPostProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false); // Start unmuted
   const [isLiked, setIsLiked] = useState(false);
@@ -33,12 +36,16 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
   const [loadingRemixes, setLoadingRemixes] = useState(false);
   const [isWheelScrolling, setIsWheelScrolling] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [videoWidth, setVideoWidth] = useState<number | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const x = useMotionValue(0);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastInteractionRef = useRef<number>(Date.now());
   const isFirstVideoRef = useRef(true);
   const hasUserInteractedRef = useRef(false);
+  const previousVideoIdRef = useRef<string>(item.post.id);
+  const userPausedRef = useRef(false);
 
   // Get current item (original post or remix)
   const getCurrentItem = useCallback((): SoraFeedItem => {
@@ -72,11 +79,22 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
 
   // Reset remix state when video item changes
   useEffect(() => {
+    console.log('🔄 Video item changed:', item.post.id);
     setRemixFeed([]);
     setCurrentRemixIndex(0);
     setLoadingRemixes(false);
+    setVideoReady(false);
+    setIsPlaying(false);
     x.set(0);
     hasUserInteractedRef.current = false;
+    userPausedRef.current = false;
+    previousVideoIdRef.current = item.post.id;
+    console.log('📹 New video URL:', currentVideoUrl);
+    
+    // Don't call video.load() here - it resets the video and causes it to restart
+    // The video will load naturally through the src attribute change
+    // Don't reset videoWidth here - keep it for smooth transitions
+    // The new video will update videoWidth when its metadata loads
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.post.id]);
 
@@ -97,24 +115,68 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
     const video = videoRef.current;
     if (!video) return;
 
-    if (isActive) {
+    console.log('🎬 Video state changed:', { 
+      isActive, 
+      isUpcoming,
+      isTargetVideo,
+      scrollDirection,
+      videoReady, 
+      reactIsPlaying: isPlaying, 
+      videoPaused: video.paused,
+      videoCurrentTime: video.currentTime.toFixed(2),
+      readyState: video.readyState,
+      userPaused: userPausedRef.current 
+    });
+    
+    // Play video if it's active OR if it's the target video during scroll
+    const shouldPlay = isActive || (isTargetVideo && scrollDirection);
+    
+    if (shouldPlay) {
       // Show controls only on first video load (desktop only)
-      if (isFirstVideoRef.current && !isMobile) {
+      if (isFirstVideoRef.current && !isMobile && isActive) {
         setShowControls(true);
         hasUserInteractedRef.current = true;
         isFirstVideoRef.current = false;
       }
       
-      video.play().then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
-        setIsPlaying(false);
-      });
+      // If video has loaded enough data to show the first frame, mark it as ready
+      if (!videoReady && video.readyState >= 2) {
+        console.log('✨ Video has loaded data (readyState >= 2), setting videoReady = true');
+        setVideoReady(true);
+      }
+      
+      // Play if video is ready and not already playing and user hasn't paused
+      if (videoReady && video.paused && !userPausedRef.current) {
+        const reason = isActive ? 'active' : 'target during scroll';
+        console.log(`▶️ Attempting to play ${reason} video`, { currentTime: video.currentTime.toFixed(2) });
+        video.play().then(() => {
+          console.log(`✅ ${reason} video play successful`, { currentTime: video.currentTime.toFixed(2) });
+          setIsPlaying(true);
+        }).catch((err) => {
+          console.log(`❌ ${reason} video play failed`, err);
+          setIsPlaying(false);
+        });
+      } else if (!video.paused) {
+        const reason = isActive ? 'active' : 'target during scroll';
+        console.log(`⏸️ ${reason} video already playing`, { currentTime: video.currentTime.toFixed(2) });
+        // Sync React state with actual video state
+        if (!isPlaying) {
+          setIsPlaying(true);
+        }
+      } else if (userPausedRef.current && isActive) {
+        console.log('⏸️ User paused active video, not auto-playing');
+      } else {
+        console.log('⏸️ Video not ready yet, waiting...');
+      }
     } else {
-      video.pause();
+      // Pause videos that are not active and not target during scroll
+      if (!video.paused) {
+        console.log('⏸️ Pausing non-active/non-target video');
+        video.pause();
+      }
       setIsPlaying(false);
     }
-  }, [isActive, isMobile]);
+  }, [isActive, isUpcoming, isTargetVideo, scrollDirection, isMobile, videoReady, isPlaying]);
 
   // Load remix feed when video becomes active and we don't have remixes yet
   useEffect(() => {
@@ -165,23 +227,25 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
   // Handle video changes when switching remixes
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !currentVideoUrl) return;
 
-    if (isActive && isPlaying) {
-      video.play().catch(() => {
-        setIsPlaying(false);
-      });
-    }
+    console.log('🔄 Remix index changed:', { currentRemixIndex, url: currentVideoUrl });
+    // If the remix index changed, reset video ready state and playing state
+    setVideoReady(false);
+    setIsPlaying(false);
+    console.log('✨ Setting videoReady = false, isPlaying = false (remix change)');
+    
+    // Don't call video.load() - the src change will trigger natural loading
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRemixIndex, currentVideoUrl]);
 
   const loadRemixFeed = async () => {
     try {
       setLoadingRemixes(true);
-      console.log('🔄 Loading remix feed for post:', item.post.id);
+      // console.log('🔄 Loading remix feed for post:', item.post.id);
       const remixes = await remixCache.getRemixFeed(item.post.id);
       setRemixFeed(remixes);
-      console.log('✅ Loaded remix feed with', remixes.length, 'video remixes');
+      // console.log('✅ Loaded remix feed with', remixes.length, 'video remixes');
     } catch (error) {
       console.error('❌ Failed to load remix feed:', error);
       setRemixFeed([]);
@@ -217,15 +281,6 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
         damping: 40,
         onComplete: () => {
           setCurrentRemixIndex(currentRemixIndex - 1);
-          // Auto-play the new remix video
-          setTimeout(() => {
-            const video = videoRef.current;
-            if (video && isActive) {
-              video.play().catch(() => {
-                setIsPlaying(false);
-              });
-            }
-          }, 100);
         }
       });
     }
@@ -242,15 +297,6 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
         damping: 40,
         onComplete: () => {
           setCurrentRemixIndex(currentRemixIndex + 1);
-          // Auto-play the new remix video
-          setTimeout(() => {
-            const video = videoRef.current;
-            if (video && isActive) {
-              video.play().catch(() => {
-                setIsPlaying(false);
-              });
-            }
-          }, 100);
         }
       });
     }
@@ -269,15 +315,6 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
         damping: 40,
         onComplete: () => {
           setCurrentRemixIndex(index);
-          // Auto-play the new remix video
-          setTimeout(() => {
-            const video = videoRef.current;
-            if (video && isActive) {
-              video.play().catch(() => {
-                setIsPlaying(false);
-              });
-            }
-          }, 100);
         }
       });
     }
@@ -484,20 +521,60 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
     if (!video) return;
 
     const wasPlaying = isPlaying;
+    console.log('🖱️ Video clicked:', { wasPlaying, videoReady });
     
     if (isPlaying) {
+      console.log('⏸️ Pausing video (user click)');
       video.pause();
       setIsPlaying(false);
+      userPausedRef.current = true;
     } else {
+      console.log('▶️ Playing video (user click)');
       video.play().then(() => {
+        console.log('✅ Play successful (user click)');
         setIsPlaying(true);
+        userPausedRef.current = false;
       }).catch(() => {
+        console.log('❌ Play failed (user click)');
         setIsPlaying(false);
       });
     }
     
     handleInteraction();
-  }, [isPlaying, handleInteraction]);
+  }, [isPlaying, handleInteraction, videoReady]);
+
+  // Track videoReady state changes
+  useEffect(() => {
+    console.log('🎬 videoReady state changed:', videoReady);
+  }, [videoReady]);
+
+  // Track isPlaying state changes
+  useEffect(() => {
+    console.log('▶️ isPlaying state changed:', isPlaying);
+  }, [isPlaying]);
+
+  // Track isActive changes
+  useEffect(() => {
+    console.log('📺 isActive changed:', isActive);
+  }, [isActive]);
+
+  // Component mount/unmount logging
+  useEffect(() => {
+    console.log('🚀 VideoPost mounted:', item.post.id);
+    
+    return () => {
+      console.log('🔚 VideoPost unmounting:', item.post.id);
+    };
+  }, [item.post.id]);
+
+  // Log video render state
+  useEffect(() => {
+    console.log('🎨 Video render state:', { 
+      videoReady, 
+      opacity: videoReady ? 1 : 0,
+      url: currentVideoUrl 
+    });
+  }, [videoReady, currentVideoUrl]);
 
   // Effect to handle control visibility based on play state
   useEffect(() => {
@@ -603,28 +680,122 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
                 muted
                 playsInline
                 preload="metadata"
-                poster={remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.thumbnail?.path}
               />
             </div>
           )}
           
           {/* Current Video/Remix with Controls */}
           <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-            <div className="relative h-full w-auto max-w-full flex items-center justify-center">
-              <video
-                ref={videoRef}
-                src={currentVideoUrl}
-                className="h-full w-auto max-w-full object-contain block"
-                muted={isMuted}
-                playsInline
-                onEnded={handleVideoEnd}
-                poster={currentItem.post.attachments[0]?.encodings?.thumbnail?.path}
-                key={currentItem.post.id}
+            <div className="relative h-full w-full flex items-center justify-center">
+              <div 
+                className="relative h-full flex items-center justify-center"
+                style={{ 
+                  width: videoWidth ? `${videoWidth}px` : '100%',
+                  maxWidth: '100%'
+                }}
               >
-                {currentVideoUrl && <source src={currentVideoUrl} type="video/mp4" />}
-              </video>
+                {currentVideoUrl && (
+                  <video
+                    ref={videoRef}
+                    src={currentVideoUrl}
+                    className="object-contain block"
+                    style={{
+                      width: videoWidth ? `${videoWidth}px` : 'auto',
+                      height: videoWidth ? 'auto' : '100%',
+                      opacity: 1,
+                      transition: 'filter 0.3s ease-in-out',
+                      filter: isActive && !videoReady ? 'blur(4px)' : 'none'
+                    }}
+                    muted={isMuted}
+                    playsInline
+                    onEnded={handleVideoEnd}
+                    onLoadStart={() => {
+                      console.log('📥 Video load started:', currentVideoUrl);
+                    }}
+                    onLoadedData={(e) => {
+                      console.log('📊 Video data loaded:', currentVideoUrl);
+                      const video = e.currentTarget;
+                      // Mark video as ready when data loads (for smooth transitions)
+                      if (video.readyState >= 2 && !videoReady) {
+                        console.log('✨ Setting videoReady = true (loaded data)');
+                        setVideoReady(true);
+                      }
+                      // Note: Auto-play is handled by the useEffect, not here
+                    }}
+                    onLoadedMetadata={(e) => {
+                      console.log('📐 Video metadata loaded:', {
+                        width: e.currentTarget.videoWidth,
+                        height: e.currentTarget.videoHeight,
+                        url: currentVideoUrl
+                      });
+                      const video = e.currentTarget;
+                      if (video.videoWidth && video.videoHeight) {
+                        const aspectRatio = video.videoWidth / video.videoHeight;
+                        const viewportWidth = window.innerWidth;
+                        const viewportHeight = window.innerHeight;
+                        
+                        // If landscape (wider than tall), fill width
+                        // If portrait (taller than wide), fill height
+                        if (aspectRatio > 1) {
+                          // Landscape: fill width
+                          const calculatedHeight = viewportWidth / aspectRatio;
+                          setVideoWidth(viewportWidth);
+                        } else {
+                          // Portrait: fill height
+                          const calculatedWidth = viewportHeight * aspectRatio;
+                          setVideoWidth(calculatedWidth);
+                        }
+                      }
+                      // Don't seek to 0 - let the video continue playing from where it is
+                    }}
+                    onCanPlay={(e) => {
+                      const video = e.currentTarget;
+                      console.log('🎥 Video can play:', { isActive, isUpcoming, isTargetVideo, scrollDirection, videoPaused: video.paused, videoCurrentTime: video.currentTime.toFixed(2), url: currentVideoUrl?.substring(0, 100) + '...' });
+                      
+                      // Make video ready for all videos (for smooth transitions)
+                      setVideoReady(true);
+                      console.log('✨ Setting videoReady = true');
+                      
+                      // Auto-play if it's active OR target during scroll
+                      const shouldPlay = isActive || (isTargetVideo && scrollDirection);
+                      
+                      if (shouldPlay) {
+                        if (video.paused && !userPausedRef.current) {
+                          const reason = isActive ? 'active' : 'target during scroll';
+                          console.log(`▶️ Auto-playing ${reason} video (onCanPlay)`, { currentTime: video.currentTime.toFixed(2) });
+                          video.play().then(() => {
+                            console.log(`✅ Auto-play successful (onCanPlay) - ${reason}`, { currentTime: video.currentTime.toFixed(2) });
+                            setIsPlaying(true);
+                          }).catch(() => {
+                            console.log(`❌ Auto-play failed (onCanPlay) - ${reason}`);
+                            setIsPlaying(false);
+                          });
+                        } else if (!video.paused) {
+                          const reason = isActive ? 'active' : 'target during scroll';
+                          console.log(`⏸️ ${reason} video already playing`, { currentTime: video.currentTime.toFixed(2) });
+                          // Sync React state with actual video state
+                          if (!isPlaying) {
+                            setIsPlaying(true);
+                          }
+                        } else {
+                          console.log('⏸️ User paused video, not auto-playing');
+                        }
+                      } else {
+                        // Ensure non-active/non-target videos are paused
+                        if (!video.paused) {
+                          console.log('⏸️ Pausing non-active/non-target video (onCanPlay)');
+                          video.pause();
+                        }
+                        console.log('⏸️ Video ready but not active/target, keeping paused');
+                      }
+                    }}
+                    preload="auto"
+                  >
+                    <source src={currentVideoUrl} type="video/mp4" />
+                  </video>
+                )}
 
-              {/* Play/Pause Overlay - Center of video */}
+                {/* Play/Pause Overlay - Center of video */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ 
@@ -683,22 +854,21 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
               )}
 
               {/* Video Info Overlay - Bottom Left */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ 
-                  opacity: showControls ? 1 : 0,
-                  y: showControls ? 0 : 20
-                }}
-                transition={{ duration: 0.3 }}
-                className={`absolute left-4 z-40 ${isMobile ? 'bottom-16' : 'bottom-4'}`}
-                style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-              >
+              {videoReady && (
                 <motion.div 
-                  layout
-                  className={`bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm ${
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ 
+                    opacity: showControls ? 1 : 0,
+                    y: showControls ? 0 : 20
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className={`absolute left-4 z-40 ${isMobile ? 'bottom-16' : 'bottom-4'}`}
+                  style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+                >
+                <div 
+                  className={`bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm transition-all duration-300 ${
                     isDescriptionExpanded ? 'max-w-md' : 'max-w-xs'
                   }`}
-                  transition={{ duration: 0.3 }}
                 >
                   {/* User Info */}
                   <div className="flex items-center gap-2 mb-2">
@@ -759,20 +929,22 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
                       )}
                     </div>
                   )}
-                </motion.div>
+                </div>
               </motion.div>
+              )}
 
               {/* Action Buttons Overlay - Right Side */}
-              <motion.div 
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ 
-                  opacity: showControls ? 1 : 0,
-                  x: showControls ? 0 : 20
-                }}
-                transition={{ duration: 0.3 }}
-                className="absolute bottom-4 right-4 flex flex-col gap-2.5 z-40"
-                style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-              >
+              {videoReady && (
+                <motion.div 
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ 
+                    opacity: showControls ? 1 : 0,
+                    x: showControls ? 0 : 20
+                  }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute bottom-4 right-4 flex flex-col gap-2.5 z-40"
+                  style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+                >
                 {/* Social Media Share Buttons */}
                 <div className="flex flex-col gap-2">
                   {/* Facebook */}
@@ -871,9 +1043,10 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
                   </div>
                 )}
               </motion.div>
+              )}
 
               {/* Remix Dot Indicators - Bottom Center */}
-              {hasRemixes && (
+              {hasRemixes && videoReady && (
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ 
@@ -978,6 +1151,7 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
                   </div>
                 </motion.div>
               )}
+              </div>
             </div>
           </div>
 
@@ -998,9 +1172,6 @@ export default function VideoPost({ item, isActive, onNext, onAddToFavorites, on
                 muted
                 playsInline
                 preload="metadata"
-                poster={currentRemixIndex === 0 
-                  ? remixFeed[0]?.post.attachments[0]?.encodings?.thumbnail?.path
-                  : remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.thumbnail?.path}
               />
             </div>
           )}

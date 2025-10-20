@@ -31,12 +31,12 @@ class RemixCacheManager {
     
     // Check if cache is valid
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      console.log('✅ Cache hit for remix feed:', postId);
+      // console.log('✅ Cache hit for remix feed:', postId);
       return cached.data;
     }
 
     // Cache miss or expired
-    console.log('❌ Cache miss for remix feed:', postId, cached ? '(expired)' : '(not cached)');
+    // console.log('❌ Cache miss for remix feed:', postId, cached ? '(expired)' : '(not cached)');
     
     // Try to fetch
     try {
@@ -68,7 +68,7 @@ class RemixCacheManager {
    * Preload remix feeds for a list of posts
    */
   preloadRemixFeeds(posts: SoraFeedItem[]) {
-    console.log('📦 Queueing', posts.length, 'posts for remix preload');
+    // console.log('📦 Queueing', posts.length, 'posts for remix preload');
     
     // Add posts to queue with priority based on order
     posts.forEach((post, index) => {
@@ -77,7 +77,7 @@ class RemixCacheManager {
       // Skip if already cached and valid
       const cached = this.cache.get(postId);
       if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-        console.log('⏩ Skipping preload for cached:', postId);
+        // console.log('⏩ Skipping preload for cached:', postId);
         return;
       }
       
@@ -125,7 +125,7 @@ class RemixCacheManager {
     }
     
     this.isFetching = false;
-    console.log('✅ Remix preload queue completed');
+    // console.log('✅ Remix preload queue completed');
   }
 
   /**
@@ -143,7 +143,7 @@ class RemixCacheManager {
     this.activeFetches.add(postId);
     
     try {
-      console.log(`🔄 Fetching remix feed for ${postId} (attempt ${retryCount + 1})`);
+      // console.log(`🔄 Fetching remix feed for ${postId} (attempt ${retryCount + 1})`);
       
       const response = await fetchRemixFeed(postId, 20);
       const remixes = response.items || [];
@@ -155,14 +155,14 @@ class RemixCacheManager {
         postId,
       });
       
-      console.log(`✅ Cached ${remixes.length} remixes for ${postId}`);
+      // console.log(`✅ Cached ${remixes.length} remixes for ${postId}`);
       
     } catch (error) {
       console.error(`❌ Failed to fetch remix feed for ${postId}:`, error);
       
       // Retry if under max retries
       if (retryCount < this.MAX_RETRIES) {
-        console.log(`🔄 Retrying ${postId} (${retryCount + 1}/${this.MAX_RETRIES})`);
+        // console.log(`🔄 Retrying ${postId} (${retryCount + 1}/${this.MAX_RETRIES})`);
         
         // Wait before retry
         await this.sleep(this.RETRY_DELAY * (retryCount + 1));

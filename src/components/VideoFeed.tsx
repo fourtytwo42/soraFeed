@@ -25,6 +25,8 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   const [showControls, setShowControls] = useState(false);
   const [preloadedRemixFeeds, setPreloadedRemixFeeds] = useState<Map<string, SoraFeedItem[]>>(new Map());
   const [isMobile, setIsMobile] = useState(false);
+  const [scrollDirection, setScrollDirection] = useState<'up' | 'down' | null>(null);
+  const [targetIndex, setTargetIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
   
@@ -53,40 +55,24 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   
   const goToNext = () => {
     if (currentIndex < items.length - 1) {
-      // Animate to next position then change index
-      const targetY = -window.innerHeight;
-      animate(y, targetY, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: () => {
-          setCurrentIndex(currentIndex + 1);
-          
-          // Load more when approaching the end
-          if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
-            onLoadMore();
-          }
-        }
-      });
+      setCurrentIndex(currentIndex + 1);
+      y.set(0); // Reset position immediately
+      
+      // Load more when approaching the end
+      if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
+        onLoadMore();
+      }
     }
   };
 
   const goToPrevious = () => {
     if (currentIndex > 0) {
-      // Animate to previous position then change index
-      const targetY = window.innerHeight;
-      animate(y, targetY, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: () => {
-          setCurrentIndex(currentIndex - 1);
-        }
-      });
+      setCurrentIndex(currentIndex - 1);
+      y.set(0); // Reset position immediately
     }
   };
 
-  // Drag handler
+  // Drag handler with smooth transitions
   const bind = useDrag(
     ({ down, movement: [, my], velocity: [, vy] }) => {
       // Prevent dragging beyond bounds
@@ -100,35 +86,29 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
       }
 
       if (down) {
-        // While dragging, update position
+        // While dragging, update position smoothly
         y.set(my);
       } else {
         // Released - determine if we should snap to next/previous
-        const threshold = window.innerHeight * 0.2; // 20% of screen height
-        const shouldNavigate = Math.abs(my) > threshold || Math.abs(vy) > 0.5;
+        const threshold = window.innerHeight * 0.15; // Lower threshold for easier navigation
+        const shouldNavigate = Math.abs(my) > threshold || Math.abs(vy) > 0.3;
 
         if (shouldNavigate) {
           if (my < 0 && currentIndex < items.length - 1) {
-            // Swiped up - animate to next position then change index
-            const targetY = -window.innerHeight;
-            animate(y, targetY, {
+            // Swiped up - animate to next then snap
+            animate(y, -window.innerHeight, {
               type: 'spring',
               stiffness: 400,
               damping: 40,
-              onComplete: () => {
-                goToNext();
-              }
+              onComplete: goToNext
             });
           } else if (my > 0 && currentIndex > 0) {
-            // Swiped down - animate to previous position then change index
-            const targetY = window.innerHeight;
-            animate(y, targetY, {
+            // Swiped down - animate to previous then snap
+            animate(y, window.innerHeight, {
               type: 'spring',
               stiffness: 400,
               damping: 40,
-              onComplete: () => {
-                goToPrevious();
-              }
+              onComplete: goToPrevious
             });
           } else {
             // Snap back to position if can't navigate
@@ -161,13 +141,25 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     
     setIsScrolling(true);
     
-    if (e.deltaY > 0) {
-      goToNext();
-    } else {
-      goToPrevious();
+    if (e.deltaY > 0 && currentIndex < items.length - 1) {
+      // Scroll down - animate to next then snap
+      animate(y, -window.innerHeight, {
+        type: 'spring',
+        stiffness: 400,
+        damping: 40,
+        onComplete: goToNext
+      });
+    } else if (e.deltaY < 0 && currentIndex > 0) {
+      // Scroll up - animate to previous then snap
+      animate(y, window.innerHeight, {
+        type: 'spring',
+        stiffness: 400,
+        damping: 40,
+        onComplete: goToPrevious
+      });
     }
     
-    setTimeout(() => setIsScrolling(false), 500); // Increased timeout for animation
+    setTimeout(() => setIsScrolling(false), 600);
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -183,26 +175,62 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     
     if (isTyping) return;
     
-    if (e.key === 'ArrowDown' || e.key === ' ') {
+    if ((e.key === 'ArrowDown' || e.key === ' ') && currentIndex < items.length - 1) {
       e.preventDefault();
       setIsScrolling(true);
-      goToNext();
-      setTimeout(() => setIsScrolling(false), 500); // Increased timeout for animation
-    } else if (e.key === 'ArrowUp') {
+      animate(y, -window.innerHeight, {
+        type: 'spring',
+        stiffness: 400,
+        damping: 40,
+        onComplete: goToNext
+      });
+      setTimeout(() => setIsScrolling(false), 600);
+    } else if (e.key === 'ArrowUp' && currentIndex > 0) {
       e.preventDefault();
       setIsScrolling(true);
-      goToPrevious();
-      setTimeout(() => setIsScrolling(false), 500); // Increased timeout for animation
+      animate(y, window.innerHeight, {
+        type: 'spring',
+        stiffness: 400,
+        damping: 40,
+        onComplete: goToPrevious
+      });
+      setTimeout(() => setIsScrolling(false), 600);
     }
     // Left/Right arrow keys are handled by VideoPost component for remix navigation
   };
 
-  // Reset y position when index changes
+  // Listen to y motion value changes to detect scroll direction
   useEffect(() => {
-    y.set(0);
-    // Reset controls state when switching to a new video
+    const unsubscribe = y.on('change', (latest) => {
+      if (Math.abs(latest) > 50) { // Threshold to detect intentional scrolling
+        if (latest < -50 && currentIndex < items.length - 1) {
+          // Scrolling down to next video
+          if (scrollDirection !== 'down' || targetIndex !== currentIndex + 1) {
+            setScrollDirection('down');
+            setTargetIndex(currentIndex + 1);
+          }
+        } else if (latest > 50 && currentIndex > 0) {
+          // Scrolling up to previous video
+          if (scrollDirection !== 'up' || targetIndex !== currentIndex - 1) {
+            setScrollDirection('up');
+            setTargetIndex(currentIndex - 1);
+          }
+        }
+      } else if (Math.abs(latest) < 10) {
+        // Reset when back to center
+        setScrollDirection(null);
+        setTargetIndex(null);
+      }
+    });
+
+    return unsubscribe;
+  }, [y, currentIndex, items.length, scrollDirection, targetIndex]);
+
+  // Reset controls state when switching to a new video
+  useEffect(() => {
     setShowControls(false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setScrollDirection(null);
+    setTargetIndex(null);
   }, [currentIndex]);
 
   // Handle remix status change from current video
@@ -303,7 +331,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   // Safety check: don't render if no items or currentIndex is out of bounds
   if (!items || items.length === 0 || currentIndex >= items.length) {
     return (
-      <div className="relative w-full h-screen overflow-hidden bg-black flex items-center justify-center">
+      <div className="relative w-full h-dvh overflow-hidden bg-black flex items-center justify-center">
         <p className="text-white text-lg">No videos available</p>
       </div>
     );
@@ -312,72 +340,73 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-dvh overflow-hidden bg-black"
+      className="relative w-full h-dvh bg-black"
+      style={{ overflow: 'hidden' }}
       tabIndex={0}
     >
-      {/* Draggable container with all videos */}
-      <motion.div
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        {...(bind() as any)}
-        style={{ y }}
-        className="absolute inset-0"
-      >
-        {/* Previous Video */}
-        {currentIndex > 0 && (
-          <div 
-            className="absolute inset-0 w-full h-screen"
-            style={{ transform: 'translateY(-100%)' }}
-          >
-            <VideoPost 
-              item={items[currentIndex - 1]} 
-              isActive={false}
-              onNext={goToNext}
-              onPrevious={goToPrevious}
-              onAddToFavorites={onAddToFavorites}
-              onRemoveFromFavorites={onRemoveFromFavorites}
-              isInFavorites={isInFavorites}
-            />
-          </div>
-        )}
-        
-        {/* Current Video */}
-        <div className="absolute inset-0 w-full h-screen">
-          <VideoPost 
-            item={items[currentIndex]} 
-            isActive={true}
-            onNext={goToNext}
-            onPrevious={goToPrevious}
-            onAddToFavorites={onAddToFavorites}
-            onRemoveFromFavorites={onRemoveFromFavorites}
-            isInFavorites={isInFavorites}
-            onRemixStatusChange={handleRemixStatusChange}
-            onKeyboardNavigation={handleKeyboardNavigation}
-            preloadedRemixFeed={items[currentIndex] ? preloadedRemixFeeds.get(items[currentIndex].post.id) : undefined}
-            onControlsChange={setShowControls}
-          />
-        </div>
-
-        {/* Next Video */}
-        {currentIndex < items.length - 1 && (
-          <div 
-            className="absolute inset-0 w-full h-screen"
-            style={{ transform: 'translateY(100%)' }}
-          >
-            <VideoPost 
-              item={items[currentIndex + 1]} 
-              isActive={false}
-              onNext={goToNext}
-              onPrevious={goToPrevious}
-              onAddToFavorites={onAddToFavorites}
-              onRemoveFromFavorites={onRemoveFromFavorites}
-              isInFavorites={isInFavorites}
-            />
-          </div>
-        )}
-      </motion.div>
+      {/* Clipping container to prevent videos from showing outside viewport */}
+      <div className="absolute inset-0 overflow-hidden">
+        {/* Draggable container with all videos */}
+        <motion.div 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          {...(bind() as any)}
+          style={{ y }}
+          className="absolute inset-0"
+        >
+        {/* Render videos with scroll-aware playback */}
+        {items.map((item, index) => {
+          const offset = index - currentIndex;
+          // Keep videos mounted within ±2 positions for smooth scrolling
+          const shouldRender = Math.abs(offset) <= 2;
+          const isCurrentVideo = index === currentIndex;
+          const isUpcomingVideo = index === currentIndex + 1;
+          const isPreviousVideo = index === currentIndex - 1;
+          const isTargetVideo = targetIndex === index;
+          
+          // Always show current video and adjacent videos (±1) for smooth transitions
+          const isVisible = Math.abs(offset) <= 1;
+          
+          // Simple z-index: current video on top, adjacent videos below
+          let zIndex = 10;
+          if (isCurrentVideo) zIndex = 30;
+          else if (isUpcomingVideo || isPreviousVideo) zIndex = 20;
+          
+          if (!shouldRender) return null;
+          
+          return (
+            <div 
+              key={item.post.id}
+              className="absolute inset-0 w-full h-dvh bg-black"
+              style={{ 
+                transform: `translateY(${offset * 100}%)`,
+                zIndex,
+                pointerEvents: isCurrentVideo ? 'auto' : 'none',
+              }}
+            >
+              <VideoPost 
+                item={item} 
+                isActive={isCurrentVideo}
+                isUpcoming={isUpcomingVideo}
+                isTargetVideo={isTargetVideo}
+                scrollDirection={scrollDirection}
+                onNext={goToNext}
+                onPrevious={goToPrevious}
+                onAddToFavorites={onAddToFavorites}
+                onRemoveFromFavorites={onRemoveFromFavorites}
+                isInFavorites={isInFavorites}
+                onRemixStatusChange={isCurrentVideo ? handleRemixStatusChange : undefined}
+                onKeyboardNavigation={isCurrentVideo ? handleKeyboardNavigation : undefined}
+                preloadedRemixFeed={preloadedRemixFeeds.get(item.post.id)}
+                onControlsChange={isCurrentVideo ? setShowControls : undefined}
+              />
+            </div>
+          );
+        })}
+        </motion.div>
+      </div>
 
       {/* Preload next videos for better performance */}
-      <div className="absolute -top-full left-0 w-full h-screen opacity-0 pointer-events-none">
+      <div className="absolute -top-full left-0 w-full h-dvh opacity-0 pointer-events-none">
         {/* Preload next video */}
         {currentIndex < items.length - 1 && (
           <video
