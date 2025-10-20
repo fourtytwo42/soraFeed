@@ -7,18 +7,23 @@ import VideoFeed from './VideoFeed';
 import RefreshButton from './RefreshButton';
 import { mockFeedData } from '@/lib/mockData';
 
+type FeedType = 'latest' | 'top';
+
 export default function FeedLoader() {
   const [items, setItems] = useState<SoraFeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [feedType, setFeedType] = useState<FeedType>('latest');
 
-  const loadFeed = async () => {
+  const loadFeed = async (type: FeedType = feedType) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('🔄 Loading real feed data...');
+      console.log(`🔄 Loading ${type} feed data...`);
       
-      const data = await fetchFeed();
+      // Map feed type to API cut parameter
+      const cut = type === 'top' ? 'nf2' : 'nf2_latest';
+      const data = await fetchFeed(16, cut);
       console.log('✅ Loaded', data.items?.length || 0, 'feed items');
       
       if (data.items && data.items.length > 0) {
@@ -37,6 +42,11 @@ export default function FeedLoader() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFeedTypeChange = async (type: FeedType) => {
+    setFeedType(type);
+    await loadFeed(type);
   };
 
   useEffect(() => {
@@ -79,7 +89,32 @@ export default function FeedLoader() {
           ⚠️ Using fallback data: {error}
         </div>
       )}
-      <RefreshButton onRefresh={loadFeed} />
+      
+      {/* Feed Type Selector */}
+      <div className="fixed top-6 left-6 z-50 flex bg-black/50 rounded-full p-1 backdrop-blur-sm">
+        <button
+          onClick={() => handleFeedTypeChange('latest')}
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+            feedType === 'latest'
+              ? 'bg-white text-black'
+              : 'text-white hover:bg-white/20'
+          }`}
+        >
+          Latest
+        </button>
+        <button
+          onClick={() => handleFeedTypeChange('top')}
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+            feedType === 'top'
+              ? 'bg-white text-black'
+              : 'text-white hover:bg-white/20'
+          }`}
+        >
+          Top
+        </button>
+      </div>
+      
+      <RefreshButton onRefresh={() => loadFeed(feedType)} />
       <VideoFeed items={items} />
     </>
   );
