@@ -56,6 +56,14 @@ async function initDatabase() {
   try {
     console.log('🔧 Initializing database...');
 
+    // Enable pg_trgm extension for fuzzy matching
+    try {
+      await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+      console.log('✅ pg_trgm extension enabled');
+    } catch (error) {
+      console.log('⚠️ pg_trgm extension check:', error);
+    }
+
     // Create posts table
     await client.query(`
       CREATE TABLE IF NOT EXISTS sora_posts (
@@ -84,9 +92,21 @@ async function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_sora_posts_indexed_at ON sora_posts(indexed_at DESC);
     `);
 
+    // Full-text search index
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_sora_posts_text ON sora_posts USING gin(to_tsvector('english', COALESCE(text, '')));
     `);
+
+    // Trigram index for fuzzy matching
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_sora_posts_text_trgm 
+        ON sora_posts USING gin(text gin_trgm_ops)
+      `);
+      console.log('✅ Trigram index created');
+    } catch (error) {
+      console.log('⚠️ Trigram index check:', error);
+    }
 
     // Create scanner_stats table
     await client.query(`
