@@ -292,6 +292,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     >
       {/* Draggable container with all videos */}
       <motion.div
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {...(bind() as any)}
         style={{ y }}
         className="absolute inset-0"
