@@ -58,6 +58,30 @@ export async function GET() {
     });
   } catch (error: any) {
     console.error('API error:', error);
+    
+    // If it's a PostgreSQL module error, return a helpful message
+    if (error.message?.includes('PostgreSQL module not available')) {
+      return NextResponse.json({
+        error: 'Database not configured',
+        details: 'PostgreSQL dependencies not installed. Run: npm install pg @types/pg',
+        scanner: {
+          status: 'not_configured',
+          totalScanned: 0,
+          newPosts: 0,
+          duplicatePosts: 0,
+          errors: 0,
+          lastScanAt: null,
+          scanDurationMs: 0,
+          errorMessage: 'PostgreSQL module not available'
+        },
+        database: {
+          totalPosts: 0,
+          recentPosts: [],
+          dailyStats: []
+        }
+      });
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch scanner stats', details: error.message },
       { status: 500 }

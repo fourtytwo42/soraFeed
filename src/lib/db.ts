@@ -1,19 +1,34 @@
-import { Pool } from 'pg';
+let Pool: any;
+let pool: any;
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'sora_feed',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// Dynamically import pg only when needed (server-side)
+async function getPool() {
+  if (!pool && typeof window === 'undefined') {
+    try {
+      const pg = await import('pg');
+      Pool = pg.Pool;
+      pool = new Pool({
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432'),
+        database: process.env.DB_NAME || 'sora_feed',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || '',
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
+      });
+    } catch (error) {
+      console.error('Failed to load pg module:', error);
+      throw new Error('PostgreSQL module not available. Run: npm install pg @types/pg');
+    }
+  }
+  return pool;
+}
 
 export async function query(text: string, params?: any[]) {
   const start = Date.now();
   try {
+    const pool = await getPool();
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
     console.log('Executed query', { text, duration, rows: res.rowCount });
@@ -25,6 +40,7 @@ export async function query(text: string, params?: any[]) {
 }
 
 export async function getClient() {
+  const pool = await getPool();
   const client = await pool.connect();
   return client;
 }
@@ -96,5 +112,5 @@ export async function initDatabase() {
   }
 }
 
-export default pool;
+export default { getPool };
 
