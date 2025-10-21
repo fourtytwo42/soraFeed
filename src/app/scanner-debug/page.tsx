@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Activity, Database, TrendingUp, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { Activity, Database, TrendingUp, AlertCircle, CheckCircle, Clock, XCircle, HardDrive, Cpu, Zap, BarChart3 } from 'lucide-react';
 
 interface ScannerStats {
   scanner: {
@@ -16,6 +16,7 @@ interface ScannerStats {
   };
   database: {
     totalPosts: number;
+    totalCreators?: number;
     recentPosts: Array<{
       id: string;
       text: string | null;
@@ -25,8 +26,50 @@ interface ScannerStats {
     }>;
     dailyStats: Array<{
       date: string;
-      count: string;
+      post_count: string;
     }>;
+    dailyCreators?: Array<{
+      date: string;
+      creator_count: string;
+    }>;
+    storage: {
+      databaseSize: string;
+      databaseSizeBytes: number;
+      tables: Array<{
+        schemaname: string;
+        tablename: string;
+        size: string;
+        size_bytes: number;
+        table_size: string;
+        index_size: string;
+      }>;
+    };
+    performance: {
+      active_connections?: number | string;
+      transactions_committed?: number | string;
+      transactions_rolled_back?: number | string;
+      disk_blocks_read?: number | string;
+      buffer_hits?: number | string;
+      tuples_returned?: number | string;
+      tuples_fetched?: number | string;
+      tuples_inserted?: number | string;
+      tuples_updated?: number | string;
+      tuples_deleted?: number | string;
+      cache_hit_ratio?: number | string;
+    };
+    indexes: Array<{
+      schemaname: string;
+      tablename: string;
+      indexname: string;
+      index_tuples_read: number | string;
+      index_tuples_fetched: number | string;
+    }>;
+    memory: {
+      max_connections?: string;
+      shared_buffers?: string;
+      effective_cache_size?: string;
+      work_mem?: string;
+    };
   };
 }
 
@@ -222,17 +265,173 @@ export default function ScannerDebugPage() {
                     <span className="text-gray-400">Total Posts:</span>
                     <span className="text-3xl font-bold text-purple-400">{stats.database.totalPosts.toLocaleString()}</span>
                   </div>
+                  {stats.database.totalCreators && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-400">Unique Creators:</span>
+                      <span className="text-2xl font-bold text-blue-400">{stats.database.totalCreators.toLocaleString()}</span>
+                    </div>
+                  )}
                   <div className="pt-2 border-t border-gray-800">
                     <span className="text-gray-400 block mb-2">Posts per Day (Last 7 days):</span>
                     <div className="space-y-1">
                       {stats.database.dailyStats.map((day) => (
                         <div key={day.date} className="flex justify-between text-sm">
                           <span className="font-mono">{day.date}</span>
-                          <span className="text-purple-400 font-semibold">{parseInt(day.count).toLocaleString()}</span>
+                          <span className="text-purple-400 font-semibold">{parseInt(day.post_count).toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
                   </div>
+                  {stats.database.dailyCreators && stats.database.dailyCreators.length > 0 && (
+                    <div className="pt-2 border-t border-gray-800">
+                      <span className="text-gray-400 block mb-2">New Creators per Day (Last 7 days):</span>
+                      <div className="space-y-1">
+                        {stats.database.dailyCreators.map((day) => (
+                          <div key={day.date} className="flex justify-between text-sm">
+                            <span className="font-mono">{day.date}</span>
+                            <span className="text-blue-400 font-semibold">{parseInt(day.creator_count).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Database Storage & Performance */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Storage Metrics */}
+              <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <HardDrive className="text-blue-500" size={24} />
+                  Storage Metrics
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400">Database Size:</span>
+                    <span className="text-2xl font-bold text-blue-400">{stats.database.storage?.databaseSize || 'Unknown'}</span>
+                  </div>
+                  
+                  {stats.database.storage?.tables && stats.database.storage.tables.length > 0 && (
+                    <div className="pt-3 border-t border-gray-800">
+                      <span className="text-gray-400 block mb-3">Table Sizes:</span>
+                      <div className="space-y-2">
+                        {stats.database.storage.tables.slice(0, 5).map((table) => (
+                          <div key={table.tablename} className="flex justify-between text-sm">
+                            <span className="font-mono text-purple-400">{table.tablename}</span>
+                            <div className="text-right">
+                              <div className="text-blue-400 font-semibold">{table.size}</div>
+                              <div className="text-xs text-gray-500">
+                                Table: {table.table_size} | Indexes: {table.index_size}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Performance Metrics */}
+              <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Zap className="text-yellow-500" size={24} />
+                  Performance Metrics
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Active Connections:</span>
+                    <span className="font-mono text-green-400">{Number(stats.database.performance?.active_connections || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Cache Hit Ratio:</span>
+                    <span className={`font-mono ${
+                      (Number(stats.database.performance?.cache_hit_ratio) || 0) > 95 
+                        ? 'text-green-400' 
+                        : (Number(stats.database.performance?.cache_hit_ratio) || 0) > 85 
+                        ? 'text-yellow-400' 
+                        : 'text-red-400'
+                    }`}>
+                      {Number(stats.database.performance?.cache_hit_ratio || 0).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Transactions:</span>
+                    <span className="font-mono text-blue-400">
+                      {Number(stats.database.performance?.transactions_committed || 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Tuples Inserted:</span>
+                    <span className="font-mono text-purple-400">
+                      {Number(stats.database.performance?.tuples_inserted || 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Buffer Hits:</span>
+                    <span className="font-mono text-cyan-400">
+                      {Number(stats.database.performance?.buffer_hits || 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Memory & Index Stats */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Memory Configuration */}
+              <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Cpu className="text-green-500" size={24} />
+                  Memory Configuration
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Max Connections:</span>
+                    <span className="font-mono text-green-400">{stats.database.memory?.max_connections || 'Unknown'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Shared Buffers:</span>
+                    <span className="font-mono text-blue-400">{stats.database.memory?.shared_buffers || 'Unknown'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Effective Cache Size:</span>
+                    <span className="font-mono text-purple-400">{stats.database.memory?.effective_cache_size || 'Unknown'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Work Memory:</span>
+                    <span className="font-mono text-yellow-400">{stats.database.memory?.work_mem || 'Unknown'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Index Usage */}
+              <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <BarChart3 className="text-orange-500" size={24} />
+                  Top Index Usage
+                </h3>
+                <div className="space-y-2">
+                  {stats.database.indexes && stats.database.indexes.length > 0 ? (
+                    stats.database.indexes.slice(0, 5).map((index, i) => (
+                      <div key={i} className="flex justify-between text-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono text-orange-400 truncate">{index.indexname}</div>
+                          <div className="text-xs text-gray-500">{index.tablename}</div>
+                        </div>
+                        <div className="text-right ml-2">
+                          <div className="text-orange-400 font-semibold">
+                            {Number(index.index_tuples_read || 0).toLocaleString()}
+                          </div>
+                          <div className="text-xs text-gray-500">reads</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-500 text-sm italic">No index statistics available</div>
+                  )}
                 </div>
               </div>
             </div>

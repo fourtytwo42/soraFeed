@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
-import { Play, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download, Facebook, Twitter } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
 
@@ -847,173 +847,323 @@ export default function VideoPost({
       {/* Controls Overlay */}
       {videoReady && (
         <>
-          {/* Play/Pause Button */}
-          {showControls && (
-              <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
+          {/* Play/Pause Button - Upper Left Corner - Always Visible */}
+          {videoReady && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="absolute top-4 z-30"
+              style={{ 
+                left: videoWidth ? `calc(50% - ${videoWidth/2}px + 1rem)` : '1rem',
+                pointerEvents: 'auto'
+              }}
             >
-              <div className="bg-black/50 rounded-full p-4 pointer-events-auto">
-                {isPlaying ? (
-                  <div className="w-8 h-8" />
-                ) : (
-                  <Play className="w-8 h-8 text-white fill-white" />
-                )}
-                </div>
-              </motion.div>
-          )}
-          
-          {/* Bottom Controls */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-                  animate={{ 
-              opacity: showControls ? 1 : 0,
-              y: showControls ? 0 : 20
-            }}
-            className="absolute bottom-4 left-4 right-4 z-40"
-            style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-          >
-            {/* Remix Navigation */}
-            {hasRemixes && (
-              <div className="flex items-center justify-center mb-4">
-                <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2">
-                  {/* Previous Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      console.log('🔘 Button: Going to previous remix');
-                      goToPreviousRemix();
-                    }}
-                  disabled={!canGoLeft}
-                    className={`p-2 rounded-full transition-all ${
-                      canGoLeft 
-                        ? 'bg-white/20 hover:bg-white/30 text-white' 
-                        : 'bg-white/10 text-white/50 cursor-not-allowed'
-                    }`}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  
-                  {/* Remix Dots */}
-                  <div className="flex items-center gap-1 mx-2">
-                    {getAllItems().map((_, index) => (
-                      <button
-                        key={index}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          goToRemixIndex(index);
-                        }}
-                        className={`w-2 h-2 rounded-full transition-all ${
-                          currentRemixIndex === index
-                            ? 'bg-white scale-125' 
-                            : 'bg-white/50 hover:bg-white/70'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  
-                  {/* Next Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      console.log('🔘 Button: Going to next remix');
-                      goToNextRemix();
-                    }}
-                  disabled={!canGoRight}
-                    className={`p-2 rounded-full transition-all ${
-                      canGoRight 
-                        ? 'bg-white/20 hover:bg-white/30 text-white' 
-                        : 'bg-white/10 text-white/50 cursor-not-allowed'
-                    }`}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            {/* Video Info */}
-            <div className="flex items-end justify-between">
-              {/* Left side - Video info */}
-              <div className="flex-1 min-w-0 mr-4">
-                  <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                    <User className="w-4 h-4 text-white" />
-                    </div>
-                  <span className="text-white font-semibold text-sm">
-                    Sora User
-                        </span>
-                  <CheckCircle className="w-4 h-4 text-blue-400" />
-                  </div>
-
-                  {currentItem.post.text && (
-                    <div 
-                    className={`text-white text-xs ${currentItem.post.text.length > 100 ? 'cursor-pointer' : ''}`}
-                      onClick={(e) => {
-                        if (currentItem.post.text && currentItem.post.text.length > 100) {
-                          e.stopPropagation();
-                          setIsDescriptionExpanded(!isDescriptionExpanded);
-                        }
-                      }}
-                    >
-                      <p className={isDescriptionExpanded ? '' : 'line-clamp-2'}>
-                        {currentItem.post.text}
-                      </p>
-                    {currentItem.post.text.length > 100 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsDescriptionExpanded(!isDescriptionExpanded);
-                          }}
-                          className="text-white/80 hover:text-white text-xs font-semibold mt-1"
-                        >
-                          {isDescriptionExpanded ? 'less' : 'more'}
-                        </button>
-                      )}
-                    </div>
+              <div className="flex flex-col gap-2">
+                {/* Play/Pause Button */}
+                <button
+                  onClick={handleVideoClick}
+                  className="bg-black/50 rounded-full p-2 hover:bg-black/70 transition-all cursor-pointer"
+                >
+                  {isPlaying ? (
+                    <Pause className="w-5 h-5 text-white fill-white" />
+                  ) : (
+                    <Play className="w-5 h-5 text-white fill-white" />
                   )}
-                </div>
-              
-              {/* Right side - Action buttons */}
-              <div className="flex flex-col gap-3">
+                </button>
+                
                 {/* Mute Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
                     toggleMute();
                   }}
-                  className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all"
+                  className="bg-black/50 rounded-full p-2 hover:bg-black/70 transition-all cursor-pointer"
                 >
                   {isMuted ? (
                     <VolumeX className="w-5 h-5 text-white" />
                   ) : (
                     <Volume2 className="w-5 h-5 text-white" />
                   )}
-                  </button>
+                </button>
+              </div>
+            </motion.div>
+          )}
+          
+        </>
+      )}
+      
+      {/* Description and Username - positioned as overlay above remix indicator */}
+      {videoReady && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ 
+            opacity: showControls ? 1 : 0,
+            y: showControls ? 0 : 20
+          }}
+          className="absolute bottom-20 z-40 max-w-xs"
+          style={{ 
+            left: videoWidth ? `calc(50% - ${videoWidth/2}px + 1rem)` : '1rem',
+            pointerEvents: showControls ? 'auto' : 'none' 
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+              <User className="w-4 h-4 text-white" />
+            </div>
+            <span className="text-white font-semibold text-sm">
+              Sora User
+            </span>
+            <CheckCircle className="w-4 h-4 text-blue-400" />
+          </div>
 
-                {/* Like Button */}
+          {currentItem.post.text && (
+            <div 
+              className={`text-white text-xs ${currentItem.post.text.length > 100 ? 'cursor-pointer' : ''}`}
+              onClick={(e) => {
+                if (currentItem.post.text && currentItem.post.text.length > 100) {
+                  e.stopPropagation();
+                  setIsDescriptionExpanded(!isDescriptionExpanded);
+                }
+              }}
+            >
+              <p className={isDescriptionExpanded ? '' : 'line-clamp-2'}>
+                {currentItem.post.text}
+              </p>
+              {currentItem.post.text.length > 100 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsDescriptionExpanded(!isDescriptionExpanded);
+                      }}
+                      className="text-white/80 hover:text-white text-xs font-semibold mt-1 cursor-pointer"
+                    >
+                  {isDescriptionExpanded ? 'less' : 'more'}
+                </button>
+              )}
+            </div>
+          )}
+        </motion.div>
+      )}
+      
+      {/* Remix Navigation - positioned at very bottom center of video - Always Visible */}
+      {videoReady && hasRemixes && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ 
+            opacity: 1,
+            y: 0
+          }}
+          className="absolute bottom-4 z-40"
+          style={{ 
+            left: '50%',
+            transform: 'translateX(-50%)',
+            pointerEvents: 'auto'
+          }}
+        >
+          <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2">
+            {/* Previous Button */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                    if (isLiked) {
-                      onRemoveFromFavorites?.(currentItem.post.id);
-                      setIsLiked(false);
-                    } else {
-                      onAddToFavorites?.(currentItem);
-                      setIsLiked(true);
-                    }
-                  }}
-                  className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all"
-                >
-                  <Heart 
-                    className={`w-5 h-5 ${isLiked ? 'text-red-500 fill-red-500' : 'text-white'}`} 
-                  />
-                </button>
-                  </div>
+                      console.log('🔘 Button: Going to previous remix');
+                      goToPreviousRemix();
+                    }}
+                    disabled={!canGoLeft}
+                    className={`p-2 rounded-full transition-all ${
+                      canGoLeft 
+                        ? 'bg-white/20 hover:bg-white/30 text-white cursor-pointer' 
+                        : 'bg-white/10 text-white/50 cursor-not-allowed'
+                    }`}
+                  >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            {/* Remix Dots - limited to max 10 */}
+            <div className="flex items-center gap-1 mx-2">
+              {(() => {
+                const allItems = getAllItems();
+                const totalItems = allItems.length;
+                
+                // If 10 or fewer items, show all dots
+                if (totalItems <= 10) {
+                  return allItems.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goToRemixIndex(index);
+                      }}
+                      className={`w-2 h-2 rounded-full transition-all ${
+                        currentRemixIndex === index
+                          ? 'bg-white scale-125' 
+                          : 'bg-white/50 hover:bg-white/70'
+                      }`}
+                    />
+                  ));
+                }
+                
+                // More than 10 items - show smart pagination
+                const dots = [];
+                const maxDots = 10;
+                const halfMax = Math.floor(maxDots / 2);
+                
+                let startIndex = Math.max(0, currentRemixIndex - halfMax);
+                let endIndex = Math.min(totalItems - 1, startIndex + maxDots - 1);
+                
+                // Adjust if we're near the end
+                if (endIndex - startIndex < maxDots - 1) {
+                  startIndex = Math.max(0, endIndex - maxDots + 1);
+                }
+                
+                for (let i = startIndex; i <= endIndex; i++) {
+                  dots.push(
+                      <button
+                        key={i}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goToRemixIndex(i);
+                        }}
+                        className={`w-2 h-2 rounded-full transition-all cursor-pointer ${
+                          currentRemixIndex === i
+                            ? 'bg-white scale-125' 
+                            : 'bg-white/50 hover:bg-white/70'
+                        }`}
+                      />
+                  );
+                }
+                
+                return dots;
+              })()}
             </div>
-              </motion.div>
-        </>
+            
+            {/* Next Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('🔘 Button: Going to next remix');
+                      goToNextRemix();
+                    }}
+                    disabled={!canGoRight}
+                    className={`p-2 rounded-full transition-all ${
+                      canGoRight 
+                        ? 'bg-white/20 hover:bg-white/30 text-white cursor-pointer' 
+                        : 'bg-white/10 text-white/50 cursor-not-allowed'
+                    }`}
+                  >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </motion.div>
+      )}
+      
+      {/* Action Menu - positioned at bottom right corner of video */}
+      {videoReady && (
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ 
+            opacity: showControls ? 1 : 0,
+            x: showControls ? 0 : 20
+          }}
+          className="absolute bottom-4 z-40"
+          style={{ 
+            right: videoWidth ? `calc(50% - ${videoWidth/2}px + 1rem)` : '1rem',
+            pointerEvents: showControls ? 'auto' : 'none' 
+          }}
+        >
+          <div className="flex flex-col gap-3">
+            {/* Facebook Share Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const url = encodeURIComponent(`https://sora.chatgpt.com/p/${currentItem.post.id}`);
+                const text = encodeURIComponent(currentItem.post.text || 'Check out this amazing Sora video!');
+                window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank', 'width=600,height=400');
+              }}
+              className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all cursor-pointer"
+            >
+              <Facebook className="w-5 h-5 text-white" />
+            </button>
+            
+            {/* Twitter Share Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const url = encodeURIComponent(`https://sora.chatgpt.com/p/${currentItem.post.id}`);
+                const text = encodeURIComponent(currentItem.post.text || 'Check out this amazing Sora video!');
+                window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank', 'width=600,height=400');
+              }}
+              className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all cursor-pointer"
+            >
+              <Twitter className="w-5 h-5 text-white" />
+            </button>
+            
+            {/* Download Button */}
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                const videoUrl = currentItem.post.attachments[0]?.encodings?.source?.path || 
+                               currentItem.post.attachments[0]?.encodings?.md?.path;
+                if (videoUrl) {
+                  try {
+                    // Fetch the video as a blob
+                    const response = await fetch(videoUrl);
+                    const blob = await response.blob();
+                    
+                    // Create a blob URL
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    
+                    // Create download link
+                    const link = document.createElement('a');
+                    link.href = blobUrl;
+                    link.download = `sora-video-${currentItem.post.id}.mp4`;
+                    link.style.display = 'none';
+                    
+                    // Trigger download
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    // Clean up blob URL
+                    window.URL.revokeObjectURL(blobUrl);
+                  } catch (error) {
+                    console.error('Download failed:', error);
+                    // Fallback: open in new tab with download attribute
+                    const link = document.createElement('a');
+                    link.href = videoUrl;
+                    link.download = `sora-video-${currentItem.post.id}.mp4`;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }
+                }
+              }}
+              className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all cursor-pointer"
+            >
+              <Download className="w-5 h-5 text-white" />
+            </button>
+
+            {/* Like Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isLiked) {
+                  onRemoveFromFavorites?.(currentItem.post.id);
+                  setIsLiked(false);
+                } else {
+                  onAddToFavorites?.(currentItem);
+                  setIsLiked(true);
+                }
+              }}
+              className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all cursor-pointer"
+            >
+              <Heart 
+                className={`w-5 h-5 ${isLiked ? 'text-red-500 fill-red-500' : 'text-white'}`} 
+              />
+            </button>
+          </div>
+        </motion.div>
       )}
       </div>
   );

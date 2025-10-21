@@ -129,7 +129,7 @@ export default function FeedLoader() {
       
       // Map feed type to API cut parameter
       const cut = type === 'top' ? 'nf2_top' : 'nf2_latest';
-      const data = await fetchFeed(16, cut);
+      const data = await fetchFeed(20, cut);
       console.log('✅ Loaded', data.items?.length || 0, 'feed items');
       
       if (data.items && data.items.length > 0) {
@@ -184,7 +184,7 @@ export default function FeedLoader() {
       console.log('🔄 Loading more feed data with cursor...');
       
       const cut = feedType === 'top' ? 'nf2_top' : 'nf2_latest';
-      const data = await fetchFeed(16, cut, cursor);
+      const data = await fetchFeed(20, cut, cursor);
       console.log('✅ Loaded', data.items?.length || 0, 'more feed items');
       
       if (data.items && data.items.length > 0) {
@@ -329,7 +329,7 @@ export default function FeedLoader() {
               {/* Selected Button */}
               <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 flex-shrink-0 ${
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 flex-shrink-0 cursor-pointer ${
                   feedType === 'latest'
                     ? 'bg-white text-black'
                     : feedType === 'top'
@@ -363,7 +363,7 @@ export default function FeedLoader() {
                   />
                   <button
                     onClick={handleSearch}
-                    className="px-3 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors whitespace-nowrap flex-shrink-0"
+                    className="px-3 py-2 bg-white text-black rounded-full text-sm font-medium hover:bg-gray-200 transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer"
                   >
                     Search
                   </button>
@@ -377,7 +377,7 @@ export default function FeedLoader() {
                 {feedType !== 'latest' && (
                   <button
                     onClick={() => handleFeedTypeChange('latest')}
-                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap cursor-pointer"
                   >
                     Latest
                   </button>
@@ -385,7 +385,7 @@ export default function FeedLoader() {
                 {feedType !== 'top' && (
                   <button
                     onClick={() => handleFeedTypeChange('top')}
-                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap cursor-pointer"
                   >
                     Top
                   </button>
@@ -393,7 +393,7 @@ export default function FeedLoader() {
                 {feedType !== 'favorites' && (
                   <button
                     onClick={() => handleFeedTypeChange('favorites')}
-                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap cursor-pointer"
                   >
                     Favorites
                   </button>
@@ -401,7 +401,7 @@ export default function FeedLoader() {
                 {feedType !== 'search' && (
                   <button
                     onClick={() => handleFeedTypeChange('search')}
-                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap"
+                    className="w-full text-left px-4 py-2 rounded-xl text-sm font-medium text-white hover:bg-white/20 transition-all whitespace-nowrap cursor-pointer"
                   >
                     Search
                   </button>

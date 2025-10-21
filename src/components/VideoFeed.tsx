@@ -65,8 +65,8 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
             setCurrentIndex(currentIndex + 1);
             y.set(0); // Reset position after animation
             
-            // Load more when approaching the end
-            if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
+            // Load more when 10 videos remaining for seamless scrolling
+            if (currentIndex >= items.length - 10 && hasMore && !loadingMore && onLoadMore) {
               onLoadMore();
             }
           }
@@ -76,8 +76,8 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         setCurrentIndex(currentIndex + 1);
         y.set(0);
         
-        // Load more when approaching the end
-        if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
+        // Load more when 10 videos remaining for seamless scrolling
+        if (currentIndex >= items.length - 10 && hasMore && !loadingMore && onLoadMore) {
           onLoadMore();
         }
       }

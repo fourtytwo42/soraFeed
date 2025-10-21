@@ -64,43 +64,86 @@ async function initDatabase() {
       console.log('⚠️ pg_trgm extension check:', error);
     }
 
-    // Create posts table
+    // Create creators table
     await client.query(`
-      CREATE TABLE IF NOT EXISTS sora_posts (
+      CREATE TABLE IF NOT EXISTS creators (
         id TEXT PRIMARY KEY,
-        post_data JSONB NOT NULL,
-        profile_data JSONB NOT NULL,
-        text TEXT,
-        posted_at BIGINT,
-        updated_at BIGINT,
-        like_count INTEGER DEFAULT 0,
-        view_count INTEGER DEFAULT 0,
-        remix_count INTEGER DEFAULT 0,
+        username TEXT NOT NULL,
+        display_name TEXT,
+        profile_picture_url TEXT,
         permalink TEXT,
-        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        follower_count INTEGER DEFAULT 0,
+        following_count INTEGER DEFAULT 0,
+        post_count INTEGER DEFAULT 0,
+        verified BOOLEAN DEFAULT false,
+        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(id)
+        UNIQUE(username)
       );
     `);
 
-    // Create indexes
+    // Create posts table (normalized schema)
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_sora_posts_posted_at ON sora_posts(posted_at DESC);
+      CREATE TABLE IF NOT EXISTS sora_posts (
+        id TEXT PRIMARY KEY,
+        creator_id TEXT NOT NULL REFERENCES creators(id),
+        text TEXT,
+        posted_at BIGINT NOT NULL,
+        updated_at BIGINT,
+        permalink TEXT NOT NULL,
+        
+        -- Video metadata
+        video_url TEXT,
+        video_url_md TEXT,
+        thumbnail_url TEXT,
+        gif_url TEXT,
+        width INTEGER,
+        height INTEGER,
+        generation_id TEXT,
+        task_id TEXT,
+        
+        -- Engagement metrics
+        like_count INTEGER DEFAULT 0,
+        view_count INTEGER DEFAULT 0,
+        remix_count INTEGER DEFAULT 0,
+        
+        -- Tracking
+        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Create indexes for creators
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_creators_username ON creators(username);
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_creators_verified ON creators(verified) WHERE verified = true;
+    `);
+
+    // Create indexes for posts
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_posts_creator_id ON sora_posts(creator_id);
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_posts_posted_at ON sora_posts(posted_at DESC);
     `);
     
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_sora_posts_indexed_at ON sora_posts(indexed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_posts_indexed_at ON sora_posts(indexed_at DESC);
     `);
 
     // Full-text search index
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_sora_posts_text ON sora_posts USING gin(to_tsvector('english', COALESCE(text, '')));
+      CREATE INDEX IF NOT EXISTS idx_posts_text_fts ON sora_posts USING gin(to_tsvector('english', COALESCE(text, '')));
     `);
 
     // Trigram index for fuzzy matching
     try {
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_sora_posts_text_trgm 
+        CREATE INDEX IF NOT EXISTS idx_posts_text_trgm 
         ON sora_posts USING gin(text gin_trgm_ops)
       `);
       console.log('✅ Trigram index created');
@@ -168,24 +211,61 @@ async function processPosts(feedData) {
         continue;
       }
 
-      // Insert new post
+      // Extract video metadata from attachments
+      const attachment = post.attachments?.[0] || {};
+      const encodings = attachment.encodings || {};
+      
+      // Insert or update creator
+      await client.query(`
+        INSERT INTO creators (
+          id, username, display_name, profile_picture_url,
+          permalink, follower_count, following_count,
+          post_count, verified
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (id) DO UPDATE SET
+          follower_count = EXCLUDED.follower_count,
+          following_count = EXCLUDED.following_count,
+          post_count = EXCLUDED.post_count,
+          last_updated = CURRENT_TIMESTAMP
+      `, [
+        profile.user_id || profile.id,
+        profile.username || '',
+        profile.display_name || null,
+        profile.profile_picture_url || null,
+        profile.permalink || null,
+        profile.follower_count || 0,
+        profile.following_count || 0,
+        profile.post_count || 0,
+        profile.verified || false
+      ]);
+      
+      // Insert new post into normalized schema
       await client.query(`
         INSERT INTO sora_posts (
-          id, post_data, profile_data, text, posted_at, updated_at,
-          like_count, view_count, remix_count, permalink
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          id, creator_id, text, posted_at, updated_at, permalink,
+          video_url, video_url_md, thumbnail_url, gif_url,
+          width, height, generation_id, task_id,
+          like_count, view_count, remix_count
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         ON CONFLICT (id) DO NOTHING
       `, [
         post.id,
-        JSON.stringify(post),
-        JSON.stringify(profile),
+        profile.user_id || profile.id,
         post.text || null,
-        Math.floor(post.posted_at || 0), // Convert float to integer
-        Math.floor(post.updated_at || 0), // Convert float to integer
+        Math.floor(post.posted_at || 0),
+        Math.floor(post.updated_at || 0),
+        post.permalink || null,
+        encodings.source?.path || null,
+        encodings.md?.path || null,
+        encodings.thumbnail?.path || null,
+        encodings.gif?.path || null,
+        attachment.width || null,
+        attachment.height || null,
+        attachment.generation_id || null,
+        attachment.task_id || null,
         0, // like_count - not in API response
         0, // view_count - not in API response
-        0, // remix_count - not in API response
-        post.permalink || null
+        0  // remix_count - not in API response
       ]);
 
       newPosts++;
