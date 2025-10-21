@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { SoraFeedItem } from '@/types/sora';
 import { fetchFeed } from '@/lib/api';
 import { remixCache } from '@/lib/remixCache';
-import VideoFeed from './VideoFeed';
+import VerticalCarousel from './VerticalCarousel';
 import RemixCacheDebug from './RemixCacheDebug';
 import { mockFeedData } from '@/lib/mockData';
 import { ChevronDown } from 'lucide-react';
@@ -412,7 +412,7 @@ export default function FeedLoader() {
         </div>
       </div>
       
-      <VideoFeed 
+      <VerticalCarousel 
         key={`${feedType}-${searchQuery}`} // Force remount when feed type or search changes
         items={items} 
         onLoadMore={loadMoreFeed}
