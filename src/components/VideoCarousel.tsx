@@ -57,7 +57,15 @@ export default function VideoCarousel({
     inViewThreshold: 0.7, // Snap when 70% of slide is visible
     watchDrag: (emblaApi, evt) => {
       // Only allow horizontal dragging when this carousel is active
-      return isActive;
+      const allowed = isActive;
+      console.log('🟧 HORIZONTAL: watchDrag called', { 
+        eventType: evt.type, 
+        isActive, 
+        allowed,
+        hasRemixes: remixFeed.length > 0,
+        currentRemixIndex 
+      });
+      return allowed;
     }
   });
 
@@ -76,13 +84,22 @@ export default function VideoCarousel({
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
     const selectedIndex = emblaApi.selectedScrollSnap();
+    console.log('🟧 HORIZONTAL: Slide selected', { 
+      selectedIndex, 
+      previousIndex: currentRemixIndex,
+      totalSlides: getAllItems().length 
+    });
     setCurrentRemixIndex(selectedIndex);
-  }, [emblaApi]);
+  }, [emblaApi, currentRemixIndex, getAllItems]);
 
   // Set up event listeners
   useEffect(() => {
-    if (!emblaApi) return;
+    if (!emblaApi) {
+      console.log('🟧 HORIZONTAL: Embla API not ready yet');
+      return;
+    }
     
+    console.log('🟧 HORIZONTAL: Embla API ready, setting up listeners');
     emblaApi.on('select', onSelect);
     onSelect(); // Call once to set initial state
     
@@ -171,13 +188,15 @@ export default function VideoCarousel({
   // Load remix feed
   useEffect(() => {
     if (isActive && remixFeed.length === 0 && !loadingRemixes) {
+      console.log('🟧 HORIZONTAL: Loading remix feed for', item.post.id);
       const loadRemixFeed = async () => {
         setLoadingRemixes(true);
         try {
           const remixes = await remixCache.getRemixFeed(item.post.id);
+          console.log('🟧 HORIZONTAL: Loaded', remixes.length, 'remixes');
           setRemixFeed(remixes);
         } catch (error) {
-          console.error('Failed to load remix feed:', error);
+          console.error('🟧 HORIZONTAL: Failed to load remix feed:', error);
           setRemixFeed([]);
         } finally {
           setLoadingRemixes(false);

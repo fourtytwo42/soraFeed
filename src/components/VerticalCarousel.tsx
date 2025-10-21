@@ -55,11 +55,15 @@ export default function VerticalCarousel({
             ? ((evt as TouchEvent).touches[0])?.clientY || 0
             : (evt as MouseEvent).clientY;
           dragStartPos.current = { x: clientX, y: clientY };
+          console.log('🟦 VERTICAL: Drag START at', { x: clientX, y: clientY, eventType: evt.type });
           return true; // Allow drag to start
         }
         
         if (evt.type.includes('move')) {
-          if (!dragStartPos.current) return false;
+          if (!dragStartPos.current) {
+            console.log('🟦 VERTICAL: Drag move but no start position');
+            return false;
+          }
           
           const clientX = evt.type.includes('touch') 
             ? ((evt as TouchEvent).touches[0])?.clientX || 0
@@ -76,13 +80,17 @@ export default function VerticalCarousel({
           if (deltaX > 10 || deltaY > 10) {
             if (deltaX > deltaY) {
               // More horizontal movement - reject this drag to let VideoCarousel handle it
+              console.log('🟦 VERTICAL: REJECTING (more horizontal)', { deltaX, deltaY, ratio: (deltaX/deltaY).toFixed(2) });
               return false;
+            } else {
+              console.log('🟦 VERTICAL: ACCEPTING (more vertical)', { deltaX, deltaY, ratio: (deltaY/deltaX).toFixed(2) });
             }
           }
           return true; // Allow vertical drag
         }
         
         if (evt.type.includes('up') || evt.type.includes('end')) {
+          console.log('🟦 VERTICAL: Drag END');
           dragStartPos.current = null;
         }
         
