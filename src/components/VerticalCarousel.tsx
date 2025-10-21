@@ -5,7 +5,6 @@ import useEmblaCarousel from 'embla-carousel-react';
 import { WheelGesturesPlugin } from 'embla-carousel-wheel-gestures';
 import { SoraFeedItem } from '@/types/sora';
 import VideoCarousel from './VideoCarousel';
-import { useGestureContext } from '@/contexts/GestureContext';
 
 interface VerticalCarouselProps {
   items: SoraFeedItem[];
@@ -33,10 +32,7 @@ export default function VerticalCarousel({
   const wheelTimeout = useRef<NodeJS.Timeout | null>(null);
   const isWheelScrolling = useRef(false);
   
-  // Shared gesture context
-  const gestureContext = useGestureContext();
-  
-  // Configure Embla for vertical scrolling with custom wheel handling
+  // Configure Embla for vertical scrolling with simple, reliable settings
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       axis: 'y',
@@ -45,32 +41,15 @@ export default function VerticalCarousel({
       dragFree: false,
       containScroll: 'trimSnaps',
       startIndex: 0,
-      dragThreshold: 10, // Lower threshold for more responsive vertical swiping
+      dragThreshold: 8, // Low threshold for responsive swiping
       inViewThreshold: 0.8, // Snap when 80% of slide is visible
-      watchDrag: (emblaApi, evt) => {
-        // Block vertical dragging if horizontal gesture is active
-        if (gestureContext.shouldBlockGesture('vertical')) {
-          return false;
-        }
-        
-        // Handle touch/mouse events for gesture detection
-        const clientX = evt.type.includes('touch') 
-          ? ((evt as TouchEvent).touches[0] || (evt as TouchEvent).changedTouches[0])?.clientX || 0
-          : (evt as MouseEvent).clientX;
-        const clientY = evt.type.includes('touch') 
-          ? ((evt as TouchEvent).touches[0] || (evt as TouchEvent).changedTouches[0])?.clientY || 0
-          : (evt as MouseEvent).clientY;
-        
-        if (evt.type.includes('start') || evt.type === 'mousedown') {
-          gestureContext.startGesture(clientX, clientY, 15); // Moderate threshold for vertical
-        } else if (evt.type.includes('move') || evt.type === 'mousemove') {
-          const direction = gestureContext.updateGesture(clientX, clientY);
-          return direction === 'vertical' || direction === null;
-        }
-        
-        return gestureContext.isGestureActive('vertical');
-      }
-    }
+    },
+    [WheelGesturesPlugin({
+      wheelDraggingClass: 'is-wheel-dragging',
+      forceWheelAxis: 'y', // Force vertical scrolling only
+      target: undefined,
+      factor: 0.002, // Sensitive wheel scrolling
+    })]
   );
 
   // Handle slide selection
@@ -87,9 +66,7 @@ export default function VerticalCarousel({
 
   // Custom wheel handler with threshold-based completion
   const handleWheel = useCallback((e: WheelEvent) => {
-    if (!emblaApi || gestureContext.shouldBlockGesture('vertical')) {
-      return;
-    }
+    if (!emblaApi) return;
     
     e.preventDefault();
     
@@ -126,7 +103,7 @@ export default function VerticalCarousel({
         isWheelScrolling.current = false;
       }, 150);
     }
-  }, [emblaApi, currentIndex, items.length, gestureContext]);
+  }, [emblaApi, currentIndex, items.length]);
 
   // Set up event listeners
   useEffect(() => {
@@ -134,11 +111,7 @@ export default function VerticalCarousel({
     
     emblaApi.on('select', onSelect);
     emblaApi.on('settle', () => {
-      gestureContext.endGesture();
       isWheelScrolling.current = false;
-    });
-    emblaApi.on('pointerUp', () => {
-      gestureContext.endGesture();
     });
     
     onSelect(); // Call once to set initial state
@@ -146,9 +119,8 @@ export default function VerticalCarousel({
     return () => {
       emblaApi.off('select', onSelect);
       emblaApi.off('settle', () => {});
-      emblaApi.off('pointerUp', () => {});
     };
-  }, [emblaApi, onSelect, gestureContext]);
+  }, [emblaApi, onSelect]);
 
   // Add wheel event listener
   useEffect(() => {
