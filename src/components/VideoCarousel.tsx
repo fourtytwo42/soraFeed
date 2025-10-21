@@ -164,22 +164,42 @@ export default function VideoCarousel({
   // Control video playback
   const controlVideoPlayback = useCallback(() => {
     const currentVideo = getCurrentVideo();
-    if (!currentVideo) return;
+    if (!currentVideo) {
+      console.log('🎬 No current video found');
+      return;
+    }
 
-    if (isActive && !userPausedRef.current) {
+    // Use ref to avoid stale closure
+    const currentIsActive = isActiveRef.current;
+    const shouldPlay = currentIsActive && !userPausedRef.current;
+    
+    console.log('🎬 Control playback', { 
+      isActive: currentIsActive, 
+      userPaused: userPausedRef.current, 
+      shouldPlay,
+      videoPaused: currentVideo.paused,
+      isMuted 
+    });
+
+    if (shouldPlay) {
       if (currentVideo.paused) {
-        currentVideo.play().catch(err => console.log('Play failed:', err));
+        console.log('▶️ Playing video');
+        currentVideo.play().catch(err => {
+          console.log('Play failed:', err);
+          setIsPlaying(false);
+        });
         setIsPlaying(true);
       }
     } else {
       if (!currentVideo.paused) {
+        console.log('⏸️ Pausing video');
         currentVideo.pause();
         setIsPlaying(false);
       }
     }
 
-    // Mute/unmute
-    currentVideo.muted = isMuted || !isActive;
+    // Mute/unmute - use ref
+    currentVideo.muted = isMuted || !currentIsActive;
     
     // Pause other videos
     videoRefsMap.current.forEach((video, itemId) => {
@@ -187,7 +207,7 @@ export default function VideoCarousel({
         video.pause();
       }
     });
-  }, [isActive, isMuted, getCurrentVideo, getCurrentItem]);
+  }, [isMuted, getCurrentVideo, getCurrentItem]);
 
   // Effect to control video playback
   useEffect(() => {
@@ -219,6 +239,13 @@ export default function VideoCarousel({
   // Sync refs with props/state (so watchDrag always has latest values)
   useEffect(() => {
     isActiveRef.current = isActive;
+    
+    // Reset user pause state when video becomes inactive (scrolled away)
+    // This ensures videos auto-play when scrolled back to them
+    if (!isActive && userPausedRef.current) {
+      console.log('🔄 Video became inactive, resetting userPaused');
+      userPausedRef.current = false;
+    }
   }, [isActive]);
 
   useEffect(() => {
@@ -237,6 +264,8 @@ export default function VideoCarousel({
 
   // Reset state when item changes
   useEffect(() => {
+    console.log('🔄 Item changed, resetting state for', item.post.id);
+    
     // Cleanup all videos
     videoRefsMap.current.forEach(video => {
       video.pause();
@@ -252,6 +281,8 @@ export default function VideoCarousel({
     setIsPlaying(false);
     userPausedRef.current = false;
     hasUserInteractedRef.current = false;
+    
+    console.log('🔄 Reset complete, userPaused = false');
     
     // Reset carousel to first slide
     if (emblaApi) {
@@ -292,19 +323,32 @@ export default function VideoCarousel({
     e.stopPropagation();
     
     const currentVideo = getCurrentVideo();
-    if (!currentVideo) return;
+    if (!currentVideo) {
+      console.log('🎬 Click: No current video');
+      return;
+    }
+    
+    console.log('🎬 Video clicked', { 
+      wasPaused: currentVideo.paused,
+      userPausedBefore: userPausedRef.current 
+    });
     
     if (currentVideo.paused) {
+      console.log('▶️ User clicked play');
       currentVideo.play().then(() => {
         setIsPlaying(true);
         userPausedRef.current = false;
-      }).catch(() => {
+        console.log('▶️ Play successful, userPaused = false');
+      }).catch((err) => {
+        console.log('▶️ Play failed:', err);
         setIsPlaying(false);
       });
     } else {
+      console.log('⏸️ User clicked pause');
       currentVideo.pause();
       setIsPlaying(false);
       userPausedRef.current = true;
+      console.log('⏸️ Pause successful, userPaused = true');
     }
     
     hasUserInteractedRef.current = true;
