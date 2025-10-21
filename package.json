@@ -9,6 +9,7 @@
     "lint": "eslint",
     "scanner": "node scripts/scanner.js",
     "refresh-cookies": "node scripts/refresh-cookies.js",
+    "update-cookies": "node scripts/update-cookies.js",
     "setup": "node scripts/setup.js",
     "postinstall": "node scripts/setup.js"
   },

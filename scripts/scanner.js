@@ -521,18 +521,31 @@ async function scanFeed() {
     console.error(`❌ Scan error:`, error.message);
     await updateStats({}, duration, error, 0, 0, 0);
     
-    // Check if error is cookie-related
+    // Check if error is cookie-related or timeout-related
     const isCookieError = error.message.includes('JSON parse error') || 
                          error.message.includes('<!DOCTYPE') ||
-                         error.message.includes('cloudflare');
+                         error.message.includes('cloudflare') ||
+                         error.message.includes('timeout') ||
+                         error.message.includes('upstream');
     
     if (isCookieError && consecutiveErrors >= 2) {
-      console.log('🍪 Detected cookie-related error, attempting refresh...');
+      console.log('🍪 Detected cookie/timeout error, attempting refresh...');
       const refreshSuccess = await refreshCookies();
       if (refreshSuccess) {
         consecutiveErrors = 0; // Reset on successful refresh
-        console.log('✅ Cookie refresh successful, resetting error counter');
+        currentFetchLimit = 200; // Reset to minimum limit
+        scanInterval = 10000; // Reset to minimum interval
+        console.log('✅ Cookie refresh successful, resetting error counter and limits');
       }
+    }
+    
+    // If we have too many consecutive errors, reset everything
+    if (consecutiveErrors >= 10) {
+      console.log('🔄 Too many consecutive errors, resetting scanner state...');
+      currentFetchLimit = 200; // Reset to minimum
+      scanInterval = 30000; // Increase interval to 30 seconds
+      consecutiveErrors = 0; // Reset error counter
+      console.log('🔄 Scanner state reset - limit: 200, interval: 30s');
     }
     
     // Increment consecutive errors and adjust rate limiting

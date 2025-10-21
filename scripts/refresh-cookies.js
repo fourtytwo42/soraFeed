@@ -19,20 +19,20 @@ function refreshCookies() {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'sora.chatgpt.com',
-      path: '/explore',
+      path: '/backend/project_y/feed?limit=5&cut=nf2_latest',
       method: 'GET',
       headers: {
         'User-Agent': process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
+        'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
         'DNT': '1',
         'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Cache-Control': 'max-age=0'
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'Referer': 'https://sora.chatgpt.com/explore'
       }
     };
 
