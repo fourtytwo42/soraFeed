@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "scanner": "node scripts/scanner.js",
+    "refresh-cookies": "node scripts/refresh-cookies.js",
     "setup": "node scripts/setup.js",
     "postinstall": "node scripts/setup.js"
   },

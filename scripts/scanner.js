@@ -27,6 +27,10 @@ const MAX_SCAN_DURATION = 300000; // 5 minutes maximum scan duration
 let consecutiveErrors = 0;
 let scanInterval = 10000; // Start with 10 seconds
 
+// Cookie management
+let lastCookieRefresh = Date.now();
+const COOKIE_REFRESH_INTERVAL = 12 * 60 * 60 * 1000; // 12 hours
+
 // Track previous scan count for change calculation
 let previousScanCount = 0;
 
@@ -50,8 +54,28 @@ function adjustFetchLimit(duplicates) {
   return currentFetchLimit;
 }
 
+// Check if cookies need refresh
+function shouldRefreshCookies() {
+  return Date.now() - lastCookieRefresh > COOKIE_REFRESH_INTERVAL;
+}
+
+// Refresh cookies using the refresh script
+async function refreshCookies() {
+  try {
+    console.log('🔄 Refreshing cookies...');
+    const { refreshCookies: refreshFn } = require('./refresh-cookies.js');
+    await refreshFn();
+    lastCookieRefresh = Date.now();
+    console.log('✅ Cookies refreshed successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Cookie refresh failed:', error.message);
+    return false;
+  }
+}
+
 // Fetch feed from Sora API with dynamic limit
-function fetchSoraFeed(limit = currentFetchLimit) {
+async function fetchSoraFeed(limit = currentFetchLimit) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'sora.chatgpt.com',
@@ -434,6 +458,12 @@ async function scanFeed() {
   }, MAX_SCAN_DURATION);
 
   try {
+    // Check if cookies need refresh
+    if (shouldRefreshCookies()) {
+      console.log('🍪 Cookies are stale, refreshing...');
+      await refreshCookies();
+    }
+
     // Update status to scanning
     await pool.query(`UPDATE scanner_stats SET status = 'scanning' WHERE id = 1`);
 
@@ -490,6 +520,20 @@ async function scanFeed() {
     const duration = Date.now() - startTime;
     console.error(`❌ Scan error:`, error.message);
     await updateStats({}, duration, error, 0, 0, 0);
+    
+    // Check if error is cookie-related
+    const isCookieError = error.message.includes('JSON parse error') || 
+                         error.message.includes('<!DOCTYPE') ||
+                         error.message.includes('cloudflare');
+    
+    if (isCookieError && consecutiveErrors >= 2) {
+      console.log('🍪 Detected cookie-related error, attempting refresh...');
+      const refreshSuccess = await refreshCookies();
+      if (refreshSuccess) {
+        consecutiveErrors = 0; // Reset on successful refresh
+        console.log('✅ Cookie refresh successful, resetting error counter');
+      }
+    }
     
     // Increment consecutive errors and adjust rate limiting
     consecutiveErrors++;
