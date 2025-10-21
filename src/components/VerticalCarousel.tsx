@@ -31,8 +31,9 @@ export default function VerticalCarousel({
   const wheelAccumulator = useRef(0);
   const wheelTimeout = useRef<NodeJS.Timeout | null>(null);
   const isWheelScrolling = useRef(false);
+  const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   
-  // Configure Embla for vertical scrolling with simple, reliable settings
+  // Configure Embla for vertical scrolling with direction detection
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       axis: 'y',
@@ -41,8 +42,52 @@ export default function VerticalCarousel({
       dragFree: false,
       containScroll: 'trimSnaps',
       startIndex: 0,
-      dragThreshold: 8, // Low threshold for responsive swiping
-      inViewThreshold: 0.8, // Snap when 80% of slide is visible
+      dragThreshold: 10,
+      inViewThreshold: 0.8,
+      watchDrag: (emblaApi, evt) => {
+        // Detect if drag is more vertical or horizontal
+        if (evt.type.includes('down') || evt.type.includes('start')) {
+          // Store initial position
+          const clientX = evt.type.includes('touch') 
+            ? ((evt as TouchEvent).touches[0])?.clientX || 0
+            : (evt as MouseEvent).clientX;
+          const clientY = evt.type.includes('touch') 
+            ? ((evt as TouchEvent).touches[0])?.clientY || 0
+            : (evt as MouseEvent).clientY;
+          dragStartPos.current = { x: clientX, y: clientY };
+          return true; // Allow drag to start
+        }
+        
+        if (evt.type.includes('move')) {
+          if (!dragStartPos.current) return false;
+          
+          const clientX = evt.type.includes('touch') 
+            ? ((evt as TouchEvent).touches[0])?.clientX || 0
+            : (evt as MouseEvent).clientX;
+          const clientY = evt.type.includes('touch') 
+            ? ((evt as TouchEvent).touches[0])?.clientY || 0
+            : (evt as MouseEvent).clientY;
+          
+          const deltaX = Math.abs(clientX - dragStartPos.current.x);
+          const deltaY = Math.abs(clientY - dragStartPos.current.y);
+          
+          // Only allow vertical drag if movement is primarily vertical
+          // Need at least 10px of movement to determine direction
+          if (deltaX > 10 || deltaY > 10) {
+            if (deltaX > deltaY) {
+              // More horizontal movement - reject this drag to let VideoCarousel handle it
+              return false;
+            }
+          }
+          return true; // Allow vertical drag
+        }
+        
+        if (evt.type.includes('up') || evt.type.includes('end')) {
+          dragStartPos.current = null;
+        }
+        
+        return true;
+      },
     },
     [WheelGesturesPlugin({
       wheelDraggingClass: 'is-wheel-dragging',
