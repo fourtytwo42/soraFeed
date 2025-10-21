@@ -15,6 +15,8 @@ interface ScannerStats {
     errorMessage: string | null;
     lastScanCount: number;
     scanCountChange: string;
+    lastScanDuplicates: number;
+    lastScanUnique: number;
   };
   database: {
     totalPosts: number;
@@ -256,6 +258,14 @@ export default function ScannerDebugPage() {
                         </span>
                       )}
                     </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Duplicates in Scan:</span>
+                    <span className="font-mono text-red-400">{stats.scanner.lastScanDuplicates}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Unique in Scan:</span>
+                    <span className="font-mono text-green-400">{stats.scanner.lastScanUnique}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Total Errors:</span>

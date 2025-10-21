@@ -82,6 +82,36 @@ function fetchSoraFeed(limit = currentFetchLimit) {
   });
 }
 
+// Fetch feed with minimum guarantee of 200 posts
+async function fetchSoraFeedWithMinimum(limit = currentFetchLimit) {
+  const minPosts = 200;
+  let attempts = 0;
+  const maxAttempts = 3;
+  
+  while (attempts < maxAttempts) {
+    const feedData = await fetchSoraFeed(limit);
+    const postCount = feedData.items?.length || 0;
+    
+    if (postCount >= minPosts) {
+      return feedData;
+    }
+    
+    attempts++;
+    console.log(`⚠️  Only got ${postCount} posts (need ${minPosts}), attempt ${attempts}/${maxAttempts}`);
+    
+    if (attempts < maxAttempts) {
+      // Increase limit for next attempt
+      limit = Math.max(limit + 50, minPosts);
+      console.log(`🔄 Retrying with limit ${limit}...`);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+    }
+  }
+  
+  // If we still don't have enough posts after all attempts, return what we have
+  console.log(`⚠️  Could not get minimum ${minPosts} posts after ${maxAttempts} attempts`);
+  return await fetchSoraFeed(limit);
+}
+
 // Initialize database tables
 async function initDatabase() {
   const client = await pool.connect();
@@ -196,7 +226,9 @@ async function initDatabase() {
         status TEXT DEFAULT 'idle',
         error_message TEXT,
         last_scan_count INTEGER DEFAULT 0,
-        previous_scan_count INTEGER DEFAULT 0
+        previous_scan_count INTEGER DEFAULT 0,
+        last_scan_duplicates INTEGER DEFAULT 0,
+        last_scan_unique INTEGER DEFAULT 0
       );
     `);
 
@@ -316,7 +348,7 @@ async function processPosts(feedData) {
 }
 
 // Update scanner statistics
-async function updateStats(stats, duration, error = null, scanCount = 0) {
+async function updateStats(stats, duration, error = null, scanCount = 0, scanDuplicates = 0, scanUnique = 0) {
   try {
     // First, get the current last_scan_count to store as previous
     const currentStats = await pool.query('SELECT last_scan_count FROM scanner_stats WHERE id = 1');
@@ -334,7 +366,9 @@ async function updateStats(stats, duration, error = null, scanCount = 0) {
         status = $6,
         error_message = $7,
         previous_scan_count = $8,
-        last_scan_count = $9
+        last_scan_count = $9,
+        last_scan_duplicates = $10,
+        last_scan_unique = $11
       WHERE id = 1
     `, [
       stats.total || 0,
@@ -345,7 +379,9 @@ async function updateStats(stats, duration, error = null, scanCount = 0) {
       error ? 'error' : 'success',
       error ? error.message : null,
       previousScanCount,
-      scanCount
+      scanCount,
+      scanDuplicates,
+      scanUnique
     ]);
   } catch (err) {
     console.error('Failed to update stats:', err);
@@ -377,8 +413,8 @@ async function scanFeed() {
     // Update status to scanning
     await pool.query(`UPDATE scanner_stats SET status = 'scanning' WHERE id = 1`);
 
-    // Fetch feed with current limit
-    const feedData = await fetchSoraFeed(currentFetchLimit);
+    // Fetch feed with current limit (guaranteed minimum 200 posts)
+    const feedData = await fetchSoraFeedWithMinimum(currentFetchLimit);
     console.log(`📥 Fetched ${feedData.items?.length || 0} posts from API`);
 
     // Process posts
@@ -417,12 +453,12 @@ async function scanFeed() {
       total: result.total,
       newPosts: result.newPosts,
       duplicates: result.duplicates
-    }, duration, null, currentScanCount);
+    }, duration, null, currentScanCount, result.duplicates, result.newPosts);
 
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`❌ Scan error:`, error.message);
-    await updateStats({}, duration, error, 0);
+    await updateStats({}, duration, error, 0, 0, 0);
   } finally {
     // Clear timeout and release the scan lock
     clearTimeout(scanTimeout);

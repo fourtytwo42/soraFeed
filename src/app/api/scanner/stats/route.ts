@@ -15,7 +15,9 @@ export async function GET() {
       status: 'unknown',
       error_message: null,
       last_scan_count: 0,
-      previous_scan_count: 0
+      previous_scan_count: 0,
+      last_scan_duplicates: 0,
+      last_scan_unique: 0
     };
 
     // Get current and previous scan counts
@@ -147,7 +149,9 @@ export async function GET() {
         scanDurationMs: stats.scan_duration_ms,
         errorMessage: stats.error_message,
         lastScanCount: currentScanCount,
-        scanCountChange: scanCountChange
+        scanCountChange: scanCountChange,
+        lastScanDuplicates: stats.last_scan_duplicates || 0,
+        lastScanUnique: stats.last_scan_unique || 0
       },
       database: {
         totalPosts,
