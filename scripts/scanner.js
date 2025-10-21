@@ -23,6 +23,10 @@ const MAX_FETCH_LIMIT = 1000; // Reasonable upper bound
 let isScanning = false;
 const MAX_SCAN_DURATION = 300000; // 5 minutes maximum scan duration
 
+// Rate limiting
+let consecutiveErrors = 0;
+let scanInterval = 10000; // Start with 10 seconds
+
 // Track previous scan count for change calculation
 let previousScanCount = 0;
 
@@ -53,6 +57,7 @@ function fetchSoraFeed(limit = currentFetchLimit) {
       hostname: 'sora.chatgpt.com',
       path: `/backend/project_y/feed?limit=${limit}&cut=nf2_latest`,
       method: 'GET',
+      timeout: 30000, // 30 second timeout
       headers: {
         'Accept': 'application/json',
         'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
@@ -68,7 +73,7 @@ function fetchSoraFeed(limit = currentFetchLimit) {
       }
     };
 
-    https.get(options, (res) => {
+    const req = https.get(options, (res) => {
       let data = '';
 
       res.on('data', (chunk) => {
@@ -83,8 +88,25 @@ function fetchSoraFeed(limit = currentFetchLimit) {
           reject(new Error(`JSON parse error: ${error.message}`));
         }
       });
-    }).on('error', (error) => {
+    });
+
+    req.on('error', (error) => {
       reject(error);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout after 30 seconds'));
+    });
+
+    // Set a manual timeout as backup
+    const timeoutId = setTimeout(() => {
+      req.destroy();
+      reject(new Error('Request timeout after 30 seconds'));
+    }, 30000);
+
+    req.on('close', () => {
+      clearTimeout(timeoutId);
     });
   });
 }
@@ -457,16 +479,42 @@ async function scanFeed() {
       duplicates: result.duplicates
     }, duration, null, currentScanCount, result.duplicates, result.newPosts);
 
+    // Reset consecutive errors on successful scan
+    if (consecutiveErrors > 0) {
+      console.log(`✅ Scan successful, resetting error counter (was ${consecutiveErrors})`);
+      consecutiveErrors = 0;
+      scanInterval = 10000; // Reset to 10 seconds
+    }
+
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`❌ Scan error:`, error.message);
     await updateStats({}, duration, error, 0, 0, 0);
+    
+    // Increment consecutive errors and adjust rate limiting
+    consecutiveErrors++;
+    if (consecutiveErrors >= 3) {
+      scanInterval = Math.min(scanInterval * 2, 120000); // Max 2 minutes
+      console.log(`🐌 Rate limiting: ${consecutiveErrors} consecutive errors, increasing interval to ${scanInterval/1000}s`);
+    }
   } finally {
     // Clear timeout and release the scan lock
     clearTimeout(scanTimeout);
     isScanning = false;
     console.log(`🔓 [${new Date().toISOString()}] Scan lock released`);
   }
+}
+
+// Schedule next scan with dynamic interval
+function scheduleNextScan() {
+  setTimeout(() => {
+    scanFeed().then(() => {
+      scheduleNextScan(); // Schedule the next scan
+    }).catch((error) => {
+      console.error('❌ Scan failed:', error);
+      scheduleNextScan(); // Still schedule next scan even on error
+    });
+  }, scanInterval);
 }
 
 // Main function
@@ -481,9 +529,9 @@ async function main() {
     // Run initial scan
     await scanFeed();
 
-    // Schedule scans every 10 seconds
-    console.log('⏰ Scheduling scans every 10 seconds...');
-    setInterval(scanFeed, 10000);
+    // Schedule scans with dynamic interval
+    console.log(`⏰ Scheduling scans every ${scanInterval/1000} seconds...`);
+    scheduleNextScan();
 
   } catch (error) {
     console.error('❌ Fatal error:', error);
