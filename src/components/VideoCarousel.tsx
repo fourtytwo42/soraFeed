@@ -56,13 +56,16 @@ export default function VideoCarousel({
     dragThreshold: 8, // Low threshold for responsive horizontal swiping
     inViewThreshold: 0.7, // Snap when 70% of slide is visible
     watchDrag: (emblaApi, evt) => {
-      // Only allow horizontal dragging when this carousel is active
-      const allowed = isActive;
+      // Allow horizontal dragging when active OR when there are remixes to swipe through
+      // This ensures horizontal swiping works even if isActive hasn't updated yet
+      const hasRemixes = remixFeed.length > 0;
+      const allowed = isActive && hasRemixes;
       console.log('🟧 HORIZONTAL: watchDrag called', { 
         eventType: evt.type, 
         isActive, 
+        hasRemixes,
         allowed,
-        hasRemixes: remixFeed.length > 0,
+        remixCount: remixFeed.length,
         currentRemixIndex 
       });
       return allowed;
