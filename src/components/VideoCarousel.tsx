@@ -201,12 +201,23 @@ export default function VideoCarousel({
     // Mute/unmute - use ref
     currentVideo.muted = isMuted || !currentIsActive;
     
-    // Pause other videos
+    // Pause other videos in this carousel
     videoRefsMap.current.forEach((video, itemId) => {
       if (itemId !== getCurrentItem().post.id && !video.paused) {
+        console.log('⏸️ Pausing other video in carousel:', itemId);
         video.pause();
       }
     });
+    
+    // If this carousel is not active, pause ALL videos including current one
+    if (!currentIsActive) {
+      videoRefsMap.current.forEach((video, itemId) => {
+        if (!video.paused) {
+          console.log('⏸️ Pausing video (carousel not active):', itemId);
+          video.pause();
+        }
+      });
+    }
   }, [isMuted, getCurrentVideo, getCurrentItem]);
 
   // Effect to control video playback
@@ -240,11 +251,25 @@ export default function VideoCarousel({
   useEffect(() => {
     isActiveRef.current = isActive;
     
-    // Reset user pause state when video becomes inactive (scrolled away)
-    // This ensures videos auto-play when scrolled back to them
-    if (!isActive && userPausedRef.current) {
-      console.log('🔄 Video became inactive, resetting userPaused');
-      userPausedRef.current = false;
+    // When video becomes inactive, pause all videos and reset user pause state
+    if (!isActive) {
+      console.log('🔄 Video became inactive, pausing all videos and resetting userPaused');
+      
+      // Immediately pause all videos in this carousel
+      videoRefsMap.current.forEach((video, itemId) => {
+        if (!video.paused) {
+          console.log('⏸️ Force pausing video (became inactive):', itemId);
+          video.pause();
+        }
+      });
+      
+      // Reset user pause state so videos auto-play when scrolled back to them
+      if (userPausedRef.current) {
+        userPausedRef.current = false;
+      }
+      
+      // Update UI state
+      setIsPlaying(false);
     }
   }, [isActive]);
 
