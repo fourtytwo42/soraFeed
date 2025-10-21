@@ -5,7 +5,7 @@ import useEmblaCarousel from 'embla-carousel-react';
 import { Play, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
-import { useGestureRails } from '@/hooks/useGestureRails';
+import { useGestureContext } from '@/contexts/GestureContext';
 
 interface VideoCarouselProps {
   item: SoraFeedItem;
@@ -46,8 +46,8 @@ export default function VideoCarousel({
   const userPausedRef = useRef(false);
   const hasUserInteractedRef = useRef(false);
   
-  // Gesture rails system for preventing axis switching
-  const gestureRails = useGestureRails(15);
+  // Shared gesture context for preventing axis switching
+  const gestureContext = useGestureContext();
   
   // Configure Embla for horizontal scrolling with rails behavior
   const [emblaRef, emblaApi] = useEmblaCarousel({
@@ -64,7 +64,8 @@ export default function VideoCarousel({
       if (!isActive) return false;
       
       // Block horizontal dragging if vertical gesture is active
-      if (gestureRails.shouldBlockGesture('horizontal')) {
+      if (gestureContext.shouldBlockGesture('horizontal')) {
+        console.log('🚫 Horizontal drag blocked by vertical gesture');
         return false;
       }
       
@@ -77,13 +78,16 @@ export default function VideoCarousel({
         : (evt as MouseEvent).clientY;
       
       if (evt.type.includes('start') || evt.type === 'mousedown') {
-        gestureRails.startGesture(clientX, clientY);
+        console.log('🎯 Starting horizontal gesture at:', { clientX, clientY });
+        gestureContext.startGesture(clientX, clientY, 15);
       } else if (evt.type.includes('move') || evt.type === 'mousemove') {
-        const direction = gestureRails.updateGesture(clientX, clientY);
-        return direction === 'horizontal' || direction === null;
+        const direction = gestureContext.updateGesture(clientX, clientY);
+        const allowed = direction === 'horizontal' || direction === null;
+        console.log('🔄 Horizontal gesture update:', { direction, allowed });
+        return allowed;
       }
       
-      return gestureRails.isGestureActive('horizontal');
+      return gestureContext.isGestureActive('horizontal');
     }
   });
 
@@ -111,10 +115,10 @@ export default function VideoCarousel({
     
     emblaApi.on('select', onSelect);
     emblaApi.on('settle', () => {
-      gestureRails.endGesture();
+      gestureContext.endGesture();
     });
     emblaApi.on('pointerUp', () => {
-      gestureRails.endGesture();
+      gestureContext.endGesture();
     });
     onSelect(); // Call once to set initial state
     
@@ -123,7 +127,7 @@ export default function VideoCarousel({
       emblaApi.off('settle', () => {});
       emblaApi.off('pointerUp', () => {});
     };
-  }, [emblaApi, onSelect, gestureRails]);
+  }, [emblaApi, onSelect, gestureContext]);
 
   // Keyboard navigation for horizontal scrolling
   useEffect(() => {
