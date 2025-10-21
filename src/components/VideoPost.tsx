@@ -38,15 +38,15 @@ interface VideoElement {
 export default function VideoPost({ 
   item, 
   isActive, 
-  isUpcoming, 
-  isTargetVideo, 
-  scrollDirection, 
-  onNext, 
+  isUpcoming: _isUpcoming, // Keep for interface compatibility but mark as unused
+  isTargetVideo: _isTargetVideo, // Keep for interface compatibility but mark as unused
+  scrollDirection: _scrollDirection, // Keep for interface compatibility but mark as unused
+  onNext: _onNext, // Keep for interface compatibility but mark as unused
   onAddToFavorites, 
   onRemoveFromFavorites, 
   isInFavorites, 
   onRemixStatusChange, 
-  onKeyboardNavigation, 
+  onKeyboardNavigation: _onKeyboardNavigation, // Keep for interface compatibility but mark as unused
   preloadedRemixFeed, 
   onControlsChange 
 }: VideoPostProps) {
@@ -59,10 +59,10 @@ export default function VideoPost({
   const [isHovering, setIsHovering] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [videoWidth, setVideoWidth] = useState<number | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [leftVideoReady, setLeftVideoReady] = useState(false);
   const [rightVideoReady, setRightVideoReady] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   
   // Remix state
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
@@ -82,7 +82,7 @@ export default function VideoPost({
   
   // Motion values for both directions
   const x = useMotionValue(0);
-  const y = useMotionValue(0); // For potential future vertical remix scrolling
+  const _y = useMotionValue(0); // For potential future vertical remix scrolling
   
   // Video refs - use a Map to track videos by item ID for stable references
   const videoRefsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
@@ -109,7 +109,7 @@ export default function VideoPost({
   
   // Control refs
   const userPausedRef = useRef(false);
-  const isFirstVideoRef = useRef(true);
+  const _isFirstVideoRef = useRef(true); // Keep for potential future use
   const hasUserInteractedRef = useRef(false);
   const lastInteractionRef = useRef<number>(Date.now());
   
@@ -714,11 +714,11 @@ export default function VideoPost({
     handleVideoLoad(video);
   }, [handleVideoLoad]);
 
-  const handleLeftVideoCanPlay = useCallback((video: HTMLVideoElement) => {
+  const handleLeftVideoCanPlay = useCallback(() => {
     setLeftVideoReady(true);
   }, []);
 
-  const handleRightVideoCanPlay = useCallback((video: HTMLVideoElement) => {
+  const handleRightVideoCanPlay = useCallback(() => {
     setRightVideoReady(true);
   }, []);
   
@@ -811,13 +811,13 @@ export default function VideoPost({
             muted
             playsInline
             preload="auto"
-            onCanPlay={(e) => {
-              if (isLeft) handleLeftVideoCanPlay(e.currentTarget);
-              else handleRightVideoCanPlay(e.currentTarget);
+            onCanPlay={() => {
+              if (isLeft) handleLeftVideoCanPlay();
+              else handleRightVideoCanPlay();
             }}
-            onLoadedData={(e) => {
-              if (isLeft) handleLeftVideoCanPlay(e.currentTarget);
-              else handleRightVideoCanPlay(e.currentTarget);
+            onLoadedData={() => {
+              if (isLeft) handleLeftVideoCanPlay();
+              else handleRightVideoCanPlay();
             }}
           />
         )}
@@ -831,7 +831,7 @@ export default function VideoPost({
     <div className="relative w-full h-full bg-black overflow-hidden">
       {/* Video Container */}
         <motion.div
-          {...(bind() as any)}
+          {...(bind() as Record<string, unknown>)}
           style={{ x }}
           className="absolute inset-0 flex items-center justify-center group cursor-pointer select-none"
           onMouseEnter={handleMouseEnter}
@@ -1008,7 +1008,7 @@ export default function VideoPost({
                 const halfMax = Math.floor(maxDots / 2);
                 
                 let startIndex = Math.max(0, currentRemixIndex - halfMax);
-                let endIndex = Math.min(totalItems - 1, startIndex + maxDots - 1);
+                const endIndex = Math.min(totalItems - 1, startIndex + maxDots - 1);
                 
                 // Adjust if we're near the end
                 if (endIndex - startIndex < maxDots - 1) {

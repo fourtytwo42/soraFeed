@@ -118,7 +118,6 @@ export default function VerticalCarousel({
       wheelDraggingClass: 'is-wheel-dragging',
       forceWheelAxis: 'y', // Force vertical scrolling only
       target: undefined,
-      factor: 0.002, // Sensitive wheel scrolling
     })]
   );
 
@@ -199,7 +198,7 @@ export default function VerticalCarousel({
 
   // Add wheel event listener
   useEffect(() => {
-    const container = emblaRef.current;
+    const container = emblaRef as unknown as HTMLElement;
     if (!container) return;
 
     container.addEventListener('wheel', handleWheel, { passive: false });
@@ -207,7 +206,7 @@ export default function VerticalCarousel({
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [handleWheel]);
+  }, [handleWheel, emblaRef]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -237,14 +236,6 @@ export default function VerticalCarousel({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [emblaApi]);
 
-  // Navigation functions for external use
-  const scrollToNext = useCallback(() => {
-    if (emblaApi) emblaApi.scrollNext();
-  }, [emblaApi]);
-
-  const scrollToPrev = useCallback(() => {
-    if (emblaApi) emblaApi.scrollPrev();
-  }, [emblaApi]);
 
   return (
     <div className="h-dvh overflow-hidden bg-black" ref={emblaRef}>

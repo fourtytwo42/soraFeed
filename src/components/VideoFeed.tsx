@@ -377,7 +377,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
           const isTargetVideo = targetIndex === index;
           
           // Always show current video and adjacent videos (±1) for smooth transitions
-          const isVisible = Math.abs(offset) <= 1;
+          const isVisible = Math.abs(offset) <= 1; // Used for potential future optimizations
           
           // Simple z-index: current video on top, adjacent videos below
           let zIndex = 10;
@@ -456,7 +456,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
               y: showControls && currentIndex > 0 ? 0 : -20
             }}
             transition={{ duration: 0.3 }}
-            onClick={goToPrevious}
+            onClick={() => goToPrevious()}
             disabled={currentIndex === 0}
             className="absolute top-24 left-1/2 transform -translate-x-1/2 z-40 p-4 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
             style={{ pointerEvents: showControls && currentIndex > 0 ? 'auto' : 'none' }}
@@ -472,7 +472,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
               y: showControls && currentIndex < items.length - 1 ? 0 : 20
             }}
             transition={{ duration: 0.3 }}
-            onClick={goToNext}
+            onClick={() => goToNext()}
             disabled={currentIndex === items.length - 1}
             className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-50 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
             style={{ pointerEvents: showControls && currentIndex < items.length - 1 ? 'auto' : 'none' }}

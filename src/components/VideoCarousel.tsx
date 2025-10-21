@@ -19,7 +19,7 @@ interface VideoCarouselProps {
 export default function VideoCarousel({
   item,
   isActive,
-  isUpcoming,
+  isUpcoming: _isUpcoming, // Keep for interface compatibility but mark as unused
   onAddToFavorites,
   onRemoveFromFavorites,
   isInFavorites,
@@ -400,13 +400,12 @@ export default function VideoCarousel({
   }, [isMuted]);
 
   // Render video slide
-  const renderVideoSlide = useCallback((videoItem: SoraFeedItem, index: number) => {
+  const renderVideoSlide = useCallback((videoItem: SoraFeedItem) => {
     const videoUrl = videoItem.post.attachments[0]?.encodings?.md?.path || 
                      videoItem.post.attachments[0]?.encodings?.source?.path;
     
     if (!videoUrl) return null;
     
-    const isCurrentSlide = index === currentRemixIndex;
     
     return (
       <div 
@@ -441,7 +440,7 @@ export default function VideoCarousel({
         </div>
       </div>
     );
-  }, [currentRemixIndex, videoWidth, isMuted, isActive, getVideoRef, handleVideoMetadata]);
+  }, [videoWidth, isMuted, isActive, getVideoRef, handleVideoMetadata]);
 
   const currentItem = getCurrentItem();
   const allItems = getAllItems();
@@ -460,7 +459,7 @@ export default function VideoCarousel({
       >
         <div className="h-full" ref={emblaRef}>
           <div className="flex h-full">
-            {allItems.map((videoItem, index) => renderVideoSlide(videoItem, index))}
+            {allItems.map((videoItem) => renderVideoSlide(videoItem))}
           </div>
         </div>
       </div>
@@ -617,7 +616,7 @@ export default function VideoCarousel({
                 const halfMax = Math.floor(maxDots / 2);
                 
                 let startIndex = Math.max(0, currentRemixIndex - halfMax);
-                let endIndex = Math.min(totalItems - 1, startIndex + maxDots - 1);
+                const endIndex = Math.min(totalItems - 1, startIndex + maxDots - 1);
                 
                 // Adjust if we're near the end
                 if (endIndex - startIndex < maxDots - 1) {
