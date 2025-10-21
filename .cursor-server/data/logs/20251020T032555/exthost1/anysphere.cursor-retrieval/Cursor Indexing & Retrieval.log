@@ -1,0 +1,13 @@
+2025-10-20 03:25:57.719 [error] Error getting repo info: Failed to execute git
+2025-10-20 03:25:57.719 [error] Error: Failed to execute git
+	at t.Git._exec (/home/hendo420/.cursor-server/bin/6af2d906e8ca91654dd7c4224a73ef17900ad730/extensions/git/dist/main.js:2:34408)
+	at async t.Git.exec (/home/hendo420/.cursor-server/bin/6af2d906e8ca91654dd7c4224a73ef17900ad730/extensions/git/dist/main.js:2:33531)
+	at async t.GitProvider.executeGitCommandStable (/home/hendo420/.cursor-server/bin/6af2d906e8ca91654dd7c4224a73ef17900ad730/extensions/cursor-retrieval/dist/main.js:2:1487245)
+	at async t.GitProvider.getRepoInfo (/home/hendo420/.cursor-server/bin/6af2d906e8ca91654dd7c4224a73ef17900ad730/extensions/cursor-retrieval/dist/main.js:2:1460114)
+2025-10-20 03:25:57.719 [info] Creating Indexing Repo client:  https://repo42.cursor.sh
+2025-10-20 03:25:57.719 [info] Creating repo client with backend url: https://repo42.cursor.sh
+2025-10-20 03:25:57.965 [error] NoWorkspaceUriError
+2025-10-20 03:25:58.064 [warning] Failed to get symbolic ref: Failed to execute git
+2025-10-20 03:25:58.064 [warning] Failed to read .git/HEAD: A system error occurred (ENOENT: no such file or directory, open '.git/HEAD')
+2025-10-20 03:25:58.081 [warning] Failed to get branches from remote: Failed to execute git
+2025-10-20 03:25:58.085 [warning] Failed to get default branch from git config: Failed to execute git

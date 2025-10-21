@@ -1,0 +1,23 @@
+{
+    "window.commandCenter": true,
+    "diffEditor.maxComputationTime": 0,
+    "editor.codeActionsOnSave": {},
+    "editor.minimap.enabled": true,
+    "remote.SSH.remotePlatform": {
+        "healthtracker": "linux",
+        "jellyfin": "linux",
+        "rust-server": "linux",
+        "rust-server2": "linux",
+        "smokeyPwns": "linux",
+        "SP2": "linux",
+        "smokeyPwns-NoGui": "linux",
+        "Ubuntu": "linux",
+        "Framework": "linux",
+        "LocalUbuntu": "linux"
+    },
+    "superdesign.aiModel": "claude-3-7-sonnet-20250219",
+    "superdesign.aiModelProvider": "anthropic",
+    "cursor.terminal.usePreviewBox": true,
+    "cursor.composer.queueMessageDefaultBehavior": "queue",
+    "cursor.composer.shouldChimeAfterChatFinishes": true
+}
