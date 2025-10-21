@@ -14,12 +14,37 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Fetch feed from Sora API
-function fetchSoraFeed() {
+// Adaptive throttling configuration
+let currentFetchLimit = 200; // Start with 200 (minimum)
+const MIN_FETCH_LIMIT = 200;
+const MAX_FETCH_LIMIT = 1000; // Reasonable upper bound
+
+// Adaptive throttling logic
+function adjustFetchLimit(duplicates) {
+  const previousLimit = currentFetchLimit;
+  
+  if (duplicates < 50) {
+    // Low duplicates = increase fetch size for efficiency
+    currentFetchLimit = Math.min(currentFetchLimit + 50, MAX_FETCH_LIMIT);
+  } else if (duplicates > 100) {
+    // High duplicates = decrease fetch size to reduce waste
+    currentFetchLimit = Math.max(currentFetchLimit - 20, MIN_FETCH_LIMIT);
+  }
+  // If duplicates are between 50-100, keep current limit (optimal range)
+  
+  if (currentFetchLimit !== previousLimit) {
+    console.log(`🎯 Adaptive throttling: ${duplicates} duplicates → limit ${previousLimit} → ${currentFetchLimit}`);
+  }
+  
+  return currentFetchLimit;
+}
+
+// Fetch feed from Sora API with dynamic limit
+function fetchSoraFeed(limit = currentFetchLimit) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'sora.chatgpt.com',
-      path: '/backend/project_y/feed?limit=200&cut=nf2_latest',
+      path: `/backend/project_y/feed?limit=${limit}&cut=nf2_latest`,
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -313,14 +338,14 @@ async function updateStats(stats, duration, error = null) {
 // Main scan function
 async function scanFeed() {
   const startTime = Date.now();
-  console.log(`\n🔍 [${new Date().toISOString()}] Starting scan...`);
+  console.log(`\n🔍 [${new Date().toISOString()}] Starting scan (limit: ${currentFetchLimit})...`);
 
   try {
     // Update status to scanning
     await pool.query(`UPDATE scanner_stats SET status = 'scanning' WHERE id = 1`);
 
-    // Fetch feed
-    const feedData = await fetchSoraFeed();
+    // Fetch feed with current limit
+    const feedData = await fetchSoraFeed(currentFetchLimit);
     console.log(`📥 Fetched ${feedData.items?.length || 0} posts from API`);
 
     // Process posts
@@ -333,6 +358,9 @@ async function scanFeed() {
     console.log(`   - Total: ${result.total}`);
     console.log(`   - Duration: ${duration}ms`);
 
+    // Apply adaptive throttling based on duplicate count
+    const newLimit = adjustFetchLimit(result.duplicates);
+    
     // Update statistics
     await updateStats({
       total: result.total,
