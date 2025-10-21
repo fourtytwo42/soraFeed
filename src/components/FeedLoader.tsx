@@ -413,6 +413,7 @@ export default function FeedLoader() {
       </div>
       
       <VideoFeed 
+        key={`${feedType}-${searchQuery}`} // Force remount when feed type or search changes
         items={items} 
         onLoadMore={loadMoreFeed}
         hasMore={hasMore}

@@ -24,81 +24,634 @@ interface VideoPostProps {
   onControlsChange?: (showing: boolean) => void;
 }
 
-export default function VideoPost({ item, isActive, isUpcoming, isTargetVideo, scrollDirection, onNext, onAddToFavorites, onRemoveFromFavorites, isInFavorites, onRemixStatusChange, onKeyboardNavigation, preloadedRemixFeed, onControlsChange }: VideoPostProps) {
+// Unified Video Management System
+interface VideoElement {
+  ref: React.RefObject<HTMLVideoElement | null>;
+  position: { x: number; y: number }; // Relative position (0,0 = center)
+  item: SoraFeedItem;
+  isActive: boolean;
+  isTarget: boolean; // Target during scroll transition
+  shouldPlay: boolean;
+  shouldMute: boolean;
+}
+
+export default function VideoPost({ 
+  item, 
+  isActive, 
+  isUpcoming, 
+  isTargetVideo, 
+  scrollDirection, 
+  onNext, 
+  onAddToFavorites, 
+  onRemoveFromFavorites, 
+  isInFavorites, 
+  onRemixStatusChange, 
+  onKeyboardNavigation, 
+  preloadedRemixFeed, 
+  onControlsChange 
+}: VideoPostProps) {
+  
+  // ===== UNIFIED STATE MANAGEMENT =====
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false); // Start unmuted
+  const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [videoWidth, setVideoWidth] = useState<number | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const [leftVideoReady, setLeftVideoReady] = useState(false);
+  const [rightVideoReady, setRightVideoReady] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // Remix state
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
   const [loadingRemixes, setLoadingRemixes] = useState(false);
-  const [isWheelScrolling, setIsWheelScrolling] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [videoWidth, setVideoWidth] = useState<number | null>(null);
-  const [videoReady, setVideoReady] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  
+  // Unified scroll state
+  const [scrollState, setScrollState] = useState<{
+    direction: 'up' | 'down' | 'left' | 'right' | null;
+    targetIndex: number | null;
+    isScrolling: boolean;
+  }>({
+    direction: null,
+    targetIndex: null,
+    isScrolling: false
+  });
+  
+  // Motion values for both directions
   const x = useMotionValue(0);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastInteractionRef = useRef<number>(Date.now());
+  const y = useMotionValue(0); // For potential future vertical remix scrolling
+  
+  // Video refs - use a Map to track videos by item ID for stable references
+  const videoRefsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
+  
+  // Legacy refs for compatibility with existing code
+  const centerVideoRef = useRef<HTMLVideoElement>(null);
+  const leftVideoRef = useRef<HTMLVideoElement>(null);
+  const rightVideoRef = useRef<HTMLVideoElement>(null);
+  const upVideoRef = useRef<HTMLVideoElement>(null);
+  const downVideoRef = useRef<HTMLVideoElement>(null);
+  
+  // Helper to get or create video ref for an item
+  const getVideoRefForItem = useCallback((itemId: string, position: 'left' | 'center' | 'right') => {
+    return (el: HTMLVideoElement | null) => {
+      if (el) {
+        videoRefsMap.current.set(itemId, el);
+        // Also update position-based refs for backward compatibility
+        if (position === 'center') centerVideoRef.current = el;
+        else if (position === 'left') leftVideoRef.current = el;
+        else if (position === 'right') rightVideoRef.current = el;
+      }
+    };
+  }, []);
+  
+  // Control refs
+  const userPausedRef = useRef(false);
   const isFirstVideoRef = useRef(true);
   const hasUserInteractedRef = useRef(false);
-  const previousVideoIdRef = useRef<string>(item.post.id);
-  const userPausedRef = useRef(false);
-
-  // Get current item (original post or remix)
-  const getCurrentItem = useCallback((): SoraFeedItem => {
-    if (currentRemixIndex === 0 || !remixFeed.length) {
-      return item; // Original post
-    }
-    return remixFeed[currentRemixIndex - 1]; // Video remix (index - 1 because 0 is original)
-  }, [currentRemixIndex, remixFeed, item]);
-
-  const currentItem = getCurrentItem();
-  const currentVideoUrl = currentItem.post.attachments[0]?.encodings?.md?.path || 
-                          currentItem.post.attachments[0]?.encodings?.source?.path;
+  const lastInteractionRef = useRef<number>(Date.now());
   
-  // All items from remix feed should be actual video remixes
-  const hasRemixes = remixFeed.length > 0;
-  const canGoLeft = currentRemixIndex > 0;
-  const canGoRight = currentRemixIndex < remixFeed.length;
-
-  // Update isLiked based on favorites when item changes
-  useEffect(() => {
-    if (isInFavorites) {
-      setIsLiked(isInFavorites(getCurrentItem().post.id));
+  // ===== UNIFIED VIDEO MANAGEMENT =====
+  
+  // Get all available items (original + remixes)
+  const getAllItems = useCallback((): SoraFeedItem[] => {
+    return [item, ...remixFeed];
+  }, [item, remixFeed]);
+  
+  // Get current item based on remix index
+  const getCurrentItem = useCallback((): SoraFeedItem => {
+    const allItems = getAllItems();
+    return allItems[currentRemixIndex] || item;
+  }, [currentRemixIndex, getAllItems, item]);
+  
+  // Create video element grid
+  const createVideoGrid = useCallback((): VideoElement[] => {
+    const allItems = getAllItems();
+    const grid: VideoElement[] = [];
+    
+    // During horizontal scrolling, keep center video playing until navigation completes
+    // This matches the behavior of up/down scrolling where videos keep playing during transition
+    const centerShouldPlay = isActive && !userPausedRef.current;
+    
+    // Center video (current)
+    grid.push({
+      ref: centerVideoRef,
+      position: { x: 0, y: 0 },
+      item: getCurrentItem(),
+      isActive: isActive,
+      isTarget: false,
+      shouldPlay: centerShouldPlay,
+      shouldMute: isMuted || !isActive
+    });
+    
+    // Left video (previous remix)
+    if (currentRemixIndex > 0) {
+      const leftItem = allItems[currentRemixIndex - 1];
+      grid.push({
+        ref: leftVideoRef,
+        position: { x: -1, y: 0 },
+        item: leftItem,
+        isActive: false,
+        isTarget: scrollState.direction === 'left' && scrollState.targetIndex === currentRemixIndex - 1,
+        shouldPlay: false, // Adjacent videos stay paused, matching up/down behavior
+        shouldMute: true
+      });
     }
-  }, [item, currentRemixIndex, remixFeed, isInFavorites, getCurrentItem]);
+    
+    // Right video (next remix)
+    if (currentRemixIndex < allItems.length - 1) {
+      const rightItem = allItems[currentRemixIndex + 1];
+      grid.push({
+        ref: rightVideoRef,
+        position: { x: 1, y: 0 },
+        item: rightItem,
+        isActive: false,
+        isTarget: scrollState.direction === 'right' && scrollState.targetIndex === currentRemixIndex + 1,
+        shouldPlay: false, // Adjacent videos stay paused, matching up/down behavior
+        shouldMute: true
+      });
+    }
+    
+    return grid;
+  }, [getAllItems, getCurrentItem, currentRemixIndex, isActive, scrollState, isMuted]);
+  
+  // ===== UNIFIED VIDEO CONTROL =====
+  
+  // Control all videos based on grid state
+  const controlAllVideos = useCallback(() => {
+    const grid = createVideoGrid();
+    
+    grid.forEach(videoElement => {
+      const video = videoElement.ref.current;
+    if (!video) return;
 
-  // Reset x position when remix index changes
+      // Set mute state
+      video.muted = videoElement.shouldMute;
+      
+      // Control playback
+      if (videoElement.shouldPlay && video.paused) {
+        console.log(`▶️ Playing video at position (${videoElement.position.x}, ${videoElement.position.y})`);
+        video.play().catch(err => console.log('❌ Play failed:', err));
+      } else if (!videoElement.shouldPlay && !video.paused) {
+        console.log(`⏸️ Pausing video at position (${videoElement.position.x}, ${videoElement.position.y})`);
+        video.pause();
+      }
+    });
+    
+    // Update React state based on center video
+    const centerVideo = centerVideoRef.current;
+    if (centerVideo) {
+      setIsPlaying(!centerVideo.paused);
+    }
+  }, [createVideoGrid]);
+  
+  // ===== SCROLL DETECTION =====
+  
+  // Note: Scroll detection is now handled directly in the drag handler
+  // This prevents conflicts between motion value listeners and drag events
+  
+  // ===== UNIFIED VIDEO CONTROL EFFECT =====
+  
+  // Single effect to control all videos
   useEffect(() => {
-    x.set(0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRemixIndex]);
+    if (!isActive) {
+      // Pause and mute all videos when inactive
+      [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
+        const video = ref.current;
+        if (video) {
+          video.pause();
+          video.muted = true;
+        }
+      });
+    setIsPlaying(false);
+      return;
+    }
+    
+    // Control videos based on current state
+    controlAllVideos();
+  }, [isActive, scrollState, currentRemixIndex, isMuted, controlAllVideos]);
+  
+  // ===== NAVIGATION FUNCTIONS =====
+  
+  // Unified navigation with smooth animation matching main feed
+  const navigateToRemix = useCallback((targetIndex: number, animated = true) => {
+    if (targetIndex < 0 || targetIndex >= getAllItems().length) return;
+    
+    if (animated) {
+      // Use the same smooth spring animation as main feed
+      const direction = targetIndex > currentRemixIndex ? -1 : 1;
+      animate(x, direction * window.innerWidth, {
+        type: 'spring',
+        stiffness: 400, // Match main feed animation
+        damping: 40,    // Match main feed animation
+        onComplete: () => {
+          // Update index and reset position immediately to prevent visual glitches
+          setCurrentRemixIndex(targetIndex);
+          x.set(0);
+          setScrollState({ direction: null, targetIndex: null, isScrolling: false });
+          // Don't reset video ready states - let videos remain ready for smoother transitions
+        }
+      });
+    } else {
+      // Immediate change (for manual drag completion)
+      setCurrentRemixIndex(targetIndex);
+      x.set(0);
+      setScrollState({ direction: null, targetIndex: null, isScrolling: false });
+    }
+  }, [currentRemixIndex, getAllItems, x]);
+  
+  const goToNextRemix = useCallback((animated = true) => {
+    navigateToRemix(currentRemixIndex + 1, animated);
+  }, [currentRemixIndex, navigateToRemix]);
+  
+  const goToPreviousRemix = useCallback((animated = true) => {
+    navigateToRemix(currentRemixIndex - 1, animated);
+  }, [currentRemixIndex, navigateToRemix]);
+  
+  const goToRemixIndex = useCallback((index: number) => {
+    navigateToRemix(index, true);
+  }, [navigateToRemix]);
+  
+  // ===== USER INTERACTION HANDLERS =====
+  
+  // Unified click handler
+  const handleVideoClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    const centerVideo = centerVideoRef.current;
+    if (!centerVideo) return;
+    
+    const actuallyPlaying = !centerVideo.paused;
+    console.log('🖱️ Video clicked:', { 
+      currentRemixIndex, 
+      actuallyPlaying, 
+      reactIsPlaying: isPlaying 
+    });
+    
+    if (actuallyPlaying) {
+      centerVideo.pause();
+      setIsPlaying(false);
+      userPausedRef.current = true;
+    } else {
+      centerVideo.play().then(() => {
+        setIsPlaying(true);
+        userPausedRef.current = false;
+      }).catch(() => {
+        setIsPlaying(false);
+      });
+    }
+    
+        handleInteraction();
+  }, [currentRemixIndex, isPlaying]);
+  
+  // Interaction tracking
+  const handleInteraction = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+    hasUserInteractedRef.current = true;
+  }, []);
+  
+  // Mouse handlers
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+  
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
+  
+  // ===== DRAG HANDLERS =====
+  
+  // Unified drag handler with immediate navigation on threshold
+  const bind = useDrag(
+    ({ down, movement: [mx], velocity: [vx], first, last }) => {
+      // Don't process drag if we're in the middle of an animation
+      if (scrollState.isScrolling && !down) return;
+      
+      if (first) {
+        // Start of drag - clear any existing scroll state
+        setScrollState({
+          direction: null,
+          targetIndex: null,
+          isScrolling: false
+        });
+      }
+      
+      if (down) {
+        // While dragging, update position smoothly
+        x.set(mx);
+        
+        // Immediate navigation threshold - commit to next video once user drags far enough
+        const commitThreshold = window.innerWidth * 0.25; // 25% of screen width
+        
+        if (Math.abs(mx) > commitThreshold) {
+          if (mx < -commitThreshold && currentRemixIndex < getAllItems().length - 1) {
+            // User has committed to next remix - navigate immediately
+            console.log('🎬 Drag commit: Navigating to next remix');
+            setScrollState({
+              direction: 'right',
+              targetIndex: currentRemixIndex + 1,
+              isScrolling: true
+            });
+            // Animate to complete the transition
+            animate(x, -window.innerWidth, {
+              type: 'spring',
+              stiffness: 400,
+              damping: 40,
+              onComplete: () => {
+                goToNextRemix(false);
+                setScrollState({
+                  direction: null,
+                  targetIndex: null,
+                  isScrolling: false
+                });
+              }
+            });
+          } else if (mx > commitThreshold && currentRemixIndex > 0) {
+            // User has committed to previous remix - navigate immediately
+            console.log('🎬 Drag commit: Navigating to previous remix');
+            setScrollState({
+              direction: 'left',
+              targetIndex: currentRemixIndex - 1,
+              isScrolling: true
+            });
+            // Animate to complete the transition
+            animate(x, window.innerWidth, {
+              type: 'spring',
+              stiffness: 400,
+              damping: 40,
+              onComplete: () => {
+                goToPreviousRemix(false);
+                setScrollState({
+                  direction: null,
+                  targetIndex: null,
+                  isScrolling: false
+                });
+              }
+            });
+          }
+        } else {
+          // Still in preview mode - update scroll state for video control
+          const previewThreshold = 50;
+          if (Math.abs(mx) > previewThreshold) {
+            if (mx < -previewThreshold && currentRemixIndex < getAllItems().length - 1) {
+              // Previewing next remix
+              setScrollState({
+                direction: 'right',
+                targetIndex: currentRemixIndex + 1,
+                isScrolling: true
+              });
+            } else if (mx > previewThreshold && currentRemixIndex > 0) {
+              // Previewing previous remix
+              setScrollState({
+                direction: 'left',
+                targetIndex: currentRemixIndex - 1,
+                isScrolling: true
+              });
+            }
+          } else {
+            // Reset scroll state when close to center
+            setScrollState({
+              direction: null,
+              targetIndex: null,
+              isScrolling: false
+            });
+          }
+        }
+      } else if (last) {
+        // Released - if we haven't already committed, decide based on position and velocity
+        if (!scrollState.isScrolling) {
+          const threshold = window.innerWidth * 0.15; // Lower threshold for release
+          const shouldNavigate = Math.abs(mx) > threshold || Math.abs(vx) > 0.3;
 
-  // Reset remix state when video item changes
+          if (shouldNavigate) {
+            if (mx < 0 && currentRemixIndex < getAllItems().length - 1) {
+              // Swiped left - navigate to next
+              console.log('🎬 Drag release: Going to next remix');
+              setScrollState({
+                direction: 'right',
+                targetIndex: currentRemixIndex + 1,
+                isScrolling: true
+              });
+              animate(x, -window.innerWidth, {
+                type: 'spring',
+                stiffness: 400,
+                damping: 40,
+                onComplete: () => {
+                  goToNextRemix(false);
+                  setScrollState({
+                    direction: null,
+                    targetIndex: null,
+                    isScrolling: false
+                  });
+                }
+              });
+            } else if (mx > 0 && currentRemixIndex > 0) {
+              // Swiped right - navigate to previous
+              console.log('🎬 Drag release: Going to previous remix');
+              setScrollState({
+                direction: 'left',
+                targetIndex: currentRemixIndex - 1,
+                isScrolling: true
+              });
+              animate(x, window.innerWidth, {
+                type: 'spring',
+                stiffness: 400,
+                damping: 40,
+                onComplete: () => {
+                  goToPreviousRemix(false);
+                  setScrollState({
+                    direction: null,
+                    targetIndex: null,
+                    isScrolling: false
+                  });
+                }
+              });
+            } else {
+              // Snap back to position if can't navigate
+              console.log('🎬 Drag release: Snapping back (boundary hit)');
+              animate(x, 0, {
+                type: 'spring',
+                stiffness: 300,
+                damping: 30,
+                onComplete: () => {
+                  setScrollState({
+                    direction: null,
+                    targetIndex: null,
+                    isScrolling: false
+                  });
+                }
+              });
+            }
+          } else {
+            // Snap back to position
+            console.log('🎬 Drag release: Snapping back (insufficient movement)');
+            animate(x, 0, {
+              type: 'spring',
+              stiffness: 300,
+              damping: 30,
+              onComplete: () => {
+                setScrollState({
+                  direction: null,
+                  targetIndex: null,
+                  isScrolling: false
+                });
+              }
+            });
+          }
+        }
+        // If we already committed during drag, the animation is already running
+      }
+    },
+    {
+      axis: 'x',
+      // Remove restrictive bounds - let the drag handler manage boundaries
+      rubberband: true,
+      // Add some configuration to make dragging more responsive
+      filterTaps: true,
+      threshold: 10
+    }
+  );
+  
+  // ===== KEYBOARD NAVIGATION =====
+  
+  // Handle keyboard navigation for remixes (matching main feed pattern)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isActive || scrollState.isScrolling) return;
+      
+      // Don't trigger navigation if user is typing in an input field
+      const activeElement = document.activeElement;
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA' ||
+        (activeElement as HTMLElement).isContentEditable
+      );
+      
+      if (isTyping) return;
+      
+      if (e.key === 'ArrowLeft' && currentRemixIndex > 0) {
+        e.preventDefault();
+        console.log('⌨️ Keyboard: Going to previous remix');
+        setScrollState({
+          direction: 'left',
+          targetIndex: currentRemixIndex - 1,
+          isScrolling: true
+        });
+        goToPreviousRemix(true); // Use animated navigation
+        // Reset scroll state after animation completes
+        setTimeout(() => {
+          setScrollState({
+            direction: null,
+            targetIndex: null,
+            isScrolling: false
+          });
+        }, 600);
+      } else if (e.key === 'ArrowRight' && currentRemixIndex < getAllItems().length - 1) {
+        e.preventDefault();
+        console.log('⌨️ Keyboard: Going to next remix');
+        setScrollState({
+          direction: 'right',
+          targetIndex: currentRemixIndex + 1,
+          isScrolling: true
+        });
+        goToNextRemix(true); // Use animated navigation
+        // Reset scroll state after animation completes
+        setTimeout(() => {
+          setScrollState({
+            direction: null,
+            targetIndex: null,
+            isScrolling: false
+          });
+        }, 600);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isActive, scrollState.isScrolling, currentRemixIndex, getAllItems, goToPreviousRemix, goToNextRemix]);
+  
+  // ===== INITIALIZATION EFFECTS =====
+  
+  // Load remix feed
+  useEffect(() => {
+    if (isActive && remixFeed.length === 0 && !loadingRemixes) {
+      if (preloadedRemixFeed && preloadedRemixFeed.length > 0) {
+        setRemixFeed(preloadedRemixFeed);
+      } else {
+        // Load remix feed
+        const loadRemixFeed = async () => {
+          setLoadingRemixes(true);
+          try {
+            const remixes = await remixCache.getRemixFeed(item.post.id);
+            setRemixFeed(remixes);
+          } catch (error) {
+            console.error('Failed to load remix feed:', error);
+            setRemixFeed([]);
+          } finally {
+            setLoadingRemixes(false);
+          }
+        };
+        
+        loadRemixFeed();
+      }
+    }
+  }, [isActive, remixFeed.length, loadingRemixes, preloadedRemixFeed, item.post.id]);
+  
+  // Reset state when item changes
   useEffect(() => {
     console.log('🔄 Video item changed:', item.post.id);
+    
+    // Cleanup all videos
+    [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
+      const video = ref.current;
+      if (video) {
+        video.pause();
+        video.muted = true;
+        video.currentTime = 0;
+      }
+    });
+    
+    // Reset state
     setRemixFeed([]);
     setCurrentRemixIndex(0);
     setLoadingRemixes(false);
     setVideoReady(false);
+    setLeftVideoReady(false);
+    setRightVideoReady(false);
     setIsPlaying(false);
+    setScrollState({ direction: null, targetIndex: null, isScrolling: false });
     x.set(0);
-    hasUserInteractedRef.current = false;
     userPausedRef.current = false;
-    previousVideoIdRef.current = item.post.id;
-    console.log('📹 New video URL:', currentVideoUrl);
-    
-    // Don't call video.load() here - it resets the video and causes it to restart
-    // The video will load naturally through the src attribute change
-    // Don't reset videoWidth here - keep it for smooth transitions
-    // The new video will update videoWidth when its metadata loads
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.post.id]);
-
-  // Detect if device is mobile
+    hasUserInteractedRef.current = false;
+  }, [item.post.id, x]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log('🧹 VideoPost unmounting - cleaning up all videos');
+      [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
+        const video = ref.current;
+        if (video) {
+          video.pause();
+          video.muted = true;
+          video.currentTime = 0;
+        }
+      });
+    };
+  }, []);
+  
+  // Update favorites
+  useEffect(() => {
+    if (isInFavorites) {
+      setIsLiked(isInFavorites(getCurrentItem().post.id));
+    }
+  }, [getCurrentItem, isInFavorites]);
+  
+  // Detect mobile
   useEffect(() => {
     const checkMobile = () => {
       const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
@@ -111,801 +664,292 @@ export default function VideoPost({ item, isActive, isUpcoming, isTargetVideo, s
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Controls visibility
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    console.log('🎬 Video state changed:', { 
-      isActive, 
-      isUpcoming,
-      isTargetVideo,
-      scrollDirection,
-      videoReady, 
-      reactIsPlaying: isPlaying, 
-      videoPaused: video.paused,
-      videoCurrentTime: video.currentTime.toFixed(2),
-      readyState: video.readyState,
-      userPaused: userPausedRef.current 
-    });
-    
-    // Play video if it's active OR if it's the target video during scroll
-    const shouldPlay = isActive || (isTargetVideo && scrollDirection);
-    
-    if (shouldPlay) {
-      // Show controls only on first video load (desktop only)
-      if (isFirstVideoRef.current && !isMobile && isActive) {
-        setShowControls(true);
-        hasUserInteractedRef.current = true;
-        isFirstVideoRef.current = false;
-      }
-      
-      // If video has loaded enough data to show the first frame, mark it as ready
-      if (!videoReady && video.readyState >= 2) {
-        console.log('✨ Video has loaded data (readyState >= 2), setting videoReady = true');
-        setVideoReady(true);
-      }
-      
-      // Play if video is ready and not already playing and user hasn't paused
-      if (videoReady && video.paused && !userPausedRef.current) {
-        const reason = isActive ? 'active' : 'target during scroll';
-        console.log(`▶️ Attempting to play ${reason} video`, { currentTime: video.currentTime.toFixed(2) });
-        video.play().then(() => {
-          console.log(`✅ ${reason} video play successful`, { currentTime: video.currentTime.toFixed(2) });
-          setIsPlaying(true);
-        }).catch((err) => {
-          console.log(`❌ ${reason} video play failed`, err);
-          setIsPlaying(false);
-        });
-      } else if (!video.paused) {
-        const reason = isActive ? 'active' : 'target during scroll';
-        console.log(`⏸️ ${reason} video already playing`, { currentTime: video.currentTime.toFixed(2) });
-        // Sync React state with actual video state
-        if (!isPlaying) {
-          setIsPlaying(true);
-        }
-      } else if (userPausedRef.current && isActive) {
-        console.log('⏸️ User paused active video, not auto-playing');
-      } else {
-        console.log('⏸️ Video not ready yet, waiting...');
-      }
-    } else {
-      // Pause videos that are not active and not target during scroll
-      if (!video.paused) {
-        console.log('⏸️ Pausing non-active/non-target video');
-        video.pause();
-      }
-      setIsPlaying(false);
+    setShowControls(!isPlaying);
+    if (onControlsChange) {
+      onControlsChange(!isPlaying);
     }
-  }, [isActive, isUpcoming, isTargetVideo, scrollDirection, isMobile, videoReady, isPlaying]);
-
-  // Load remix feed when video becomes active and we don't have remixes yet
-  useEffect(() => {
-    if (isActive && remixFeed.length === 0 && !loadingRemixes) {
-      // Use preloaded data if available, otherwise fetch
-      if (preloadedRemixFeed && preloadedRemixFeed.length > 0) {
-        setRemixFeed(preloadedRemixFeed);
-      } else {
-        loadRemixFeed();
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, item.post.id, preloadedRemixFeed]);
-
-  // Notify parent when remix status changes
+  }, [isPlaying, onControlsChange]);
+  
+  // Notify remix status
   useEffect(() => {
     if (onRemixStatusChange) {
-      onRemixStatusChange(hasRemixes);
+      onRemixStatusChange(remixFeed.length > 0);
     }
-  }, [hasRemixes, onRemixStatusChange]);
-
-  // Notify parent when controls visibility changes
-  useEffect(() => {
-    if (onControlsChange) {
-      onControlsChange(showControls);
+  }, [remixFeed.length, onRemixStatusChange]);
+  
+  // ===== HELPER FUNCTIONS =====
+  
+  const currentItem = getCurrentItem();
+  const hasRemixes = remixFeed.length > 0;
+  const canGoLeft = currentRemixIndex > 0;
+  const canGoRight = currentRemixIndex < getAllItems().length - 1;
+  
+  // Video event handlers
+  const handleVideoLoad = useCallback((video: HTMLVideoElement) => {
+    if (video.readyState >= 2) {
+      setVideoReady(true);
     }
-  }, [showControls, onControlsChange]);
-
-  // Handle keyboard navigation for remixes
-  useEffect(() => {
-    if (!onKeyboardNavigation || !isActive) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' && hasRemixes && canGoLeft) {
-        e.preventDefault();
-        goToPreviousRemix();
-      } else if (e.key === 'ArrowRight' && hasRemixes && canGoRight) {
-        e.preventDefault();
-        goToNextRemix();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, hasRemixes, canGoLeft, canGoRight, onKeyboardNavigation]);
-
-  // Handle video changes when switching remixes
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !currentVideoUrl) return;
-
-    console.log('🔄 Remix index changed:', { currentRemixIndex, url: currentVideoUrl });
-    // If the remix index changed, reset video ready state and playing state
-    setVideoReady(false);
-    setIsPlaying(false);
-    console.log('✨ Setting videoReady = false, isPlaying = false (remix change)');
-    
-    // Don't call video.load() - the src change will trigger natural loading
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentRemixIndex, currentVideoUrl]);
-
-  const loadRemixFeed = async () => {
-    try {
-      setLoadingRemixes(true);
-      // console.log('🔄 Loading remix feed for post:', item.post.id);
-      const remixes = await remixCache.getRemixFeed(item.post.id);
-      setRemixFeed(remixes);
-      // console.log('✅ Loaded remix feed with', remixes.length, 'video remixes');
-    } catch (error) {
-      console.error('❌ Failed to load remix feed:', error);
-      setRemixFeed([]);
-    } finally {
-      setLoadingRemixes(false);
-    }
-  };
-
-  const toggleMute = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    video.muted = !video.muted;
-    setIsMuted(video.muted);
-  };
-
-  const handleVideoEnd = () => {
-    // Auto-scroll to next video when current video ends
-    if (isActive) {
-      setTimeout(() => {
-        onNext();
-      }, 500); // Small delay before auto-advancing
-    }
-  };
-
-  const goToPreviousRemix = () => {
-    if (currentRemixIndex > 0) {
-      // Animate to previous position then change index
-      const targetX = window.innerWidth;
-      animate(x, targetX, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: () => {
-          setCurrentRemixIndex(currentRemixIndex - 1);
-        }
-      });
-    }
-  };
-
-  const goToNextRemix = () => {
-    const maxIndex = remixFeed.length;
-    if (currentRemixIndex < maxIndex) {
-      // Animate to next position then change index
-      const targetX = -window.innerWidth;
-      animate(x, targetX, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: () => {
-          setCurrentRemixIndex(currentRemixIndex + 1);
-        }
-      });
-    }
-  };
-
-  const goToRemixIndex = (index: number) => {
-    const maxIndex = remixFeed.length;
-    if (index >= 0 && index <= maxIndex && index !== currentRemixIndex) {
-      // Determine animation direction based on target index
-      const direction = index > currentRemixIndex ? -1 : 1;
-      const targetX = direction * window.innerWidth;
+  }, []);
+  
+  const handleVideoMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.videoWidth && video.videoHeight) {
+      const aspectRatio = video.videoWidth / video.videoHeight;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
       
-      animate(x, targetX, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: () => {
-          setCurrentRemixIndex(index);
-        }
-      });
-    }
-  };
-
-  // Use-gesture drag handler for horizontal remix navigation only
-  const bind = useDrag(
-    ({ down, movement: [mx, my], velocity: [vx], cancel, tap }) => {
-      // Track tap interactions (but not drags)
-      if (tap) {
-        handleInteraction();
-      }
-
-      // Only handle horizontal drags when there are remixes
-      if (!hasRemixes) return;
-
-      // If it was a tap, don't interfere - let click handler work
-      if (tap) return;
-
-      // If the drag is more vertical than horizontal, cancel and let parent handle
-      if (Math.abs(my) > Math.abs(mx) && Math.abs(my) > 10) {
-        cancel();
-        x.set(0);
-        return;
-      }
-
-      if (!down) {
-        // Released - snap to next/previous or back
-        const threshold = window.innerWidth * 0.2;
-        const shouldNavigate = Math.abs(mx) > threshold || Math.abs(vx) > 0.5;
-
-        if (shouldNavigate) {
-          if (mx < 0 && canGoRight) {
-            // Swiped left - animate to next position then change index
-            const targetX = -window.innerWidth;
-            animate(x, targetX, {
-              type: 'spring',
-              stiffness: 400,
-              damping: 40,
-              onComplete: () => {
-                goToNextRemix();
-              }
-            });
-          } else if (mx > 0 && canGoLeft) {
-            // Swiped right - animate to previous position then change index
-            const targetX = window.innerWidth;
-            animate(x, targetX, {
-              type: 'spring',
-              stiffness: 400,
-              damping: 40,
-              onComplete: () => {
-                goToPreviousRemix();
-              }
-            });
-          } else {
-            // Snap back to position if can't navigate
-            animate(x, 0, {
-              type: 'spring',
-              stiffness: 300,
-              damping: 30,
-            });
-          }
-        } else {
-          // Snap back to position
-          animate(x, 0, {
-            type: 'spring',
-            stiffness: 300,
-            damping: 30,
-          });
-        }
+      if (aspectRatio > 1) {
+        setVideoWidth(viewportWidth);
       } else {
-        // While dragging - update x position
-        if (currentRemixIndex === 0 && mx > 0) {
-          x.set(mx * 0.2); // Rubber band at start
-        } else if (currentRemixIndex === remixFeed.length && mx < 0) {
-          x.set(mx * 0.2); // Rubber band at end
-        } else {
-          x.set(mx);
-        }
-      }
-    },
-    {
-      filterTaps: true,
-      pointer: { touch: true },
-    }
-  );
-
-  // Mouse wheel events - only handle horizontal scrolling for remixes
-  const handleWheel = (e: React.WheelEvent) => {
-    // Throttle wheel events to prevent rapid firing
-    if (isWheelScrolling) return;
-    
-    // Check if it's horizontal scroll (shift+wheel or horizontal wheel)
-    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-      e.preventDefault(); // Only prevent default for horizontal scrolls
-      
-      // Horizontal scroll - remix navigation
-      if (hasRemixes) {
-        setIsWheelScrolling(true);
-        
-        if (e.deltaX > 0 || (e.shiftKey && e.deltaY > 0)) {
-          // Scroll right - next remix
-          if (canGoRight) {
-            goToNextRemix();
-          }
-        } else if (e.deltaX < 0 || (e.shiftKey && e.deltaY < 0)) {
-          // Scroll left - previous remix
-          if (canGoLeft) {
-            goToPreviousRemix();
-          }
-        }
-        
-        // Reset throttle after animation completes
-        setTimeout(() => setIsWheelScrolling(false), 500);
+        const calculatedWidth = viewportHeight * aspectRatio;
+        setVideoWidth(calculatedWidth);
       }
     }
-    // Vertical scroll is handled by VideoFeed component
-  };
+  }, []);
+  
+  const handleVideoCanPlay = useCallback((video: HTMLVideoElement) => {
+    setVideoReady(true);
+    handleVideoLoad(video);
+  }, [handleVideoLoad]);
 
-  const formatCount = (count: number): string => {
-    if (count >= 1000000) {
-      return (count / 1000000).toFixed(1) + 'M';
-    } else if (count >= 1000) {
-      return (count / 1000).toFixed(1) + 'K';
-    }
-    return count.toString();
-  };
-
-  const formatTimeAgo = (timestamp: number): string => {
-    const now = Date.now() / 1000;
-    const diff = now - timestamp;
-    
-    if (diff < 60) return 'now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
-  };
-
-  // Handle controls auto-hide
-  const hideControlsAfterDelay = useCallback(() => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    
-    // Only auto-hide if video is playing
-    // Keep controls visible when video is paused
-    if (isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  }, [isPlaying]);
-
-  // Keep controls visible when video is paused, and auto-hide when playing
-  useEffect(() => {
-    if (!isPlaying) {
-      // On mobile: always show controls when paused
-      // On desktop: only show controls when paused if user has interacted
-      if (isMobile || hasUserInteractedRef.current) {
-        setShowControls(true);
-      }
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    } else {
-      // When video starts playing, start the auto-hide timer
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  }, [isPlaying, isMobile]);
-
-  // Handle any interaction (mouse, touch, etc.)
-  const handleInteraction = useCallback(() => {
-    lastInteractionRef.current = Date.now();
-    hasUserInteractedRef.current = true;
-    setShowControls(true);
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    hideControlsAfterDelay();
-  }, [hideControlsAfterDelay]);
-
-  // Handle mouse enter
-  const handleMouseEnter = useCallback(() => {
-    setIsHovering(true);
-    handleInteraction();
-  }, [handleInteraction]);
-
-  // Handle mouse leave
-  const handleMouseLeave = useCallback(() => {
-    setIsHovering(false);
-    hideControlsAfterDelay();
-  }, [hideControlsAfterDelay]);
-
-  // Handle click - toggle controls and pause
-  const handleVideoClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    
-    const video = videoRef.current;
-    if (!video) return;
-
-    const wasPlaying = isPlaying;
-    console.log('🖱️ Video clicked:', { wasPlaying, videoReady });
-    
-    if (isPlaying) {
-      console.log('⏸️ Pausing video (user click)');
-      video.pause();
-      setIsPlaying(false);
-      userPausedRef.current = true;
-    } else {
-      console.log('▶️ Playing video (user click)');
-      video.play().then(() => {
-        console.log('✅ Play successful (user click)');
-        setIsPlaying(true);
-        userPausedRef.current = false;
-      }).catch(() => {
-        console.log('❌ Play failed (user click)');
-        setIsPlaying(false);
-      });
-    }
-    
-    handleInteraction();
-  }, [isPlaying, handleInteraction, videoReady]);
-
-  // Track videoReady state changes
-  useEffect(() => {
-    console.log('🎬 videoReady state changed:', videoReady);
-  }, [videoReady]);
-
-  // Track isPlaying state changes
-  useEffect(() => {
-    console.log('▶️ isPlaying state changed:', isPlaying);
-  }, [isPlaying]);
-
-  // Track isActive changes
-  useEffect(() => {
-    console.log('📺 isActive changed:', isActive);
-  }, [isActive]);
-
-  // Component mount/unmount logging
-  useEffect(() => {
-    console.log('🚀 VideoPost mounted:', item.post.id);
-    
-    return () => {
-      console.log('🔚 VideoPost unmounting:', item.post.id);
-    };
-  }, [item.post.id]);
-
-  // Log video render state
-  useEffect(() => {
-    console.log('🎨 Video render state:', { 
-      videoReady, 
-      opacity: videoReady ? 1 : 0,
-      url: currentVideoUrl 
-    });
-  }, [videoReady, currentVideoUrl]);
-
-  // Effect to handle control visibility based on play state
-  useEffect(() => {
-    // Clean up timeout when component unmounts
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
+  const handleLeftVideoCanPlay = useCallback((video: HTMLVideoElement) => {
+    setLeftVideoReady(true);
   }, []);
 
-  // Download video function
-  const downloadVideo = useCallback(async () => {
-    const currentItem = getCurrentItem();
-    const videoUrl = currentItem.post.attachments[0]?.encodings?.source?.path || 
-                     currentItem.post.attachments[0]?.encodings?.md?.path;
+  const handleRightVideoCanPlay = useCallback((video: HTMLVideoElement) => {
+    setRightVideoReady(true);
+  }, []);
+  
+  // Toggle mute
+  const toggleMute = useCallback(() => {
+    const video = centerVideoRef.current;
+    if (!video) return;
     
-    if (!videoUrl) {
-      console.error('No video URL found for download');
-      return;
-    }
-
-    try {
-      console.log('🔽 Starting video download for:', currentItem.post.id);
-      
-      // Fetch the video as a blob
-      const response = await fetch(videoUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch video: ${response.status}`);
-      }
-      
-      const blob = await response.blob();
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // Generate filename
-      const username = currentItem.profile.username || 'sora';
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-      const extension = videoUrl.includes('.mp4') ? 'mp4' : 'webm';
-      link.download = `sora-${username}-${timestamp}.${extension}`;
-      
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      // Clean up
-      window.URL.revokeObjectURL(url);
-      
-      console.log('✅ Video download completed');
-    } catch (error) {
-      console.error('❌ Failed to download video:', error);
-      
-      // Fallback: open video in new tab
-      window.open(videoUrl, '_blank');
-    }
-  }, [getCurrentItem]);
-
-  // Social media sharing functions
-  const shareToFacebook = useCallback(() => {
-    const currentItem = getCurrentItem();
-    const shareUrl = currentItem.post.permalink.replace('http://localhost:3000', 'https://sora.chatgpt.com');
-    const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`;
-    window.open(facebookUrl, '_blank', 'width=600,height=400');
-  }, [getCurrentItem]);
-
-  const shareToTwitter = useCallback(() => {
-    const currentItem = getCurrentItem();
-    const shareUrl = currentItem.post.permalink.replace('http://localhost:3000', 'https://sora.chatgpt.com');
-    const text = currentItem.post.text ? `${currentItem.post.text}\n\n` : '';
-    const twitterUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`;
-    window.open(twitterUrl, '_blank', 'width=600,height=400');
-  }, [getCurrentItem]);
-
+    video.muted = !video.muted;
+    setIsMuted(video.muted);
+  }, []);
+  
+  // ===== RENDER =====
+  
+  // Render video elements with stable keys based on item ID to prevent reloading when positions change
+  const renderVideoAtPosition = useCallback((itemIndex: number, position: 'left' | 'center' | 'right') => {
+    const items = getAllItems();
+    if (itemIndex < 0 || itemIndex >= items.length) return null;
+    
+    const videoItem = items[itemIndex];
+    const videoUrl = videoItem.post.attachments[0]?.encodings?.md?.path || 
+                     videoItem.post.attachments[0]?.encodings?.source?.path;
+    
+    if (!videoUrl) return null;
+    
+    const isCenter = position === 'center';
+    const isLeft = position === 'left';
+    const isRight = position === 'right';
+    
+    // Use position for transform, but item ID as key for stable element identity
+    const transform = isLeft ? 'translateX(-100%)' : isRight ? 'translateX(100%)' : 'translateX(0)';
+    const zIndex = isCenter ? 20 : 10;
+    
+    // Determine if video is ready based on position
+    let isReady = false;
+    if (isCenter) isReady = videoReady;
+    else if (isLeft) isReady = leftVideoReady;
+    else if (isRight) isReady = rightVideoReady;
+    
+    return (
+      <div 
+        key={videoItem.post.id}
+        className="absolute inset-0 w-full h-full flex items-center justify-center"
+        style={{ 
+          transform,
+          zIndex
+        }}
+      >
+        {isCenter ? (
+          <div className="relative h-full w-full flex items-center justify-center">
+            <div 
+              className="relative h-full flex items-center justify-center"
+              style={{ 
+                width: videoWidth ? `${videoWidth}px` : '100%',
+                maxWidth: '100%'
+              }}
+            >
+              <video
+                ref={getVideoRefForItem(videoItem.post.id, position)}
+                src={videoUrl}
+                className="object-contain block"
+                style={{
+                  width: videoWidth ? `${videoWidth}px` : 'auto',
+                  height: videoWidth ? 'auto' : '100%',
+                  opacity: isReady ? 1 : 0,
+                  transition: 'opacity 0.3s ease-in-out'
+                }}
+                muted={isMuted}
+                playsInline
+                loop
+                onLoadedMetadata={handleVideoMetadata}
+                onCanPlay={(e) => handleVideoCanPlay(e.currentTarget)}
+                onLoadedData={(e) => handleVideoLoad(e.currentTarget)}
+                preload="auto"
+              >
+                <source src={videoUrl} type="video/mp4" />
+              </video>
+            </div>
+          </div>
+        ) : (
+          <video
+            ref={getVideoRefForItem(videoItem.post.id, position)}
+            src={videoUrl}
+            className="h-full w-auto max-w-full object-contain"
+            style={{
+              opacity: isReady ? 1 : 0,
+              transition: 'opacity 0.3s ease-in-out'
+            }}
+            loop
+            muted
+            playsInline
+            preload="auto"
+            onCanPlay={(e) => {
+              if (isLeft) handleLeftVideoCanPlay(e.currentTarget);
+              else handleRightVideoCanPlay(e.currentTarget);
+            }}
+            onLoadedData={(e) => {
+              if (isLeft) handleLeftVideoCanPlay(e.currentTarget);
+              else handleRightVideoCanPlay(e.currentTarget);
+            }}
+          />
+        )}
+      </div>
+    );
+  }, [getAllItems, videoWidth, videoReady, leftVideoReady, rightVideoReady, isMuted, 
+      getVideoRefForItem, handleVideoMetadata, handleVideoCanPlay, handleVideoLoad, 
+      handleLeftVideoCanPlay, handleRightVideoCanPlay]);
 
     return (
-      <div className="relative w-full h-dvh overflow-hidden bg-black">
-        {/* Draggable container with all remixes */}
+    <div className="relative w-full h-full bg-black overflow-hidden">
+      {/* Video Container */}
         <motion.div
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           {...(bind() as any)}
           style={{ x }}
           className="absolute inset-0 flex items-center justify-center group cursor-pointer select-none"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onClick={handleVideoClick}
-          onWheel={handleWheel}
-        >
-          {/* Previous Remix */}
-          {hasRemixes && canGoLeft && (
-            <div 
-              className="absolute inset-0 w-full h-full flex items-center justify-center"
-              style={{ transform: 'translateX(-100%)' }}
-            >
-              <video
-                src={remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.md?.path || 
-                     remixFeed[currentRemixIndex - 2]?.post.attachments[0]?.encodings?.source?.path}
-                className="h-full w-auto max-w-full object-contain"
-                loop
-                muted
-                playsInline
-                preload="metadata"
-              />
-            </div>
-          )}
-          
-          {/* Current Video/Remix with Controls */}
-          <div className="absolute inset-0 w-full h-full flex items-center justify-center">
-            <div className="relative h-full w-full flex items-center justify-center">
-              <div 
-                className="relative h-full flex items-center justify-center"
-                style={{ 
-                  width: videoWidth ? `${videoWidth}px` : '100%',
-                  maxWidth: '100%'
-                }}
-              >
-                {currentVideoUrl && (
-                  <video
-                    ref={videoRef}
-                    src={currentVideoUrl}
-                    className="object-contain block"
-                    style={{
-                      width: videoWidth ? `${videoWidth}px` : 'auto',
-                      height: videoWidth ? 'auto' : '100%',
-                      opacity: 1,
-                      transition: 'filter 0.3s ease-in-out',
-                      filter: isActive && !videoReady ? 'blur(4px)' : 'none'
-                    }}
-                    muted={isMuted}
-                    playsInline
-                    onEnded={handleVideoEnd}
-                    onLoadStart={() => {
-                      console.log('📥 Video load started:', currentVideoUrl);
-                    }}
-                    onLoadedData={(e) => {
-                      console.log('📊 Video data loaded:', currentVideoUrl);
-                      const video = e.currentTarget;
-                      // Mark video as ready when data loads (for smooth transitions)
-                      if (video.readyState >= 2 && !videoReady) {
-                        console.log('✨ Setting videoReady = true (loaded data)');
-                        setVideoReady(true);
-                      }
-                      // Note: Auto-play is handled by the useEffect, not here
-                    }}
-                    onLoadedMetadata={(e) => {
-                      console.log('📐 Video metadata loaded:', {
-                        width: e.currentTarget.videoWidth,
-                        height: e.currentTarget.videoHeight,
-                        url: currentVideoUrl
-                      });
-                      const video = e.currentTarget;
-                      if (video.videoWidth && video.videoHeight) {
-                        const aspectRatio = video.videoWidth / video.videoHeight;
-                        const viewportWidth = window.innerWidth;
-                        const viewportHeight = window.innerHeight;
-                        
-                        // If landscape (wider than tall), fill width
-                        // If portrait (taller than wide), fill height
-                        if (aspectRatio > 1) {
-                          // Landscape: fill width
-                          const calculatedHeight = viewportWidth / aspectRatio;
-                          setVideoWidth(viewportWidth);
-                        } else {
-                          // Portrait: fill height
-                          const calculatedWidth = viewportHeight * aspectRatio;
-                          setVideoWidth(calculatedWidth);
-                        }
-                      }
-                      // Don't seek to 0 - let the video continue playing from where it is
-                    }}
-                    onCanPlay={(e) => {
-                      const video = e.currentTarget;
-                      console.log('🎥 Video can play:', { isActive, isUpcoming, isTargetVideo, scrollDirection, videoPaused: video.paused, videoCurrentTime: video.currentTime.toFixed(2), url: currentVideoUrl?.substring(0, 100) + '...' });
-                      
-                      // Make video ready for all videos (for smooth transitions)
-                      setVideoReady(true);
-                      console.log('✨ Setting videoReady = true');
-                      
-                      // Auto-play if it's active OR target during scroll
-                      const shouldPlay = isActive || (isTargetVideo && scrollDirection);
-                      
-                      if (shouldPlay) {
-                        if (video.paused && !userPausedRef.current) {
-                          const reason = isActive ? 'active' : 'target during scroll';
-                          console.log(`▶️ Auto-playing ${reason} video (onCanPlay)`, { currentTime: video.currentTime.toFixed(2) });
-                          video.play().then(() => {
-                            console.log(`✅ Auto-play successful (onCanPlay) - ${reason}`, { currentTime: video.currentTime.toFixed(2) });
-                            setIsPlaying(true);
-                          }).catch(() => {
-                            console.log(`❌ Auto-play failed (onCanPlay) - ${reason}`);
-                            setIsPlaying(false);
-                          });
-                        } else if (!video.paused) {
-                          const reason = isActive ? 'active' : 'target during scroll';
-                          console.log(`⏸️ ${reason} video already playing`, { currentTime: video.currentTime.toFixed(2) });
-                          // Sync React state with actual video state
-                          if (!isPlaying) {
-                            setIsPlaying(true);
-                          }
-                        } else {
-                          console.log('⏸️ User paused video, not auto-playing');
-                        }
-                      } else {
-                        // Ensure non-active/non-target videos are paused
-                        if (!video.paused) {
-                          console.log('⏸️ Pausing non-active/non-target video (onCanPlay)');
-                          video.pause();
-                        }
-                        console.log('⏸️ Video ready but not active/target, keeping paused');
-                      }
-                    }}
-                    preload="auto"
-                  >
-                    <source src={currentVideoUrl} type="video/mp4" />
-                  </video>
-                )}
-
-                {/* Play/Pause Overlay - Center of video */}
+      >
+        {/* Render videos at their positions with stable keys */}
+        {canGoLeft && renderVideoAtPosition(currentRemixIndex - 1, 'left')}
+        {renderVideoAtPosition(currentRemixIndex, 'center')}
+        {canGoRight && renderVideoAtPosition(currentRemixIndex + 1, 'right')}
+      </motion.div>
+      
+      {/* Controls Overlay */}
+      {videoReady && (
+        <>
+          {/* Play/Pause Button */}
+          {showControls && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ 
-                  opacity: (!isPlaying && showControls) ? 1 : 0, 
-                  scale: (!isPlaying && showControls) ? 1 : 0.8 
-                }}
-                className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
-              >
-                <div className="p-4 rounded-full bg-black/50 backdrop-blur-sm">
-                  <Play size={48} className="text-white ml-1" />
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none"
+            >
+              <div className="bg-black/50 rounded-full p-4 pointer-events-auto">
+                {isPlaying ? (
+                  <div className="w-8 h-8" />
+                ) : (
+                  <Play className="w-8 h-8 text-white fill-white" />
+                )}
                 </div>
               </motion.div>
-
-              {/* Horizontal Navigation - Left Arrow (Desktop only) */}
-              {!isMobile && hasRemixes && (
-                <motion.button
-                  initial={{ opacity: 0, x: -20 }}
+          )}
+          
+          {/* Bottom Controls */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
                   animate={{ 
-                    opacity: showControls && canGoLeft ? 1 : 0,
-                    x: showControls && canGoLeft ? 0 : -20
-                  }}
-                  transition={{ duration: 0.2 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleInteraction();
-                    goToPreviousRemix();
-                  }}
+              opacity: showControls ? 1 : 0,
+              y: showControls ? 0 : 20
+            }}
+            className="absolute bottom-4 left-4 right-4 z-40"
+            style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+          >
+            {/* Remix Navigation */}
+            {hasRemixes && (
+              <div className="flex items-center justify-center mb-4">
+                <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2">
+                  {/* Previous Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('🔘 Button: Going to previous remix');
+                      goToPreviousRemix();
+                    }}
                   disabled={!canGoLeft}
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white transition-all hover:bg-black/70"
-                  style={{ pointerEvents: showControls && canGoLeft ? 'auto' : 'none' }}
-                >
-                  <ChevronLeft size={24} />
-                </motion.button>
-              )}
-
-              {/* Horizontal Navigation - Right Arrow (Desktop only) */}
-              {!isMobile && hasRemixes && (
-                <motion.button
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ 
-                    opacity: showControls && canGoRight ? 1 : 0,
-                    x: showControls && canGoRight ? 0 : 20
-                  }}
-                  transition={{ duration: 0.2 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleInteraction();
-                    goToNextRemix();
-                  }}
+                    className={`p-2 rounded-full transition-all ${
+                      canGoLeft 
+                        ? 'bg-white/20 hover:bg-white/30 text-white' 
+                        : 'bg-white/10 text-white/50 cursor-not-allowed'
+                    }`}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  
+                  {/* Remix Dots */}
+                  <div className="flex items-center gap-1 mx-2">
+                    {getAllItems().map((_, index) => (
+                      <button
+                        key={index}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          goToRemixIndex(index);
+                        }}
+                        className={`w-2 h-2 rounded-full transition-all ${
+                          currentRemixIndex === index
+                            ? 'bg-white scale-125' 
+                            : 'bg-white/50 hover:bg-white/70'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  
+                  {/* Next Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('🔘 Button: Going to next remix');
+                      goToNextRemix();
+                    }}
                   disabled={!canGoRight}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 z-40 p-3 rounded-full bg-black/50 backdrop-blur-sm text-white transition-all hover:bg-black/70"
-                  style={{ pointerEvents: showControls && canGoRight ? 'auto' : 'none' }}
-                >
-                  <ChevronRight size={24} />
-                </motion.button>
-              )}
-
-              {/* Video Info Overlay - Bottom Left */}
-              {videoReady && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ 
-                    opacity: showControls ? 1 : 0,
-                    y: showControls ? 0 : 20
-                  }}
-                  transition={{ duration: 0.3 }}
-                  className={`absolute left-4 z-40 ${isMobile ? 'bottom-16' : 'bottom-4'}`}
-                  style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-                >
-                <div 
-                  className={`bg-gradient-to-t from-black/70 to-transparent rounded-xl p-3 backdrop-blur-sm transition-all duration-300 ${
-                    isDescriptionExpanded ? 'max-w-md' : 'max-w-xs'
-                  }`}
-                >
-                  {/* User Info */}
+                    className={`p-2 rounded-full transition-all ${
+                      canGoRight 
+                        ? 'bg-white/20 hover:bg-white/30 text-white' 
+                        : 'bg-white/10 text-white/50 cursor-not-allowed'
+                    }`}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Video Info */}
+            <div className="flex items-end justify-between">
+              {/* Left side - Video info */}
+              <div className="flex-1 min-w-0 mr-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {currentItem.profile.profile_picture_url && !currentItem.profile.is_default_profile_picture ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img 
-                          src={currentItem.profile.profile_picture_url} 
-                          alt={currentItem.profile.display_name || currentItem.profile.username}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User size={16} className="text-white" />
-                      )}
+                  <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+                    <User className="w-4 h-4 text-white" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-white font-semibold text-xs truncate">
-                          {currentItem.profile.display_name || currentItem.profile.username}
+                  <span className="text-white font-semibold text-sm">
+                    Sora User
                         </span>
-                        {currentItem.profile.verified && (
-                          <CheckCircle size={12} className="text-blue-500 flex-shrink-0" />
-                        )}
-                        <span className="text-white/70 text-xs flex-shrink-0">
-                          {formatTimeAgo(currentItem.post.posted_at)}
-                        </span>
-                      </div>
-                      <div className="text-white/60 text-xs">
-                        {formatCount(currentItem.profile.follower_count)} followers
-                      </div>
-                    </div>
+                  <CheckCircle className="w-4 h-4 text-blue-400" />
                   </div>
 
-                  {/* Caption */}
                   {currentItem.post.text && (
                     <div 
-                      className={`text-white text-xs ${currentItem.post.text && currentItem.post.text.length > 100 ? 'cursor-pointer' : ''}`}
+                    className={`text-white text-xs ${currentItem.post.text.length > 100 ? 'cursor-pointer' : ''}`}
                       onClick={(e) => {
                         if (currentItem.post.text && currentItem.post.text.length > 100) {
                           e.stopPropagation();
@@ -916,7 +960,7 @@ export default function VideoPost({ item, isActive, isUpcoming, isTargetVideo, s
                       <p className={isDescriptionExpanded ? '' : 'line-clamp-2'}>
                         {currentItem.post.text}
                       </p>
-                      {currentItem.post.text && currentItem.post.text.length > 100 && (
+                    {currentItem.post.text.length > 100 && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -930,282 +974,47 @@ export default function VideoPost({ item, isActive, isUpcoming, isTargetVideo, s
                     </div>
                   )}
                 </div>
-              </motion.div>
-              )}
-
-              {/* Action Buttons Overlay - Right Side */}
-              {videoReady && (
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ 
-                    opacity: showControls ? 1 : 0,
-                    x: showControls ? 0 : 20
+              
+              {/* Right side - Action buttons */}
+              <div className="flex flex-col gap-3">
+                {/* Mute Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    toggleMute();
                   }}
-                  transition={{ duration: 0.3 }}
-                  className="absolute bottom-4 right-4 flex flex-col gap-2.5 z-40"
-                  style={{ pointerEvents: showControls ? 'auto' : 'none' }}
+                  className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all"
                 >
-                {/* Social Media Share Buttons */}
-                <div className="flex flex-col gap-2">
-                  {/* Facebook */}
+                  {isMuted ? (
+                    <VolumeX className="w-5 h-5 text-white" />
+                  ) : (
+                    <Volume2 className="w-5 h-5 text-white" />
+                  )}
+                  </button>
+
+                {/* Like Button */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleInteraction();
-                      shareToFacebook();
-                    }}
-                    className="p-2.5 rounded-full bg-[#1877F2] hover:bg-[#166FE5] transition-all"
-                    title="Share to Facebook"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-white">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                    </svg>
-                  </button>
-
-                  {/* Twitter */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleInteraction();
-                      shareToTwitter();
-                    }}
-                    className="p-2.5 rounded-full bg-[#1DA1F2] hover:bg-[#1A91DA] transition-all"
-                    title="Share to Twitter"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-white">
-                      <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.827 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Like/Favorite Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleInteraction();
-                    const currentItem = getCurrentItem();
                     if (isLiked) {
-                      if (onRemoveFromFavorites) {
-                        onRemoveFromFavorites(currentItem.post.id);
-                      }
+                      onRemoveFromFavorites?.(currentItem.post.id);
                       setIsLiked(false);
                     } else {
-                      if (onAddToFavorites) {
-                        onAddToFavorites(currentItem);
-                      }
+                      onAddToFavorites?.(currentItem);
                       setIsLiked(true);
                     }
                   }}
-                  className={`p-2.5 rounded-full backdrop-blur-sm transition-all ${
-                    isLiked ? 'bg-red-500 text-white' : 'bg-black/50 text-white hover:bg-black/70'
-                  }`}
+                  className="p-3 rounded-full bg-black/50 hover:bg-black/70 transition-all"
                 >
-                  <Heart size={20} fill={isLiked ? 'currentColor' : 'none'} />
+                  <Heart 
+                    className={`w-5 h-5 ${isLiked ? 'text-red-500 fill-red-500' : 'text-white'}`} 
+                  />
                 </button>
-
-                {/* Download Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleInteraction();
-                    downloadVideo();
-                  }}
-                  className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
-                  title="Download video"
-                >
-                  <Download size={20} />
-                </button>
-
-                {/* Mute Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleInteraction();
-                    toggleMute();
-                  }}
-                  className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all"
-                >
-                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                </button>
-
-                {/* Remix Count Indicator */}
-                {hasRemixes && (
-                  <div className="flex flex-col items-center">
-                    <button className="p-2.5 rounded-full bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 transition-all">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 19 18" className="h-5 w-5">
-                        <circle cx="9" cy="9" r="6.75" stroke="currentColor" strokeWidth="2"></circle>
-                        <path stroke="currentColor" strokeLinecap="round" strokeWidth="2" d="M11.25 9a4.5 4.5 0 0 0-9 0M15.75 9a4.5 4.5 0 1 1-9 0"></path>
-                      </svg>
-                    </button>
-                    <span className="text-white text-xs font-semibold bg-black/50 backdrop-blur-sm rounded-full px-2 py-0.5 mt-1">
-                      {remixFeed.length}
-                    </span>
                   </div>
-                )}
+            </div>
               </motion.div>
-              )}
-
-              {/* Remix Dot Indicators - Bottom Center */}
-              {hasRemixes && videoReady && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ 
-                    opacity: showControls ? 1 : 0,
-                    y: showControls ? 0 : 20
-                  }}
-                  transition={{ duration: 0.3 }}
-                  className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-40"
-                  style={{ pointerEvents: showControls ? 'auto' : 'none' }}
-                >
-                  <div className="flex items-center gap-1.5 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1.5">
-                    {(() => {
-                      const totalItems = remixFeed.length + 1; // +1 for original
-                      const maxVisible = 7;
-                      
-                      // If we can show all items, show them all
-                      if (totalItems <= maxVisible) {
-                        return (
-                          <>
-                            {/* Original video dot */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleInteraction();
-                                goToRemixIndex(0);
-                              }}
-                              className={`w-1.5 h-1.5 rounded-full transition-all ${
-                                currentRemixIndex === 0 
-                                  ? 'bg-white scale-125' 
-                                  : 'bg-white/50 hover:bg-white/70'
-                              }`}
-                            />
-                            
-                            {/* All remix dots */}
-                            {remixFeed.map((_, index) => (
-                              <button
-                                key={index}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleInteraction();
-                                  goToRemixIndex(index + 1);
-                                }}
-                                className={`w-1.5 h-1.5 rounded-full transition-all ${
-                                  currentRemixIndex === index + 1
-                                    ? 'bg-white scale-125' 
-                                    : 'bg-white/50 hover:bg-white/70'
-                                }`}
-                              />
-                            ))}
-                          </>
-                        );
-                      }
-                      
-                      // Show a sliding window of dots
-                      const halfVisible = Math.floor((maxVisible - 2) / 2); // -2 for left/right indicators
-                      let startIndex = Math.max(0, currentRemixIndex - halfVisible);
-                      const endIndex = Math.min(totalItems - 1, startIndex + maxVisible - 2);
-                      
-                      // Adjust if we're near the end
-                      if (endIndex - startIndex < maxVisible - 2) {
-                        startIndex = Math.max(0, endIndex - (maxVisible - 2));
-                      }
-                      
-                      const showLeftIndicator = startIndex > 0;
-                      const showRightIndicator = endIndex < totalItems - 1;
-                      
-                      return (
-                        <>
-                          {/* Left indicator */}
-                          {showLeftIndicator && (
-                            <span className="text-white/70 text-xs">‹</span>
-                          )}
-                          
-                          {/* Visible dots */}
-                          {Array.from({ length: endIndex - startIndex + 1 }, (_, i) => {
-                            const dotIndex = startIndex + i;
-                            
-                            return (
-                              <button
-                                key={dotIndex}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleInteraction();
-                                  goToRemixIndex(dotIndex);
-                                }}
-                                className={`w-1.5 h-1.5 rounded-full transition-all ${
-                                  currentRemixIndex === dotIndex
-                                    ? 'bg-white scale-125' 
-                                    : 'bg-white/50 hover:bg-white/70'
-                                }`}
-                              />
-                            );
-                          })}
-                          
-                          {/* Right indicator */}
-                          {showRightIndicator && (
-                            <span className="text-white/70 text-xs">›</span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                </motion.div>
-              )}
-              </div>
-            </div>
-          </div>
-
-          {/* Next Remix */}
-          {hasRemixes && canGoRight && (
-            <div 
-              className="absolute inset-0 w-full h-full flex items-center justify-center"
-              style={{ transform: 'translateX(100%)' }}
-            >
-              <video
-                src={currentRemixIndex === 0 
-                  ? remixFeed[0]?.post.attachments[0]?.encodings?.md?.path || 
-                    remixFeed[0]?.post.attachments[0]?.encodings?.source?.path
-                  : remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.md?.path || 
-                    remixFeed[currentRemixIndex]?.post.attachments[0]?.encodings?.source?.path}
-                className="h-full w-auto max-w-full object-contain"
-                loop
-                muted
-                playsInline
-                preload="metadata"
-              />
-            </div>
-          )}
-        </motion.div>
-
-        {/* Preload additional remixes for better performance */}
-        <div className="absolute -left-full top-0 w-full h-screen opacity-0 pointer-events-none">
-          {/* Preload next remix */}
-          {hasRemixes && currentRemixIndex < remixFeed.length - 1 && (
-            <video
-              src={currentRemixIndex === 0 
-                ? remixFeed[1]?.post.attachments[0]?.encodings?.md?.path || 
-                  remixFeed[1]?.post.attachments[0]?.encodings?.source?.path
-                : remixFeed[currentRemixIndex + 1]?.post.attachments[0]?.encodings?.md?.path || 
-                  remixFeed[currentRemixIndex + 1]?.post.attachments[0]?.encodings?.source?.path}
-              preload="metadata"
-              muted
-              playsInline
-              className="w-full h-full object-contain"
-            />
-          )}
-          
-          {/* Preload previous remix */}
-          {hasRemixes && currentRemixIndex > 1 && (
-            <video
-              src={remixFeed[currentRemixIndex - 3]?.post.attachments[0]?.encodings?.md?.path || 
-                   remixFeed[currentRemixIndex - 3]?.post.attachments[0]?.encodings?.source?.path}
-              preload="none"
-              muted
-              playsInline
-              className="w-full h-full object-contain"
-            />
-          )}
-        </div>
+        </>
+      )}
       </div>
   );
 }

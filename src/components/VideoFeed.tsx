@@ -53,22 +53,55 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     }
   }, [items, currentIndex, y]);
   
-  const goToNext = () => {
+  const goToNext = (animated = true) => {
     if (currentIndex < items.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      y.set(0); // Reset position immediately
-      
-      // Load more when approaching the end
-      if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
-        onLoadMore();
+      if (animated) {
+        // Animate to next position then change index
+        animate(y, -window.innerHeight, {
+          type: 'spring',
+          stiffness: 400,
+          damping: 40,
+          onComplete: () => {
+            setCurrentIndex(currentIndex + 1);
+            y.set(0); // Reset position after animation
+            
+            // Load more when approaching the end
+            if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
+              onLoadMore();
+            }
+          }
+        });
+      } else {
+        // Immediate change (for manual drag completion)
+        setCurrentIndex(currentIndex + 1);
+        y.set(0);
+        
+        // Load more when approaching the end
+        if (currentIndex >= items.length - 3 && hasMore && !loadingMore && onLoadMore) {
+          onLoadMore();
+        }
       }
     }
   };
 
-  const goToPrevious = () => {
+  const goToPrevious = (animated = true) => {
     if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
-      y.set(0); // Reset position immediately
+      if (animated) {
+        // Animate to previous position then change index
+        animate(y, window.innerHeight, {
+          type: 'spring',
+          stiffness: 400,
+          damping: 40,
+          onComplete: () => {
+            setCurrentIndex(currentIndex - 1);
+            y.set(0); // Reset position after animation
+          }
+        });
+      } else {
+        // Immediate change (for manual drag completion)
+        setCurrentIndex(currentIndex - 1);
+        y.set(0);
+      }
     }
   };
 
@@ -95,20 +128,20 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
 
         if (shouldNavigate) {
           if (my < 0 && currentIndex < items.length - 1) {
-            // Swiped up - animate to next then snap
+            // Swiped up - animate to next then snap (manual drag, so no double animation)
             animate(y, -window.innerHeight, {
               type: 'spring',
               stiffness: 400,
               damping: 40,
-              onComplete: goToNext
+              onComplete: () => goToNext(false) // false = no animation, user already dragged
             });
           } else if (my > 0 && currentIndex > 0) {
-            // Swiped down - animate to previous then snap
+            // Swiped down - animate to previous then snap (manual drag, so no double animation)
             animate(y, window.innerHeight, {
               type: 'spring',
               stiffness: 400,
               damping: 40,
-              onComplete: goToPrevious
+              onComplete: () => goToPrevious(false) // false = no animation, user already dragged
             });
           } else {
             // Snap back to position if can't navigate
@@ -142,21 +175,11 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     setIsScrolling(true);
     
     if (e.deltaY > 0 && currentIndex < items.length - 1) {
-      // Scroll down - animate to next then snap
-      animate(y, -window.innerHeight, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: goToNext
-      });
+      // Scroll down - use animated navigation
+      goToNext(true);
     } else if (e.deltaY < 0 && currentIndex > 0) {
-      // Scroll up - animate to previous then snap
-      animate(y, window.innerHeight, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: goToPrevious
-      });
+      // Scroll up - use animated navigation
+      goToPrevious(true);
     }
     
     setTimeout(() => setIsScrolling(false), 600);
@@ -178,22 +201,12 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     if ((e.key === 'ArrowDown' || e.key === ' ') && currentIndex < items.length - 1) {
       e.preventDefault();
       setIsScrolling(true);
-      animate(y, -window.innerHeight, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: goToNext
-      });
+      goToNext(true); // Use animated navigation
       setTimeout(() => setIsScrolling(false), 600);
     } else if (e.key === 'ArrowUp' && currentIndex > 0) {
       e.preventDefault();
       setIsScrolling(true);
-      animate(y, window.innerHeight, {
-        type: 'spring',
-        stiffness: 400,
-        damping: 40,
-        onComplete: goToPrevious
-      });
+      goToPrevious(true); // Use animated navigation
       setTimeout(() => setIsScrolling(false), 600);
     }
     // Left/Right arrow keys are handled by VideoPost component for remix navigation
