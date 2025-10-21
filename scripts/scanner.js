@@ -308,18 +308,16 @@ async function processPosts(feedData) {
       // Insert new post into normalized schema
       await client.query(`
         INSERT INTO sora_posts (
-          id, creator_id, text, posted_at, updated_at, permalink,
+          id, creator_id, text, posted_at, permalink,
           video_url, video_url_md, thumbnail_url, gif_url,
-          width, height, generation_id, task_id,
-          like_count, view_count, remix_count
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          width, height, generation_id, task_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (id) DO NOTHING
       `, [
         post.id,
         profile.user_id || profile.id,
         post.text || null,
         Math.floor(post.posted_at || 0),
-        Math.floor(post.updated_at || 0),
         post.permalink || null,
         encodings.source?.path || null,
         encodings.md?.path || null,
@@ -328,10 +326,7 @@ async function processPosts(feedData) {
         attachment.width || null,
         attachment.height || null,
         attachment.generation_id || null,
-        attachment.task_id || null,
-        0, // like_count - not in API response
-        0, // view_count - not in API response
-        0  // remix_count - not in API response
+        attachment.task_id || null
       ]);
 
       newPosts++;

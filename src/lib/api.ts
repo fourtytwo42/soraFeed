@@ -40,6 +40,8 @@ export async function fetchLatestFeedFromDatabase(limit: number = 20, cursor?: s
     params.append('offset', cursor);
   }
   
+  console.log('🌐 Fetching from database API:', `/api/feed/latest?${params.toString()}`);
+  
   const response = await fetch(`/api/feed/latest?${params.toString()}`, {
     cache: 'no-store',
     headers: {
@@ -52,7 +54,21 @@ export async function fetchLatestFeedFromDatabase(limit: number = 20, cursor?: s
     throw new Error(errorData.error || `Failed to fetch latest feed from database: ${response.status}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  
+  // 🔍 USERNAME LOGGING: Log API response data
+  console.log('📥 Database API returned:', {
+    itemCount: data.items?.length || 0,
+    firstItem: data.items?.[0] ? {
+      postId: data.items[0].post.id,
+      username: data.items[0].profile.username,
+      displayName: data.items[0].profile.display_name,
+      userId: data.items[0].profile.user_id
+    } : null,
+    cursor: data.cursor
+  });
+
+  return data;
 }
 
 export async function fetchRemixTree(postId: string, limit: number = 20, maxDepth: number = 1): Promise<SoraRemixTree> {

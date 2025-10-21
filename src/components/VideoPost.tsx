@@ -51,6 +51,15 @@ export default function VideoPost({
   onControlsChange 
 }: VideoPostProps) {
   
+  // 🔍 USERNAME LOGGING: Log initial item data
+  console.log('🎬 VideoPost received item:', {
+    postId: item.post.id,
+    username: item.profile.username,
+    displayName: item.profile.display_name,
+    userId: item.profile.user_id,
+    fullProfile: item.profile
+  });
+  
   // ===== UNIFIED STATE MANAGEMENT =====
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -123,7 +132,18 @@ export default function VideoPost({
   // Get current item based on remix index
   const getCurrentItem = useCallback((): SoraFeedItem => {
     const allItems = getAllItems();
-    return allItems[currentRemixIndex] || item;
+    const currentItem = allItems[currentRemixIndex] || item;
+    
+    // 🔍 USERNAME LOGGING: Log current item being displayed
+    console.log('🎯 getCurrentItem returning:', {
+      postId: currentItem.post.id,
+      username: currentItem.profile.username,
+      displayName: currentItem.profile.display_name,
+      remixIndex: currentRemixIndex,
+      isOriginalItem: currentRemixIndex === 0
+    });
+    
+    return currentItem;
   }, [currentRemixIndex, getAllItems, item]);
   
   // Create video element grid
@@ -911,7 +931,22 @@ export default function VideoPost({
               <User className="w-4 h-4 text-white" />
             </div>
             <span className="text-white font-semibold text-sm">
-              Sora User
+              {(() => {
+                const displayName = currentItem.profile.display_name;
+                const username = currentItem.profile.username;
+                const finalName = displayName || username || 'Sora User';
+                
+                // 🔍 USERNAME LOGGING: Log username rendering decision
+                console.log('👤 VideoPost rendering username:', {
+                  postId: currentItem.post.id,
+                  displayName,
+                  username,
+                  finalName,
+                  fallbackUsed: finalName === 'Sora User'
+                });
+                
+                return finalName;
+              })()}
             </span>
             <CheckCircle className="w-4 h-4 text-blue-400" />
           </div>

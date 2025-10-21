@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
           p.id,
           p.text,
           p.posted_at,
-          p.updated_at,
           p.permalink,
           p.video_url,
           p.video_url_md,
@@ -58,9 +57,6 @@ export async function GET(request: NextRequest) {
           p.height,
           p.generation_id,
           p.task_id,
-          p.like_count,
-          p.view_count,
-          p.remix_count,
           c.id as creator_id,
           c.username,
           c.display_name,
@@ -85,11 +81,8 @@ export async function GET(request: NextRequest) {
             -- Fuzzy match score (0-1 scale, using similarity)
             COALESCE(similarity(LOWER(COALESCE(p.text, '')), LOWER($1)), 0) * 0.3
           ) as text_relevance,
-          -- Normalize remix count (0-1 scale, using log for better distribution)
-          CASE 
-            WHEN p.remix_count > 0 THEN LEAST(LOG(p.remix_count + 1) / 10, 1)
-            ELSE 0
-          END as remix_score
+          -- Remix score (always 0 since remix_count was removed)
+          0 as remix_score
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
         WHERE 
@@ -121,7 +114,6 @@ export async function GET(request: NextRequest) {
         id: row.id,
         text: row.text,
         posted_at: row.posted_at,
-        updated_at: row.updated_at,
         permalink: row.permalink,
         attachments: [{
           generation_id: row.generation_id,

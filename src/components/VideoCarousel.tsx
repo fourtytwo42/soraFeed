@@ -25,6 +25,15 @@ export default function VideoCarousel({
   isInFavorites,
   onControlsChange
 }: VideoCarouselProps) {
+  
+  // 🔍 USERNAME LOGGING: Log initial item data in VideoCarousel
+  console.log('🎠 VideoCarousel received item:', {
+    postId: item.post.id,
+    username: item.profile.username,
+    displayName: item.profile.display_name,
+    userId: item.profile.user_id,
+    fullProfile: item.profile
+  });
   // State
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -525,7 +534,22 @@ export default function VideoCarousel({
             <User className="w-4 h-4 text-white" />
           </div>
           <span className="text-white font-semibold text-sm">
-            Sora User
+            {(() => {
+              const displayName = currentItem.profile.display_name;
+              const username = currentItem.profile.username;
+              const finalName = displayName || username || 'Sora User';
+              
+              // 🔍 USERNAME LOGGING: Log username rendering decision in VideoCarousel
+              console.log('👤 VideoCarousel rendering username:', {
+                postId: currentItem.post.id,
+                displayName,
+                username,
+                finalName,
+                fallbackUsed: finalName === 'Sora User'
+              });
+              
+              return finalName;
+            })()}
           </span>
           <CheckCircle className="w-4 h-4 text-blue-400" />
         </div>

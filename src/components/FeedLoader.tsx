@@ -133,6 +133,18 @@ export default function FeedLoader() {
       console.log('✅ Loaded', data.items?.length || 0, 'feed items');
       
       if (data.items && data.items.length > 0) {
+        // 🔍 USERNAME LOGGING: Log items being set in FeedLoader
+        console.log('📋 FeedLoader setting items:', {
+          itemCount: data.items.length,
+          reset,
+          sampleItems: data.items.slice(0, 3).map(item => ({
+            postId: item.post.id,
+            username: item.profile.username,
+            displayName: item.profile.display_name,
+            userId: item.profile.user_id
+          }))
+        });
+        
         if (reset) {
           setItems(data.items);
         } else {
