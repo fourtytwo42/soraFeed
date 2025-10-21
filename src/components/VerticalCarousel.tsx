@@ -198,7 +198,9 @@ export default function VerticalCarousel({
 
   // Add wheel event listener
   useEffect(() => {
-    const container = emblaRef as unknown as HTMLElement;
+    if (!emblaApi) return;
+    
+    const container = emblaApi.containerNode();
     if (!container) return;
 
     container.addEventListener('wheel', handleWheel, { passive: false });
@@ -206,7 +208,7 @@ export default function VerticalCarousel({
     return () => {
       container.removeEventListener('wheel', handleWheel);
     };
-  }, [handleWheel, emblaRef]);
+  }, [handleWheel, emblaApi]);
 
   // Keyboard navigation
   useEffect(() => {
