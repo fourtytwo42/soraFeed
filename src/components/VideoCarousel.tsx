@@ -219,6 +219,16 @@ export default function VideoCarousel({
     remixCountRef.current = remixFeed.length;
   }, [remixFeed.length]);
 
+  // Log when isActive changes (for debugging)
+  useEffect(() => {
+    console.log('🟧 HORIZONTAL: isActive changed', { 
+      isActive, 
+      postId: item.post.id,
+      hasRemixes: remixFeed.length > 0,
+      remixCount: remixFeed.length 
+    });
+  }, [isActive, item.post.id, remixFeed.length]);
+
   // Reset state when item changes
   useEffect(() => {
     // Cleanup all videos

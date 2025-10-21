@@ -109,13 +109,18 @@ export default function VerticalCarousel({
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
     const selectedIndex = emblaApi.selectedScrollSnap();
+    console.log('🟦 VERTICAL: Slide changed', { 
+      from: currentIndex, 
+      to: selectedIndex,
+      totalItems: items.length 
+    });
     setCurrentIndex(selectedIndex);
     
     // Load more items when approaching the end
     if (hasMore && !loadingMore && selectedIndex >= items.length - 2) {
       onLoadMore?.();
     }
-  }, [emblaApi, hasMore, loadingMore, items.length, onLoadMore]);
+  }, [emblaApi, hasMore, loadingMore, items.length, onLoadMore, currentIndex]);
 
   // Custom wheel handler with threshold-based completion
   const handleWheel = useCallback((e: WheelEvent) => {
