@@ -57,7 +57,7 @@ export default function VideoCarousel({
     dragFree: false,
     containScroll: 'trimSnaps',
     startIndex: 0,
-    dragThreshold: 20, // Higher threshold for horizontal to prevent accidental triggers
+    dragThreshold: 10, // Lower threshold for more responsive horizontal swiping
     inViewThreshold: 0.7, // Snap when 70% of slide is visible
     watchDrag: (emblaApi, evt) => {
       // Only allow horizontal dragging when this carousel is active
@@ -79,7 +79,7 @@ export default function VideoCarousel({
       
       if (evt.type.includes('start') || evt.type === 'mousedown') {
         console.log('🎯 Starting horizontal gesture at:', { clientX, clientY });
-        gestureContext.startGesture(clientX, clientY, 15);
+        gestureContext.startGesture(clientX, clientY, 10); // Lower threshold for more forgiving detection
       } else if (evt.type.includes('move') || evt.type === 'mousemove') {
         const direction = gestureContext.updateGesture(clientX, clientY);
         const allowed = direction === 'horizontal' || direction === null;

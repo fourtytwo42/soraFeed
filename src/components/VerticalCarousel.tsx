@@ -45,7 +45,7 @@ export default function VerticalCarousel({
       dragFree: false,
       containScroll: 'trimSnaps',
       startIndex: 0,
-      dragThreshold: 15,
+      dragThreshold: 10, // Lower threshold for more responsive vertical swiping
       inViewThreshold: 0.8, // Snap when 80% of slide is visible
       watchDrag: (emblaApi, evt) => {
         // Block vertical dragging if horizontal gesture is active
@@ -62,7 +62,7 @@ export default function VerticalCarousel({
           : (evt as MouseEvent).clientY;
         
         if (evt.type.includes('start') || evt.type === 'mousedown') {
-          gestureContext.startGesture(clientX, clientY, 20);
+          gestureContext.startGesture(clientX, clientY, 15); // Moderate threshold for vertical
         } else if (evt.type.includes('move') || evt.type === 'mousemove') {
           const direction = gestureContext.updateGesture(clientX, clientY);
           return direction === 'vertical' || direction === null;

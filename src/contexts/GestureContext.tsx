@@ -55,18 +55,26 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
     const deltaX = Math.abs(clientX - state.startX);
     const deltaY = Math.abs(clientY - state.startY);
 
-    // Only determine direction once we've moved past the threshold
-    if (deltaX > state.threshold || deltaY > state.threshold) {
+    // Very forgiving thresholds - allow both directions for as long as possible
+    const minMovement = state.threshold;
+    const lockThreshold = state.threshold * 3; // Need 3x threshold to lock direction
+    const dominanceRatio = 3.0; // One axis needs to be 3x larger to dominate
+
+    // Only determine direction once we've moved significantly
+    if (deltaX > minMovement || deltaY > minMovement) {
       let direction: GestureDirection = null;
       
       if (state.direction === null) {
-        // Determine initial direction based on which axis has more movement
-        if (deltaX > deltaY) {
-          direction = 'horizontal';
-          console.log('🔄 Gesture direction determined: HORIZONTAL', { deltaX, deltaY });
-        } else if (deltaY > deltaX) {
-          direction = 'vertical';
-          console.log('🔄 Gesture direction determined: VERTICAL', { deltaX, deltaY });
+        // Only lock direction if movement is significant AND one axis clearly dominates
+        if (deltaX > lockThreshold || deltaY > lockThreshold) {
+          if (deltaX > deltaY * dominanceRatio) {
+            direction = 'horizontal';
+            console.log('🔄 Gesture direction locked: HORIZONTAL', { deltaX, deltaY, ratio: deltaX/deltaY });
+          } else if (deltaY > deltaX * dominanceRatio) {
+            direction = 'vertical';
+            console.log('🔄 Gesture direction locked: VERTICAL', { deltaX, deltaY, ratio: deltaY/deltaX });
+          }
+          // If neither axis dominates clearly, stay unlocked (allow both)
         }
         
         if (direction) {
@@ -104,9 +112,13 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
 
   const shouldBlockGesture = useCallback((direction: GestureDirection): boolean => {
     const state = gestureRef.current;
+    // Only block if gesture is active AND direction is locked AND it's different
+    // This allows both directions when no clear direction has been determined
     const shouldBlock = state.isActive && state.direction !== null && state.direction !== direction;
     if (shouldBlock) {
-      console.log('🚫 Blocking gesture:', { requestedDirection: direction, activeDirection: state.direction });
+      console.log('🚫 Blocking gesture:', { requestedDirection: direction, lockedDirection: state.direction });
+    } else if (state.isActive && state.direction === null) {
+      console.log('✅ Allowing gesture (no direction locked):', { requestedDirection: direction });
     }
     return shouldBlock;
   }, []);
