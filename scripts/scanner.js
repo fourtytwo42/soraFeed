@@ -57,7 +57,14 @@ function fetchSoraFeed(limit = currentFetchLimit) {
         'Accept': 'application/json',
         'Authorization': `Bearer ${process.env.AUTH_BEARER_TOKEN}`,
         'User-Agent': process.env.USER_AGENT || 'SoraFeedScanner/1.0',
-        'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9'
+        'Accept-Language': process.env.ACCEPT_LANGUAGE || 'en-US,en;q=0.9',
+        'Cookie': [
+          `__Secure-next-auth.session-token=${process.env.COOKIE_SESSION}`,
+          `cf_clearance=${process.env.CF_CLEARANCE}`,
+          `__cf_bm=${process.env.CF_BM}`,
+          `oai-sc=${process.env.OAI_SC}`,
+          `oai-did=${process.env.OAI_DID}`
+        ].filter(Boolean).join('; ')
       }
     };
 
