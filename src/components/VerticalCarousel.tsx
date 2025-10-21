@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
 import { WheelGesturesPlugin } from 'embla-carousel-wheel-gestures';
 import { SoraFeedItem } from '@/types/sora';
 import VideoCarousel from './VideoCarousel';
+import { useGestureRails } from '@/hooks/useGestureRails';
 
 interface VerticalCarouselProps {
   items: SoraFeedItem[];
@@ -28,8 +29,14 @@ export default function VerticalCarousel({
   onControlsChange
 }: VerticalCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const wheelAccumulator = useRef(0);
+  const wheelTimeout = useRef<NodeJS.Timeout | null>(null);
+  const isWheelScrolling = useRef(false);
   
-  // Configure Embla for vertical scrolling with wheel gestures
+  // Gesture rails system
+  const gestureRails = useGestureRails(20);
+  
+  // Configure Embla for vertical scrolling with custom wheel handling
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       axis: 'y',
@@ -38,8 +45,32 @@ export default function VerticalCarousel({
       dragFree: false,
       containScroll: 'trimSnaps',
       startIndex: 0,
-    },
-    [WheelGesturesPlugin()]
+      dragThreshold: 15,
+      inViewThreshold: 0.8, // Snap when 80% of slide is visible
+      watchDrag: (emblaApi, evt) => {
+        // Block vertical dragging if horizontal gesture is active
+        if (gestureRails.shouldBlockGesture('vertical')) {
+          return false;
+        }
+        
+        // Handle touch/mouse events for gesture detection
+        const clientX = evt.type.includes('touch') 
+          ? ((evt as TouchEvent).touches[0] || (evt as TouchEvent).changedTouches[0])?.clientX || 0
+          : (evt as MouseEvent).clientX;
+        const clientY = evt.type.includes('touch') 
+          ? ((evt as TouchEvent).touches[0] || (evt as TouchEvent).changedTouches[0])?.clientY || 0
+          : (evt as MouseEvent).clientY;
+        
+        if (evt.type.includes('start') || evt.type === 'mousedown') {
+          gestureRails.startGesture(clientX, clientY);
+        } else if (evt.type.includes('move') || evt.type === 'mousemove') {
+          const direction = gestureRails.updateGesture(clientX, clientY);
+          return direction === 'vertical' || direction === null;
+        }
+        
+        return gestureRails.isGestureActive('vertical');
+      }
+    }
   );
 
   // Handle slide selection
@@ -54,17 +85,82 @@ export default function VerticalCarousel({
     }
   }, [emblaApi, hasMore, loadingMore, items.length, onLoadMore]);
 
+  // Custom wheel handler with threshold-based completion
+  const handleWheel = useCallback((e: WheelEvent) => {
+    if (!emblaApi || gestureRails.shouldBlockGesture('vertical')) {
+      return;
+    }
+    
+    e.preventDefault();
+    
+    // Accumulate wheel delta for more responsive scrolling
+    wheelAccumulator.current += e.deltaY;
+    
+    // Clear existing timeout
+    if (wheelTimeout.current) {
+      clearTimeout(wheelTimeout.current);
+    }
+    
+    // Threshold for triggering navigation (lower = more sensitive)
+    const threshold = 50;
+    
+    if (Math.abs(wheelAccumulator.current) > threshold) {
+      if (wheelAccumulator.current > 0 && currentIndex < items.length - 1) {
+        // Scroll down
+        emblaApi.scrollNext();
+        wheelAccumulator.current = 0;
+        isWheelScrolling.current = true;
+      } else if (wheelAccumulator.current < 0 && currentIndex > 0) {
+        // Scroll up
+        emblaApi.scrollPrev();
+        wheelAccumulator.current = 0;
+        isWheelScrolling.current = true;
+      } else {
+        // Hit boundary, reset accumulator
+        wheelAccumulator.current = 0;
+      }
+    } else {
+      // Set timeout to reset accumulator if no more wheel events
+      wheelTimeout.current = setTimeout(() => {
+        wheelAccumulator.current = 0;
+        isWheelScrolling.current = false;
+      }, 150);
+    }
+  }, [emblaApi, currentIndex, items.length, gestureRails]);
+
   // Set up event listeners
   useEffect(() => {
     if (!emblaApi) return;
     
     emblaApi.on('select', onSelect);
+    emblaApi.on('settle', () => {
+      gestureRails.endGesture();
+      isWheelScrolling.current = false;
+    });
+    emblaApi.on('pointerUp', () => {
+      gestureRails.endGesture();
+    });
+    
     onSelect(); // Call once to set initial state
     
     return () => {
       emblaApi.off('select', onSelect);
+      emblaApi.off('settle', () => {});
+      emblaApi.off('pointerUp', () => {});
     };
-  }, [emblaApi, onSelect]);
+  }, [emblaApi, onSelect, gestureRails]);
+
+  // Add wheel event listener
+  useEffect(() => {
+    const container = emblaRef.current;
+    if (!container) return;
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [handleWheel]);
 
   // Keyboard navigation
   useEffect(() => {

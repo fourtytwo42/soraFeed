@@ -5,6 +5,7 @@ import useEmblaCarousel from 'embla-carousel-react';
 import { Play, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
+import { useGestureRails } from '@/hooks/useGestureRails';
 
 interface VideoCarouselProps {
   item: SoraFeedItem;
@@ -45,7 +46,10 @@ export default function VideoCarousel({
   const userPausedRef = useRef(false);
   const hasUserInteractedRef = useRef(false);
   
-  // Configure Embla for horizontal scrolling
+  // Gesture rails system for preventing axis switching
+  const gestureRails = useGestureRails(15);
+  
+  // Configure Embla for horizontal scrolling with rails behavior
   const [emblaRef, emblaApi] = useEmblaCarousel({
     axis: 'x',
     loop: false,
@@ -53,6 +57,34 @@ export default function VideoCarousel({
     dragFree: false,
     containScroll: 'trimSnaps',
     startIndex: 0,
+    dragThreshold: 20, // Higher threshold for horizontal to prevent accidental triggers
+    inViewThreshold: 0.7, // Snap when 70% of slide is visible
+    watchDrag: (emblaApi, evt) => {
+      // Only allow horizontal dragging when this carousel is active
+      if (!isActive) return false;
+      
+      // Block horizontal dragging if vertical gesture is active
+      if (gestureRails.shouldBlockGesture('horizontal')) {
+        return false;
+      }
+      
+      // Handle touch/mouse events for gesture detection
+      const clientX = evt.type.includes('touch') 
+        ? ((evt as TouchEvent).touches[0] || (evt as TouchEvent).changedTouches[0])?.clientX || 0
+        : (evt as MouseEvent).clientX;
+      const clientY = evt.type.includes('touch') 
+        ? ((evt as TouchEvent).touches[0] || (evt as TouchEvent).changedTouches[0])?.clientY || 0
+        : (evt as MouseEvent).clientY;
+      
+      if (evt.type.includes('start') || evt.type === 'mousedown') {
+        gestureRails.startGesture(clientX, clientY);
+      } else if (evt.type.includes('move') || evt.type === 'mousemove') {
+        const direction = gestureRails.updateGesture(clientX, clientY);
+        return direction === 'horizontal' || direction === null;
+      }
+      
+      return gestureRails.isGestureActive('horizontal');
+    }
   });
 
   // Get all available items (original + remixes)
@@ -78,12 +110,20 @@ export default function VideoCarousel({
     if (!emblaApi) return;
     
     emblaApi.on('select', onSelect);
+    emblaApi.on('settle', () => {
+      gestureRails.endGesture();
+    });
+    emblaApi.on('pointerUp', () => {
+      gestureRails.endGesture();
+    });
     onSelect(); // Call once to set initial state
     
     return () => {
       emblaApi.off('select', onSelect);
+      emblaApi.off('settle', () => {});
+      emblaApi.off('pointerUp', () => {});
     };
-  }, [emblaApi, onSelect]);
+  }, [emblaApi, onSelect, gestureRails]);
 
   // Keyboard navigation for horizontal scrolling
   useEffect(() => {
