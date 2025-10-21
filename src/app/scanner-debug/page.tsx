@@ -13,6 +13,8 @@ interface ScannerStats {
     lastScanAt: string | null;
     scanDurationMs: number;
     errorMessage: string | null;
+    lastScanCount: number;
+    scanCountChange: string;
   };
   database: {
     totalPosts: number;
@@ -239,6 +241,21 @@ export default function ScannerDebugPage() {
                   <div className="flex justify-between">
                     <span className="text-gray-400">Scan Duration:</span>
                     <span className="font-mono">{formatDuration(stats.scanner.scanDurationMs)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Posts Scanned:</span>
+                    <span className="font-mono">
+                      {stats.scanner.lastScanCount}
+                      {stats.scanner.scanCountChange && (
+                        <span className={`ml-2 ${
+                          stats.scanner.scanCountChange.startsWith('+') ? 'text-green-400' :
+                          stats.scanner.scanCountChange.startsWith('-') ? 'text-red-400' :
+                          'text-gray-400'
+                        }`}>
+                          ({stats.scanner.scanCountChange})
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Total Errors:</span>

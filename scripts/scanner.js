@@ -23,6 +23,9 @@ const MAX_FETCH_LIMIT = 1000; // Reasonable upper bound
 let isScanning = false;
 const MAX_SCAN_DURATION = 300000; // 5 minutes maximum scan duration
 
+// Track previous scan count for change calculation
+let previousScanCount = 0;
+
 // Adaptive throttling logic
 function adjustFetchLimit(duplicates) {
   const previousLimit = currentFetchLimit;
@@ -191,7 +194,9 @@ async function initDatabase() {
         last_scan_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         scan_duration_ms INTEGER DEFAULT 0,
         status TEXT DEFAULT 'idle',
-        error_message TEXT
+        error_message TEXT,
+        last_scan_count INTEGER DEFAULT 0,
+        previous_scan_count INTEGER DEFAULT 0
       );
     `);
 
@@ -311,8 +316,12 @@ async function processPosts(feedData) {
 }
 
 // Update scanner statistics
-async function updateStats(stats, duration, error = null) {
+async function updateStats(stats, duration, error = null, scanCount = 0) {
   try {
+    // First, get the current last_scan_count to store as previous
+    const currentStats = await pool.query('SELECT last_scan_count FROM scanner_stats WHERE id = 1');
+    const previousScanCount = currentStats.rows[0]?.last_scan_count || 0;
+    
     await pool.query(`
       UPDATE scanner_stats
       SET 
@@ -323,7 +332,9 @@ async function updateStats(stats, duration, error = null) {
         last_scan_at = CURRENT_TIMESTAMP,
         scan_duration_ms = $5,
         status = $6,
-        error_message = $7
+        error_message = $7,
+        previous_scan_count = $8,
+        last_scan_count = $9
       WHERE id = 1
     `, [
       stats.total || 0,
@@ -332,7 +343,9 @@ async function updateStats(stats, duration, error = null) {
       error ? 1 : 0,
       duration,
       error ? 'error' : 'success',
-      error ? error.message : null
+      error ? error.message : null,
+      previousScanCount,
+      scanCount
     ]);
   } catch (err) {
     console.error('Failed to update stats:', err);
@@ -371,8 +384,26 @@ async function scanFeed() {
     // Process posts
     const result = await processPosts(feedData);
     const duration = Date.now() - startTime;
+    const currentScanCount = feedData.items?.length || 0;
+    
+    // Calculate change from previous scan
+    let changeText = '';
+    if (previousScanCount > 0) {
+      const change = currentScanCount - previousScanCount;
+      if (change > 0) {
+        changeText = ` (+${change})`;
+      } else if (change < 0) {
+        changeText = ` (${change})`;
+      } else {
+        changeText = ' (=)';
+      }
+    }
+    
+    // Update previous scan count for next comparison
+    previousScanCount = currentScanCount;
 
     console.log(`✅ Scan complete:`);
+    console.log(`   - Posts scanned: ${currentScanCount}${changeText}`);
     console.log(`   - New posts: ${result.newPosts}`);
     console.log(`   - Duplicates: ${result.duplicates}`);
     console.log(`   - Total: ${result.total}`);
@@ -386,12 +417,12 @@ async function scanFeed() {
       total: result.total,
       newPosts: result.newPosts,
       duplicates: result.duplicates
-    }, duration);
+    }, duration, null, currentScanCount);
 
   } catch (error) {
     const duration = Date.now() - startTime;
     console.error(`❌ Scan error:`, error.message);
-    await updateStats({}, duration, error);
+    await updateStats({}, duration, error, 0);
   } finally {
     // Clear timeout and release the scan lock
     clearTimeout(scanTimeout);

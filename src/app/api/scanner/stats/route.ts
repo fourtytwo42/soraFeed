@@ -13,8 +13,27 @@ export async function GET() {
       last_scan_at: null,
       scan_duration_ms: 0,
       status: 'unknown',
-      error_message: null
+      error_message: null,
+      last_scan_count: 0,
+      previous_scan_count: 0
     };
+
+    // Get current and previous scan counts
+    const currentScanCount = stats.last_scan_count || 0;
+    const previousScanCount = stats.previous_scan_count || 0;
+    
+    // Calculate change
+    let scanCountChange = '';
+    if (previousScanCount > 0) {
+      const change = currentScanCount - previousScanCount;
+      if (change > 0) {
+        scanCountChange = `+${change}`;
+      } else if (change < 0) {
+        scanCountChange = `${change}`;
+      } else {
+        scanCountChange = '=';
+      }
+    }
 
     // Get total posts count and creators count
     const countResult = await query('SELECT COUNT(*) as total FROM sora_posts');
@@ -126,7 +145,9 @@ export async function GET() {
         errors: stats.errors,
         lastScanAt: stats.last_scan_at,
         scanDurationMs: stats.scan_duration_ms,
-        errorMessage: stats.error_message
+        errorMessage: stats.error_message,
+        lastScanCount: currentScanCount,
+        scanCountChange: scanCountChange
       },
       database: {
         totalPosts,
