@@ -19,6 +19,10 @@ let currentFetchLimit = 200; // Start with 200 (minimum)
 const MIN_FETCH_LIMIT = 200;
 const MAX_FETCH_LIMIT = 1000; // Reasonable upper bound
 
+// Scan lock to prevent overlapping scans
+let isScanning = false;
+const MAX_SCAN_DURATION = 300000; // 5 minutes maximum scan duration
+
 // Adaptive throttling logic
 function adjustFetchLimit(duplicates) {
   const previousLimit = currentFetchLimit;
@@ -337,8 +341,24 @@ async function updateStats(stats, duration, error = null) {
 
 // Main scan function
 async function scanFeed() {
+  // Check if already scanning to prevent overlaps
+  if (isScanning) {
+    console.log(`⏸️  [${new Date().toISOString()}] Scan already in progress, skipping... (current limit: ${currentFetchLimit})`);
+    return;
+  }
+
+  // Set scan lock
+  isScanning = true;
   const startTime = Date.now();
   console.log(`\n🔍 [${new Date().toISOString()}] Starting scan (limit: ${currentFetchLimit})...`);
+
+  // Set timeout to prevent stuck locks
+  const scanTimeout = setTimeout(() => {
+    if (isScanning) {
+      console.error(`⏰ [${new Date().toISOString()}] Scan timeout after ${MAX_SCAN_DURATION}ms, releasing lock`);
+      isScanning = false;
+    }
+  }, MAX_SCAN_DURATION);
 
   try {
     // Update status to scanning
@@ -372,6 +392,11 @@ async function scanFeed() {
     const duration = Date.now() - startTime;
     console.error(`❌ Scan error:`, error.message);
     await updateStats({}, duration, error);
+  } finally {
+    // Clear timeout and release the scan lock
+    clearTimeout(scanTimeout);
+    isScanning = false;
+    console.log(`🔓 [${new Date().toISOString()}] Scan lock released`);
   }
 }
 
