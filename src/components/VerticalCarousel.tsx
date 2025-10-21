@@ -32,8 +32,9 @@ export default function VerticalCarousel({
   const wheelTimeout = useRef<NodeJS.Timeout | null>(null);
   const isWheelScrolling = useRef(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+  const committedDirection = useRef<'vertical' | 'horizontal' | null>(null);
   
-  // Configure Embla for vertical scrolling with direction detection
+  // Configure Embla for vertical scrolling with direction detection and axis locking
   const [emblaRef, emblaApi] = useEmblaCarousel(
     {
       axis: 'y',
@@ -45,9 +46,9 @@ export default function VerticalCarousel({
       dragThreshold: 10,
       inViewThreshold: 0.8,
       watchDrag: (emblaApi, evt) => {
-        // Detect if drag is more vertical or horizontal
+        // Detect if drag is more vertical or horizontal, and lock to that axis
         if (evt.type.includes('down') || evt.type.includes('start')) {
-          // Store initial position
+          // Reset and store initial position
           const clientX = evt.type.includes('touch') 
             ? ((evt as TouchEvent).touches[0])?.clientX || 0
             : (evt as MouseEvent).clientX;
@@ -55,6 +56,7 @@ export default function VerticalCarousel({
             ? ((evt as TouchEvent).touches[0])?.clientY || 0
             : (evt as MouseEvent).clientY;
           dragStartPos.current = { x: clientX, y: clientY };
+          committedDirection.current = null; // Reset direction
           console.log('🟦 VERTICAL: Drag START at', { x: clientX, y: clientY, eventType: evt.type });
           return true; // Allow drag to start
         }
@@ -65,6 +67,17 @@ export default function VerticalCarousel({
             return false;
           }
           
+          // If direction is already committed, stick with it (axis locking)
+          if (committedDirection.current === 'horizontal') {
+            console.log('🟦 VERTICAL: LOCKED to horizontal, rejecting');
+            return false; // Let VideoCarousel handle it
+          }
+          if (committedDirection.current === 'vertical') {
+            console.log('🟦 VERTICAL: LOCKED to vertical, accepting');
+            return true; // Stay locked to vertical
+          }
+          
+          // Direction not yet committed - determine it
           const clientX = evt.type.includes('touch') 
             ? ((evt as TouchEvent).touches[0])?.clientX || 0
             : (evt as MouseEvent).clientX;
@@ -75,23 +88,27 @@ export default function VerticalCarousel({
           const deltaX = Math.abs(clientX - dragStartPos.current.x);
           const deltaY = Math.abs(clientY - dragStartPos.current.y);
           
-          // Only allow vertical drag if movement is primarily vertical
           // Need at least 10px of movement to determine direction
           if (deltaX > 10 || deltaY > 10) {
             if (deltaX > deltaY) {
-              // More horizontal movement - reject this drag to let VideoCarousel handle it
-              console.log('🟦 VERTICAL: REJECTING (more horizontal)', { deltaX, deltaY, ratio: (deltaX/deltaY).toFixed(2) });
+              // More horizontal movement - commit to horizontal and reject
+              committedDirection.current = 'horizontal';
+              console.log('🟦 VERTICAL: COMMITTING to horizontal', { deltaX, deltaY, ratio: (deltaX/deltaY).toFixed(2) });
               return false;
             } else {
-              console.log('🟦 VERTICAL: ACCEPTING (more vertical)', { deltaX, deltaY, ratio: (deltaY/deltaX).toFixed(2) });
+              // More vertical movement - commit to vertical and accept
+              committedDirection.current = 'vertical';
+              console.log('🟦 VERTICAL: COMMITTING to vertical', { deltaX, deltaY, ratio: (deltaY/deltaX).toFixed(2) });
+              return true;
             }
           }
-          return true; // Allow vertical drag
+          return true; // Not enough movement yet, allow
         }
         
         if (evt.type.includes('up') || evt.type.includes('end')) {
-          console.log('🟦 VERTICAL: Drag END');
+          console.log('🟦 VERTICAL: Drag END, resetting direction');
           dragStartPos.current = null;
+          committedDirection.current = null;
         }
         
         return true;

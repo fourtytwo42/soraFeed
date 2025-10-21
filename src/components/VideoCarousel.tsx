@@ -66,14 +66,14 @@ export default function VideoCarousel({
       const currentIsActive = isActiveRef.current;
       const hasRemixes = remixCountRef.current > 0;
       const allowed = currentIsActive && hasRemixes;
-      console.log('🟧 HORIZONTAL: watchDrag called', { 
-        eventType: evt.type, 
-        isActive: currentIsActive, 
-        hasRemixes,
-        allowed,
-        remixCount: remixCountRef.current,
-        currentRemixIndex 
-      });
+      
+      if (evt.type.includes('down') || evt.type.includes('start')) {
+        console.log('🟧 HORIZONTAL: Drag START', { isActive: currentIsActive, hasRemixes, allowed });
+      } else if (evt.type.includes('move') && allowed) {
+        // Only log once when locked to horizontal
+        console.log('🟧 HORIZONTAL: LOCKED to horizontal axis');
+      }
+      
       return allowed;
     }
   });
