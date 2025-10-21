@@ -350,14 +350,19 @@ async function processPosts(feedData) {
           permalink, follower_count, following_count,
           post_count, verified
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (id) DO UPDATE SET
+        ON CONFLICT (username) DO UPDATE SET
+          id = EXCLUDED.id,
+          display_name = EXCLUDED.display_name,
+          profile_picture_url = EXCLUDED.profile_picture_url,
+          permalink = EXCLUDED.permalink,
           follower_count = EXCLUDED.follower_count,
           following_count = EXCLUDED.following_count,
           post_count = EXCLUDED.post_count,
+          verified = EXCLUDED.verified,
           last_updated = CURRENT_TIMESTAMP
       `, [
         profile.user_id || profile.id,
-        profile.username || '',
+        profile.username || `user_${profile.user_id || profile.id}`,
         profile.display_name || null,
         profile.profile_picture_url || null,
         profile.permalink || null,
