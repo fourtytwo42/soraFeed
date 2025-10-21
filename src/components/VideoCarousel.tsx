@@ -45,6 +45,10 @@ export default function VideoCarousel({
   const userPausedRef = useRef(false);
   const hasUserInteractedRef = useRef(false);
   
+  // Track remix count with a ref so watchDrag can always access the latest value
+  // (avoids stale closure issue)
+  const remixCountRef = useRef(0);
+  
   // Configure Embla for horizontal scrolling with simple, reliable settings
   const [emblaRef, emblaApi] = useEmblaCarousel({
     axis: 'x',
@@ -56,16 +60,16 @@ export default function VideoCarousel({
     dragThreshold: 8, // Low threshold for responsive horizontal swiping
     inViewThreshold: 0.7, // Snap when 70% of slide is visible
     watchDrag: (emblaApi, evt) => {
-      // Allow horizontal dragging when active OR when there are remixes to swipe through
-      // This ensures horizontal swiping works even if isActive hasn't updated yet
-      const hasRemixes = remixFeed.length > 0;
+      // Allow horizontal dragging when active AND when there are remixes to swipe through
+      // Use ref to avoid stale closure - remixCountRef always has the latest value
+      const hasRemixes = remixCountRef.current > 0;
       const allowed = isActive && hasRemixes;
       console.log('🟧 HORIZONTAL: watchDrag called', { 
         eventType: evt.type, 
         isActive, 
         hasRemixes,
         allowed,
-        remixCount: remixFeed.length,
+        remixCount: remixCountRef.current,
         currentRemixIndex 
       });
       return allowed;
@@ -209,6 +213,11 @@ export default function VideoCarousel({
       loadRemixFeed();
     }
   }, [isActive, remixFeed.length, loadingRemixes, item.post.id]);
+
+  // Sync remix count ref with state (so watchDrag always has latest value)
+  useEffect(() => {
+    remixCountRef.current = remixFeed.length;
+  }, [remixFeed.length]);
 
   // Reset state when item changes
   useEffect(() => {
