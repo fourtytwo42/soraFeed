@@ -146,11 +146,20 @@ async function fetchSoraFeedWithMinimum(limit = currentFetchLimit) {
     const postCount = feedData.items?.length || 0;
     
     if (postCount >= minPosts) {
+      if (attempts > 0) {
+        console.log(`✅ Successfully fetched ${postCount} posts with limit ${limit}`);
+      }
       return feedData;
     }
     
     attempts++;
-    console.log(`⚠️  Only got ${postCount} posts (need ${minPosts}), attempt ${attempts}/${maxAttempts}`);
+    
+    if (attempts === 1) {
+      console.log(`📊 Got ${postCount} posts on first try (requested ${limit})`);
+      console.log(`🔄 Checking if more posts available with higher limit...`);
+    } else {
+      console.log(`⚠️  Only got ${postCount} posts (need ${minPosts}), attempt ${attempts}/${maxAttempts}`);
+    }
     
     if (attempts < maxAttempts) {
       // Increase limit for next attempt
