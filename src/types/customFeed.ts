@@ -23,3 +23,11 @@ export interface CustomFeedPlaybackState {
   currentVideoDuration: number; // Duration of current video
 }
 
+export interface BlockQueue {
+  blockIndex: number;
+  searchQuery: string;
+  videos: any[]; // SoraFeedItem[] but avoiding circular import
+  isLoading: boolean;
+  loadedAt: number;
+}
+

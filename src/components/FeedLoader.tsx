@@ -9,7 +9,7 @@ import RemixCacheDebug from './RemixCacheDebug';
 import { mockFeedData } from '@/lib/mockData';
 import { ChevronDown, Plus, Edit2, X as XIcon } from 'lucide-react';
 import CustomFeedBuilder from './CustomFeedBuilder';
-import { CustomFeed, CustomFeedPlaybackState } from '@/types/customFeed';
+import { CustomFeed, CustomFeedPlaybackState, BlockQueue } from '@/types/customFeed';
 import { customFeedStorage } from '@/lib/customFeedStorage';
 
 type FeedType = 'latest' | 'top' | 'favorites' | 'search' | 'custom';
@@ -36,6 +36,10 @@ export default function FeedLoader() {
   const [isBuilderOpen, setIsBuilderOpen] = useState(false);
   const [editingFeed, setEditingFeed] = useState<CustomFeed | null>(null);
   const playbackTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Block queue for prefetching
+  const [blockQueue, setBlockQueue] = useState<Map<number, BlockQueue>>(new Map());
+  const prefetchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Favorites management
   const getFavorites = (): SoraFeedItem[] => {
@@ -136,34 +140,95 @@ export default function FeedLoader() {
     setIsBuilderOpen(true);
   }, []);
 
-  const loadCustomFeedBlock = async (searchQuery: string) => {
+  // Prefetch videos for a specific block
+  const prefetchBlockVideos = async (blockIndex: number, searchQuery: string): Promise<SoraFeedItem[]> => {
     try {
-      setLoading(true);
-      setError(null);
+      console.log(`🔄 Prefetching block ${blockIndex}: "${searchQuery}"`);
       
-      // Use a smaller limit for faster loading and add timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=10&fast=true`, {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=15&fast=true`, {
         signal: controller.signal
       });
       
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        throw new Error(`Search failed: ${response.status} ${response.statusText}`);
+        throw new Error(`Prefetch failed: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log('✅ Loaded', data.items?.length || 0, 'results for custom feed block:', searchQuery);
+      const videos = data.items || [];
       
-      if (data.items && data.items.length > 0) {
-        // Shuffle results for random playback
-        const shuffled = [...data.items].sort(() => Math.random() - 0.5);
-        setItems(shuffled);
+      // Shuffle for randomness
+      const shuffled = [...videos].sort(() => Math.random() - 0.5);
+      
+      console.log(`✅ Prefetched ${shuffled.length} videos for block ${blockIndex}`);
+      return shuffled;
+    } catch (err) {
+      console.warn(`⚠️ Failed to prefetch block ${blockIndex}:`, err);
+      return [];
+    }
+  };
+
+  // Add block to queue with prefetched videos
+  const queueBlock = useCallback(async (blockIndex: number, searchQuery: string) => {
+    // Don't queue if already exists and not expired
+    const existing = blockQueue.get(blockIndex);
+    if (existing && !existing.isLoading && (Date.now() - existing.loadedAt) < 300000) { // 5 min cache
+      return;
+    }
+
+    // Mark as loading
+    setBlockQueue(prev => new Map(prev.set(blockIndex, {
+      blockIndex,
+      searchQuery,
+      videos: existing?.videos || [],
+      isLoading: true,
+      loadedAt: existing?.loadedAt || 0
+    })));
+
+    // Fetch videos
+    const videos = await prefetchBlockVideos(blockIndex, searchQuery);
+    
+    // Update with results
+    setBlockQueue(prev => new Map(prev.set(blockIndex, {
+      blockIndex,
+      searchQuery,
+      videos,
+      isLoading: false,
+      loadedAt: Date.now()
+    })));
+  }, [blockQueue]);
+
+  // Get videos from queue or load immediately
+  const getBlockVideos = async (blockIndex: number, searchQuery: string): Promise<SoraFeedItem[]> => {
+    const queued = blockQueue.get(blockIndex);
+    
+    if (queued && !queued.isLoading && queued.videos.length > 0) {
+      console.log(`📦 Using prefetched videos for block ${blockIndex} (${queued.videos.length} videos)`);
+      return queued.videos;
+    }
+    
+    // Fallback to immediate load
+    console.log(`⚡ Loading block ${blockIndex} immediately (not prefetched)`);
+    return await prefetchBlockVideos(blockIndex, searchQuery);
+  };
+
+  const loadCustomFeedBlock = async (blockIndex: number, searchQuery: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Get videos from queue or load immediately
+      const videos = await getBlockVideos(blockIndex, searchQuery);
+      
+      if (videos.length > 0) {
+        setItems(videos);
+        console.log(`✅ Loaded ${videos.length} videos for block ${blockIndex}: "${searchQuery}"`);
       } else {
-        console.warn('⚠️ No results found for search query:', searchQuery);
+        console.warn('⚠️ No videos found for block:', blockIndex, searchQuery);
         setItems([]);
       }
       
@@ -171,13 +236,7 @@ export default function FeedLoader() {
       setHasMore(false);
     } catch (err) {
       console.error('❌ Custom feed block load error:', err);
-      
-      if (err instanceof Error && err.name === 'AbortError') {
-        setError('Search timeout - please try a different query');
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to load custom feed block');
-      }
-      
+      setError(err instanceof Error ? err.message : 'Failed to load custom feed block');
       setItems([]);
     } finally {
       setLoading(false);
@@ -185,11 +244,49 @@ export default function FeedLoader() {
   };
 
 
+  // Start prefetching next blocks during current block playback
+  const startPrefetching = useCallback((feed: CustomFeed, currentIndex: number) => {
+    // Clear any existing prefetch timer
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current);
+    }
+
+    // Start prefetching after 25% of current block duration
+    const currentBlock = feed.blocks[currentIndex];
+    if (!currentBlock) return;
+
+    const prefetchDelay = (currentBlock.durationSeconds * 1000) * 0.25; // 25% into the block
+
+    prefetchTimerRef.current = setTimeout(() => {
+      // Prefetch next 2-3 blocks
+      const blocksToPreload = Math.min(3, feed.blocks.length - currentIndex - 1);
+      
+      for (let i = 1; i <= blocksToPreload; i++) {
+        const nextIndex = currentIndex + i;
+        if (nextIndex < feed.blocks.length) {
+          const nextBlock = feed.blocks[nextIndex];
+          queueBlock(nextIndex, nextBlock.searchQuery);
+        }
+      }
+
+      // If looping, also prefetch first few blocks when near the end
+      if (feed.loop && currentIndex >= feed.blocks.length - 2) {
+        for (let i = 0; i < Math.min(2, feed.blocks.length); i++) {
+          const loopBlock = feed.blocks[i];
+          queueBlock(i, loopBlock.searchQuery);
+        }
+      }
+    }, prefetchDelay);
+  }, [queueBlock]);
+
   const scheduleNextBlock = useCallback((feed: CustomFeed, currentIndex: number) => {
     const currentBlock = feed.blocks[currentIndex];
     if (!currentBlock) return;
 
     const durationMs = currentBlock.durationSeconds * 1000;
+
+    // Start prefetching for upcoming blocks
+    startPrefetching(feed, currentIndex);
 
     playbackTimerRef.current = setTimeout(() => {
       const nextIndex = currentIndex + 1;
@@ -202,6 +299,7 @@ export default function FeedLoader() {
         } else {
           // End of feed, stop playback
           setCustomFeedPlayback(null);
+          setBlockQueue(new Map()); // Clear queue
         }
       } else {
         // Move to next block
@@ -216,11 +314,11 @@ export default function FeedLoader() {
         };
 
         setCustomFeedPlayback(newState);
-        loadCustomFeedBlock(nextBlock.searchQuery);
+        loadCustomFeedBlock(nextIndex, nextBlock.searchQuery);
         scheduleNextBlock(feed, nextIndex);
       }
     }, durationMs);
-  }, []);
+  }, [startPrefetching, loadCustomFeedBlock, startCustomFeedPlayback]);
 
   const startCustomFeedPlayback = useCallback((feed: CustomFeed) => {
     // Clear any existing timer
@@ -241,14 +339,17 @@ export default function FeedLoader() {
     setCustomFeedPlayback(initialState);
     setSelectedCustomFeed(feed);
 
+    // Clear existing queue and start fresh
+    setBlockQueue(new Map());
+    
     // Load initial search results
     if (feed.blocks[0]) {
-      loadCustomFeedBlock(feed.blocks[0].searchQuery);
+      loadCustomFeedBlock(0, feed.blocks[0].searchQuery);
       
       // Schedule next block transition
       scheduleNextBlock(feed, 0);
     }
-  }, [scheduleNextBlock]);
+  }, [scheduleNextBlock, loadCustomFeedBlock]);
 
   // Handle video events for custom feed timing
   const handleCustomFeedVideoEvent = useCallback((eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => {
@@ -413,10 +514,14 @@ export default function FeedLoader() {
   };
 
   const handleFeedTypeChange = async (type: FeedType, customFeed?: CustomFeed) => {
-    // Clear any existing custom feed playback timer
+    // Clear any existing custom feed timers
     if (playbackTimerRef.current) {
       clearTimeout(playbackTimerRef.current);
       playbackTimerRef.current = null;
+    }
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current);
+      prefetchTimerRef.current = null;
     }
 
     setFeedType(type);
@@ -426,6 +531,7 @@ export default function FeedLoader() {
       setSearchExpanded(true);
       setCustomFeedPlayback(null);
       setSelectedCustomFeed(null);
+      setBlockQueue(new Map());
     } else if (type === 'custom' && customFeed) {
       setSearchExpanded(false);
       startCustomFeedPlayback(customFeed);
@@ -433,6 +539,7 @@ export default function FeedLoader() {
       setSearchExpanded(false);
       setCustomFeedPlayback(null);
       setSelectedCustomFeed(null);
+      setBlockQueue(new Map());
       await loadFeed(type);
     }
   };
@@ -497,11 +604,14 @@ export default function FeedLoader() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCustomFeed?.updatedAt]);
 
-  // Cleanup timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (playbackTimerRef.current) {
         clearTimeout(playbackTimerRef.current);
+      }
+      if (prefetchTimerRef.current) {
+        clearTimeout(prefetchTimerRef.current);
       }
     };
   }, []);
@@ -576,6 +686,14 @@ export default function FeedLoader() {
             <span className="text-sm font-medium">
               {customFeedPlayback.currentSearchQuery}
             </span>
+            {blockQueue.size > 0 && (
+              <>
+                <div className="w-px h-4 bg-white/30" />
+                <span className="text-xs opacity-75">
+                  📦 {Array.from(blockQueue.values()).filter(b => !b.isLoading && b.videos.length > 0).length} ready
+                </span>
+              </>
+            )}
             {selectedCustomFeed.loop && (
               <>
                 <div className="w-px h-4 bg-white/30" />
