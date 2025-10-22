@@ -148,7 +148,7 @@ export default function FeedLoader() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
       
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=15&fast=true`, {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=8&fast=true`, {
         signal: controller.signal
       });
       
@@ -279,7 +279,7 @@ export default function FeedLoader() {
     }, prefetchDelay);
   }, [queueBlock]);
 
-  const scheduleNextBlock = useCallback((feed: CustomFeed, currentIndex: number) => {
+  const scheduleNextBlock: (feed: CustomFeed, currentIndex: number) => void = useCallback((feed: CustomFeed, currentIndex: number) => {
     const currentBlock = feed.blocks[currentIndex];
     if (!currentBlock) return;
 
@@ -318,9 +318,9 @@ export default function FeedLoader() {
         scheduleNextBlock(feed, nextIndex);
       }
     }, durationMs);
-  }, [startPrefetching, loadCustomFeedBlock, startCustomFeedPlayback]);
+  }, [startPrefetching]);
 
-  const startCustomFeedPlayback = useCallback((feed: CustomFeed) => {
+  const startCustomFeedPlayback: (feed: CustomFeed) => void = useCallback((feed: CustomFeed) => {
     // Clear any existing timer
     if (playbackTimerRef.current) {
       clearTimeout(playbackTimerRef.current);
@@ -349,7 +349,7 @@ export default function FeedLoader() {
       // Schedule next block transition
       scheduleNextBlock(feed, 0);
     }
-  }, [scheduleNextBlock, loadCustomFeedBlock]);
+  }, [scheduleNextBlock]);
 
   // Handle video events for custom feed timing
   const handleCustomFeedVideoEvent = useCallback((eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => {

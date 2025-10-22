@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
 
     // Choose search strategy based on fast parameter
     const searchQuery = fast ? `
-      -- Fast search: simple ILIKE with index
+      -- Ultra-fast search: minimal query for custom feeds
       SELECT 
         p.id,
         p.text,
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         0 as remix_score
       FROM sora_posts p
       JOIN creators c ON p.creator_id = c.id
-      WHERE LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
+      WHERE p.text ILIKE $1
       ORDER BY p.posted_at DESC
       LIMIT $2
     ` : `
@@ -138,7 +138,18 @@ export async function GET(request: NextRequest) {
       LIMIT $2
     `;
 
-    const result = await client.query(searchQuery, [query, limit]);
+    // Format query parameter based on search type
+    const queryParam = fast ? `%${query}%` : query;
+    
+    // Time the query for performance monitoring
+    const queryStart = Date.now();
+    const result = await client.query(searchQuery, [queryParam, limit]);
+    const queryTime = Date.now() - queryStart;
+    
+    console.log(`⚡ ${fast ? 'Fast' : 'Full'} search completed in ${queryTime}ms`);
+    if (queryTime > 1000) {
+      console.warn(`🐌 Slow query detected: ${queryTime}ms for "${query}"`);
+    }
     
     // Transform database results to SoraFeedItem format (reconstruct post and profile objects)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

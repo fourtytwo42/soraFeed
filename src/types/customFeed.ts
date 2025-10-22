@@ -26,7 +26,7 @@ export interface CustomFeedPlaybackState {
 export interface BlockQueue {
   blockIndex: number;
   searchQuery: string;
-  videos: any[]; // SoraFeedItem[] but avoiding circular import
+  videos: unknown[]; // SoraFeedItem[] but avoiding circular import
   isLoading: boolean;
   loadedAt: number;
 }
