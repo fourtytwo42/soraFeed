@@ -5,12 +5,22 @@ import { getClient } from '@/lib/db';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const limit = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
+    const format = searchParams.get('format') || 'both'; // 'both', 'tall', 'wide'
 
-    console.log('🔍 Fetching latest posts from database:', { limit, offset });
+    console.log('🔍 Fetching latest posts from database:', { limit, offset, format });
 
     const client = await getClient();
+    
+    // Build format filtering conditions
+    let formatConditions = '';
+    if (format === 'wide') {
+      formatConditions = ' WHERE p.width > p.height';
+    } else if (format === 'tall') {
+      formatConditions = ' WHERE p.height > p.width';
+    }
+    // 'both' means no additional filtering
     
     // Query for latest posts with creator info using JOIN on normalized schema
     const query = `
@@ -38,6 +48,7 @@ export async function GET(request: NextRequest) {
         c.verified
       FROM sora_posts p
       JOIN creators c ON p.creator_id = c.id
+      ${formatConditions}
       ORDER BY p.posted_at DESC
       LIMIT $1 OFFSET $2
     `;
@@ -81,7 +92,7 @@ export async function GET(request: NextRequest) {
     console.log(`✅ Found ${items.length} latest posts from database`);
 
     // Check if there are more items for pagination
-    const countQuery = 'SELECT COUNT(*) as total FROM sora_posts';
+    const countQuery = `SELECT COUNT(*) as total FROM sora_posts p${formatConditions}`;
     const countResult = await client.query(countQuery);
     const totalCount = parseInt(countResult.rows[0].total);
     const hasMore = (offset + limit) < totalCount;

@@ -22,30 +22,33 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
   const [draggedBlock, setDraggedBlock] = useState<CustomFeedBlock | null>(null);
   const [draggedFromTimeline, setDraggedFromTimeline] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after' | null>(null);
   const [showTrashZone, setShowTrashZone] = useState(false);
   const timelineRef = useRef<HTMLDivElement>(null);
   const trashZoneRef = useRef<HTMLDivElement>(null);
 
   // Initialize with editing feed data
   useEffect(() => {
-    if (editingFeed) {
-      setFeedName(editingFeed.name);
-      setLoop(editingFeed.loop);
-      setBlocks([...editingFeed.blocks].sort((a, b) => a.order - b.order));
-      setAvailableBlocks([]);
-    } else {
-      setFeedName('');
-      setLoop(false);
-      setBlocks([]);
-      setAvailableBlocks([]);
+    if (isOpen) {
+      if (editingFeed) {
+        setFeedName(editingFeed.name);
+        setLoop(editingFeed.loop);
+        setBlocks([...editingFeed.blocks].sort((a, b) => a.order - b.order));
+        setAvailableBlocks([]);
+      } else {
+        setFeedName('');
+        setLoop(false);
+        setBlocks([]);
+        setAvailableBlocks([]);
+      }
     }
   }, [editingFeed, isOpen]);
 
   // Use a counter to ensure absolutely unique IDs
   const idCounterRef = useRef(0);
-  const generateId = () => {
+  const generateId = useCallback(() => {
     idCounterRef.current += 1;
-    let newId;
+    let newId: string;
     let attempts = 0;
     
     do {
@@ -57,7 +60,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     );
     
     return newId;
-  };
+  }, [blocks, availableBlocks]);
 
   const createBlock = useCallback(() => {
     if (!newBlockSearch.trim()) return;
@@ -83,7 +86,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     setAvailableBlocks(prev => [...prev, block]);
     setNewBlockSearch('');
     setNewBlockDuration(60); // Reset to 60 seconds
-  }, [newBlockSearch, newBlockDuration, durationUnit, availableBlocks.length]);
+  }, [newBlockSearch, newBlockDuration, durationUnit, availableBlocks.length, generateId]);
 
   const duplicateBlock = useCallback((block: CustomFeedBlock, fromTimeline: boolean) => {
     const newBlock: CustomFeedBlock = {
@@ -97,7 +100,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     } else {
       setAvailableBlocks(prev => [...prev, newBlock]);
     }
-  }, [blocks.length, availableBlocks.length]);
+  }, [blocks.length, availableBlocks.length, generateId]);
 
   const removeBlockFromAvailable = useCallback((blockId: string) => {
     setAvailableBlocks(prev => prev.filter(b => b.id !== blockId));
@@ -120,44 +123,66 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     setDraggedBlock(null);
     setDraggedFromTimeline(false);
     setDragOverIndex(null);
+    setDragOverPosition(null);
     setShowTrashZone(false);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+  const handleDragOver = useCallback((e: React.DragEvent, index: number, position?: 'before' | 'after') => {
     e.preventDefault();
     setDragOverIndex(index);
+    setDragOverPosition(position || 'before');
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, targetIndex: number) => {
+  const handleDrop = useCallback((e: React.DragEvent, targetIndex: number, position?: 'before' | 'after') => {
     e.preventDefault();
     if (!draggedBlock) return;
 
+    // Calculate the actual insertion index based on position
+    let insertIndex = targetIndex;
+    if (position === 'after') {
+      insertIndex = targetIndex + 1;
+    }
+
     if (draggedFromTimeline) {
-      // Reordering within timeline
+      // Reordering within timeline - prevent dropping on self
+      const currentIndex = blocks.findIndex(b => b.id === draggedBlock.id);
+      if (currentIndex === insertIndex || currentIndex === insertIndex - 1) {
+        setDragOverIndex(null);
+        setDragOverPosition(null);
+        return;
+      }
+
       setBlocks(prev => {
         const filtered = prev.filter(b => b.id !== draggedBlock.id);
+        // Adjust insert index if we removed an item before it
+        let adjustedIndex = insertIndex;
+        if (currentIndex < insertIndex) {
+          adjustedIndex = insertIndex - 1;
+        }
+        
         const newBlocks = [
-          ...filtered.slice(0, targetIndex),
+          ...filtered.slice(0, adjustedIndex),
           draggedBlock,
-          ...filtered.slice(targetIndex),
+          ...filtered.slice(adjustedIndex),
         ];
         return newBlocks.map((b, idx) => ({ ...b, order: idx }));
       });
     } else {
       // Adding from available blocks to timeline
-      const newBlock = { ...draggedBlock, order: targetIndex };
+      const newBlock = { ...draggedBlock, order: insertIndex };
       setBlocks(prev => {
         const newBlocks = [
-          ...prev.slice(0, targetIndex),
+          ...prev.slice(0, insertIndex),
           newBlock,
-          ...prev.slice(targetIndex),
+          ...prev.slice(insertIndex),
         ];
         return newBlocks.map((b, idx) => ({ ...b, order: idx }));
       });
     }
 
     setDragOverIndex(null);
-  }, [draggedBlock, draggedFromTimeline]);
+    setDragOverPosition(null);
+  }, [draggedBlock, draggedFromTimeline, blocks]);
 
   const handleDropOnTimeline = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -170,6 +195,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     }
 
     setDragOverIndex(null);
+    setDragOverPosition(null);
   }, [draggedBlock, draggedFromTimeline, blocks.length]);
 
   const handleDropOnTrash = useCallback((e: React.DragEvent) => {
@@ -431,19 +457,25 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {/* Drop zone at the beginning */}
+                  <div
+                    onDragOver={(e) => handleDragOver(e, 0, 'before')}
+                    onDrop={(e) => handleDrop(e, 0, 'before')}
+                    className={`h-4 rounded-lg transition-all ${
+                      dragOverIndex === 0 && dragOverPosition === 'before' && draggedBlock
+                        ? 'bg-blue-500 animate-pulse'
+                        : 'bg-transparent hover:bg-white/5'
+                    }`}
+                  />
+
                   {blocks.map((block, index) => (
                     <div key={`${block.id}-${index}`}>
-                      {/* Drop zone indicator */}
-                      {dragOverIndex === index && draggedBlock && (
-                        <div className="h-2 bg-blue-500 rounded-full mb-2 animate-pulse" />
-                      )}
-
                       <div
                         draggable
                         onDragStart={() => handleDragStart(block, true)}
                         onDragEnd={handleDragEnd}
-                        onDragOver={(e) => handleDragOver(e, index)}
-                        onDrop={(e) => handleDrop(e, index)}
+                        onDragOver={(e) => handleDragOver(e, index, 'before')}
+                        onDrop={(e) => handleDrop(e, index, 'before')}
                         className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 border border-white/20 rounded-xl p-4 cursor-move hover:border-white/40 transition-all group"
                       >
                         <div className="flex items-center gap-3">
@@ -478,6 +510,17 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
                           </div>
                         </div>
                       </div>
+
+                      {/* Drop zone after each block */}
+                      <div
+                        onDragOver={(e) => handleDragOver(e, index, 'after')}
+                        onDrop={(e) => handleDrop(e, index, 'after')}
+                        className={`h-4 rounded-lg transition-all ${
+                          dragOverIndex === index && dragOverPosition === 'after' && draggedBlock
+                            ? 'bg-blue-500 animate-pulse'
+                            : 'bg-transparent hover:bg-white/5'
+                        }`}
+                      />
                     </div>
                   ))}
                 </div>

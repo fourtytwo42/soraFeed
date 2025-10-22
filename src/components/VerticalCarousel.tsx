@@ -16,6 +16,8 @@ interface VerticalCarouselProps {
   isInFavorites?: (postId: string) => boolean;
   onControlsChange?: (showing: boolean) => void;
   onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
+  formatFilter?: 'both' | 'tall' | 'wide';
+  onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
 }
 
 export default function VerticalCarousel({
@@ -27,9 +29,12 @@ export default function VerticalCarousel({
   onRemoveFromFavorites,
   isInFavorites,
   onControlsChange,
-  onCustomFeedVideoEvent
+  onCustomFeedVideoEvent,
+  formatFilter,
+  onFormatFilterChange
 }: VerticalCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
   const wheelAccumulator = useRef(0);
   const wheelTimeout = useRef<NodeJS.Timeout | null>(null);
   const isWheelScrolling = useRef(false);
@@ -128,17 +133,18 @@ export default function VerticalCarousel({
     if (!emblaApi) return;
     const selectedIndex = emblaApi.selectedScrollSnap();
     console.log('🟦 VERTICAL: Slide changed', { 
-      from: currentIndex, 
+      from: currentIndexRef.current, 
       to: selectedIndex,
       totalItems: items.length 
     });
+    currentIndexRef.current = selectedIndex;
     setCurrentIndex(selectedIndex);
     
     // Load more items when approaching the end
     if (hasMore && !loadingMore && selectedIndex >= items.length - 2) {
       onLoadMore?.();
     }
-  }, [emblaApi, hasMore, loadingMore, items.length, onLoadMore, currentIndex]);
+  }, [emblaApi, hasMore, loadingMore, items.length, onLoadMore]);
 
   // Custom wheel handler with threshold-based completion
   const handleWheel = useCallback((e: WheelEvent) => {
@@ -158,12 +164,12 @@ export default function VerticalCarousel({
     const threshold = 50;
     
     if (Math.abs(wheelAccumulator.current) > threshold) {
-      if (wheelAccumulator.current > 0 && currentIndex < items.length - 1) {
+      if (wheelAccumulator.current > 0 && currentIndexRef.current < items.length - 1) {
         // Scroll down
         emblaApi.scrollNext();
         wheelAccumulator.current = 0;
         isWheelScrolling.current = true;
-      } else if (wheelAccumulator.current < 0 && currentIndex > 0) {
+      } else if (wheelAccumulator.current < 0 && currentIndexRef.current > 0) {
         // Scroll up
         emblaApi.scrollPrev();
         wheelAccumulator.current = 0;
@@ -179,7 +185,7 @@ export default function VerticalCarousel({
         isWheelScrolling.current = false;
       }, 150);
     }
-  }, [emblaApi, currentIndex, items.length]);
+  }, [emblaApi, items.length]);
 
   // Set up event listeners
   useEffect(() => {
@@ -258,6 +264,8 @@ export default function VerticalCarousel({
               isInFavorites={isInFavorites}
               onControlsChange={onControlsChange}
               onCustomFeedVideoEvent={onCustomFeedVideoEvent}
+              formatFilter={formatFilter}
+              onFormatFilterChange={onFormatFilterChange}
               onNext={() => {
                 console.log('🎬 VideoCarousel requested next video via onNext');
                 if (emblaApi && currentIndex < items.length - 1) {

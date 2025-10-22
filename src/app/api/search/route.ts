@@ -7,8 +7,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
-    const limit = parseInt(searchParams.get('limit') || '50');
+    const limit = parseInt(searchParams.get('limit') || '100');
     const fast = searchParams.get('fast') === 'true';
+    const format = searchParams.get('format') || 'both'; // 'both', 'tall', 'wide'
 
     if (!query || query.trim().length === 0) {
       return NextResponse.json(
@@ -17,7 +18,40 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Parse search query to separate include and exclude terms
+    const parseSearchQuery = (searchQuery: string) => {
+      const words = searchQuery.trim().split(/\s+/);
+      const includeTerms: string[] = [];
+      const excludeTerms: string[] = [];
+      
+      for (const word of words) {
+        if (word.startsWith('-') && word.length > 1) {
+          // Remove the minus sign and add to exclude terms
+          excludeTerms.push(word.substring(1));
+        } else if (word.length > 0) {
+          // Add to include terms (ignore empty strings)
+          includeTerms.push(word);
+        }
+      }
+      
+      return { includeTerms, excludeTerms };
+    };
+
+    const { includeTerms, excludeTerms } = parseSearchQuery(query);
+    const includeQuery = includeTerms.join(' ');
+    
     console.log('🔍 Searching database for:', query);
+    console.log('📝 Include terms:', includeTerms);
+    console.log('🚫 Exclude terms:', excludeTerms);
+    console.log('📐 Format filter:', format);
+
+    // If no include terms, return empty results
+    if (includeTerms.length === 0) {
+      return NextResponse.json({
+        items: [],
+        cursor: null
+      });
+    }
 
     client = await getClient();
     console.log('🔗 Database client acquired successfully');
@@ -40,9 +74,35 @@ export async function GET(request: NextRequest) {
       console.log('Trigram index check:', err);
     }
 
+    // Build exclusion conditions for SQL
+    const buildExclusionConditions = (excludeTerms: string[]) => {
+      if (excludeTerms.length === 0) return '';
+      
+      const conditions = excludeTerms.map((_, index) => 
+        `NOT LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $${index + 3} || '%')`
+      ).join(' AND ');
+      
+      return ` AND ${conditions}`;
+    };
+
+    const exclusionConditions = buildExclusionConditions(excludeTerms);
+
+    // Build format filtering conditions
+    const buildFormatConditions = (format: string) => {
+      if (format === 'wide') {
+        return ' AND p.width > p.height';
+      } else if (format === 'tall') {
+        return ' AND p.height > p.width';
+      }
+      // 'both' means no additional filtering
+      return '';
+    };
+
+    const formatConditions = buildFormatConditions(format);
+
     // Choose search strategy based on fast parameter
     const searchQuery = fast ? `
-      -- Fast random search: sample from matching posts
+      -- Fast random search: sample from matching posts with better randomization
       WITH matching_posts AS (
         SELECT 
           p.id,
@@ -58,12 +118,16 @@ export async function GET(request: NextRequest) {
           p.generation_id,
           p.task_id,
           p.creator_id,
-          -- Add random seed for each row
-          RANDOM() as rand_seed
+          -- Multiple random seeds for better distribution
+          RANDOM() as rand_seed1,
+          RANDOM() as rand_seed2,
+          -- Add timestamp-based randomization to ensure different results each call
+          (EXTRACT(EPOCH FROM NOW()) * RANDOM())::integer % 1000000 as time_seed
         FROM sora_posts p
-        WHERE p.text ILIKE $1
-        ORDER BY rand_seed
-        LIMIT ($2 * 3)  -- Get 3x more results to ensure variety
+        WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}
+        -- Use multiple random orderings for better variety
+        ORDER BY rand_seed1, rand_seed2, time_seed
+        LIMIT ($2 * 4)  -- Get 4x more results to ensure variety after filtering
       )
       SELECT 
         mp.id,
@@ -91,7 +155,8 @@ export async function GET(request: NextRequest) {
         0 as remix_score
       FROM matching_posts mp
       JOIN creators c ON mp.creator_id = c.id
-      ORDER BY mp.rand_seed
+      -- Final randomization using both seeds
+      ORDER BY ((mp.rand_seed1 + mp.rand_seed2) * 1000 + mp.time_seed) % 1000000
       LIMIT $2
     ` : `
       -- Advanced search query with multiple matching strategies using normalized schema:
@@ -142,14 +207,16 @@ export async function GET(request: NextRequest) {
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
         WHERE 
-          -- Full-text search match
-          to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
-          OR
-          -- Partial match (case-insensitive)
-          LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
-          OR
-          -- Fuzzy match (similarity threshold of 0.3)
-          similarity(LOWER(COALESCE(p.text, '')), LOWER($1)) > 0.3
+          (
+            -- Full-text search match
+            to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
+            OR
+            -- Partial match (case-insensitive)
+            LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
+            OR
+            -- Fuzzy match (similarity threshold of 0.3)
+            similarity(LOWER(COALESCE(p.text, '')), LOWER($1)) > 0.3
+          )${exclusionConditions}${formatConditions}
       )
       SELECT *
       FROM search_results
@@ -162,7 +229,10 @@ export async function GET(request: NextRequest) {
     `;
 
     // Format query parameter based on search type
-    const queryParam = fast ? `%${query}%` : query;
+    const queryParam = fast ? `%${includeQuery}%` : includeQuery;
+    
+    // Build parameters array including exclude terms
+    const queryParams = [queryParam, limit, ...excludeTerms];
     
     // Quick sanity check - count total posts in database
     if (fast) {
@@ -170,15 +240,16 @@ export async function GET(request: NextRequest) {
       const totalPosts = countResult.rows[0]?.total || 0;
       console.log(`📊 Database has ${totalPosts} total posts`);
       
-      // Also check how many match our search
-      const matchCountResult = await client.query('SELECT COUNT(*) as matches FROM sora_posts WHERE text ILIKE $1', [queryParam]);
+      // Also check how many match our search (including exclusions)
+      const matchCountQuery = `SELECT COUNT(*) as matches FROM sora_posts p WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}`;
+      const matchCountResult = await client.query(matchCountQuery, queryParams.slice(0, 1 + excludeTerms.length));
       const matchCount = matchCountResult.rows[0]?.matches || 0;
-      console.log(`🎯 Found ${matchCount} posts matching "${query}"`);
+      console.log(`🎯 Found ${matchCount} posts matching "${query}" (with exclusions)`);
     }
 
     // Time the query for performance monitoring
     const queryStart = Date.now();
-    const result = await client.query(searchQuery, [queryParam, limit]);
+    const result = await client.query(searchQuery, queryParams);
     const queryTime = Date.now() - queryStart;
     
     console.log(`⚡ ${fast ? 'Fast' : 'Full'} search completed in ${queryTime}ms`);

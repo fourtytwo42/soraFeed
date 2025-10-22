@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
-import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download, Facebook, Twitter } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download, Facebook, Twitter, Monitor, Smartphone, Grid3X3 } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
 
@@ -22,6 +22,8 @@ interface VideoPostProps {
   onKeyboardNavigation?: (direction: 'left' | 'right') => void;
   preloadedRemixFeed?: SoraFeedItem[];
   onControlsChange?: (showing: boolean) => void;
+  formatFilter?: 'both' | 'tall' | 'wide';
+  onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
 }
 
 // Unified Video Management System
@@ -38,17 +40,15 @@ interface VideoElement {
 export default function VideoPost({ 
   item, 
   isActive, 
-  isUpcoming: _isUpcoming, // Keep for interface compatibility but mark as unused
-  isTargetVideo: _isTargetVideo, // Keep for interface compatibility but mark as unused
-  scrollDirection: _scrollDirection, // Keep for interface compatibility but mark as unused
   onNext, // Keep for auto-scroll functionality
   onAddToFavorites, 
   onRemoveFromFavorites, 
   isInFavorites, 
   onRemixStatusChange, 
-  onKeyboardNavigation: _onKeyboardNavigation, // Keep for interface compatibility but mark as unused
   preloadedRemixFeed, 
-  onControlsChange 
+  onControlsChange,
+  formatFilter = 'both',
+  onFormatFilterChange
 }: VideoPostProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data
@@ -671,6 +671,8 @@ export default function VideoPost({
     x.set(0);
     userPausedRef.current = false;
     hasUserInteractedRef.current = false;
+    // Also reset showControls to ensure clean feed
+    setShowControls(false);
   }, [item.post.id, x]);
   
   // Cleanup on unmount
@@ -706,11 +708,15 @@ export default function VideoPost({
   
   // Mobile detection removed - not currently used
 
-  // Controls visibility
+  // Controls visibility - only show when user has interacted or explicitly paused
   useEffect(() => {
-    setShowControls(!isPlaying);
+    // Only show controls if:
+    // 1. Video is paused AND user has interacted, OR
+    // 2. Video is paused due to user action (userPausedRef.current is true)
+    const shouldShowControls = !isPlaying && (hasUserInteractedRef.current || userPausedRef.current);
+    setShowControls(shouldShowControls);
     if (onControlsChange) {
-      onControlsChange(!isPlaying);
+      onControlsChange(shouldShowControls);
     }
   }, [isPlaying, onControlsChange]);
   
@@ -722,6 +728,28 @@ export default function VideoPost({
   }, [remixFeed.length, onRemixStatusChange]);
   
   // ===== HELPER FUNCTIONS =====
+  
+  // Format filter helpers
+  const getFormatFilterIcon = (filter: 'both' | 'tall' | 'wide') => {
+    switch (filter) {
+      case 'wide':
+        return <Monitor className="w-5 h-5 text-white" />;
+      case 'tall':
+        return <Smartphone className="w-5 h-5 text-white" />;
+      case 'both':
+      default:
+        return <Grid3X3 className="w-5 h-5 text-white" />;
+    }
+  };
+
+  const handleFormatFilterClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onFormatFilterChange) return;
+    
+    const nextFilter = formatFilter === 'both' ? 'tall' : formatFilter === 'tall' ? 'wide' : 'both';
+    onFormatFilterChange(nextFilter);
+    handleInteraction();
+  }, [formatFilter, onFormatFilterChange, handleInteraction]);
   
   const currentItem = getCurrentItem();
   const hasRemixes = remixFeed.length > 0;
@@ -1008,6 +1036,17 @@ export default function VideoPost({
                     <Volume2 className="w-5 h-5 text-white" />
                   )}
                 </button>
+
+                {/* Format Filter Button */}
+                {onFormatFilterChange && (
+                  <button
+                    onClick={handleFormatFilterClick}
+                    className="bg-black/50 rounded-full p-2 hover:bg-black/70 transition-all cursor-pointer"
+                    title={`Format: ${formatFilter === 'both' ? 'All' : formatFilter === 'tall' ? 'Portrait' : 'Landscape'}`}
+                  >
+                    {getFormatFilterIcon(formatFilter)}
+                  </button>
+                )}
               </div>
             </motion.div>
           )}

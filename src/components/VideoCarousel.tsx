@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import useEmblaCarousel from 'embla-carousel-react';
-import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Facebook, Twitter, Download } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Facebook, Twitter, Download, Monitor, Smartphone, Grid3X3 } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
 
@@ -16,18 +16,21 @@ interface VideoCarouselProps {
   onControlsChange?: (showing: boolean) => void;
   onNext?: () => void;
   onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
+  formatFilter?: 'both' | 'tall' | 'wide';
+  onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
 }
 
 export default function VideoCarousel({
   item,
   isActive,
-  isUpcoming: _isUpcoming, // Keep for interface compatibility but mark as unused
   onAddToFavorites,
   onRemoveFromFavorites,
   isInFavorites,
   onControlsChange,
   onNext,
-  onCustomFeedVideoEvent
+  onCustomFeedVideoEvent,
+  formatFilter = 'both',
+  onFormatFilterChange
 }: VideoCarouselProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data in VideoCarousel
@@ -161,11 +164,14 @@ export default function VideoCarousel({
     return (el: HTMLVideoElement | null) => {
       if (el) {
         videoRefsMap.current.set(itemId, el);
+        // Set initial mute state when video element is created
+        el.muted = !isActive || isMuted;
+        console.log('🎬 Video ref created:', { itemId, muted: el.muted, isActive, isMuted });
       } else {
         videoRefsMap.current.delete(itemId);
       }
     };
-  }, []);
+  }, [isActive, isMuted]);
 
   const getCurrentVideo = useCallback(() => {
     const currentItem = getCurrentItem();
@@ -209,8 +215,12 @@ export default function VideoCarousel({
       }
     }
 
-    // Mute/unmute - use ref
-    currentVideo.muted = isMuted || !currentIsActive;
+    // Mute/unmute - use ref (only set if active to avoid conflicts)
+    if (currentIsActive) {
+      currentVideo.muted = isMuted;
+    } else {
+      currentVideo.muted = true; // Always mute inactive videos
+    }
     
     // Pause other videos in this carousel
     videoRefsMap.current.forEach((video, itemId) => {
@@ -235,6 +245,18 @@ export default function VideoCarousel({
   useEffect(() => {
     controlVideoPlayback();
   }, [isActive, currentRemixIndex, isMuted, controlVideoPlayback]);
+
+  // Effect to ensure proper mute state when becoming active
+  useEffect(() => {
+    if (isActive) {
+      const currentVideo = getCurrentVideo();
+      if (currentVideo) {
+        // Restore user's mute preference when video becomes active
+        currentVideo.muted = isMuted;
+        console.log('🔊 Restored mute state for active video:', { isMuted, postId: getCurrentItem().post.id });
+      }
+    }
+  }, [isActive, isMuted, getCurrentVideo, getCurrentItem]);
 
   // Load remix feed
   useEffect(() => {
@@ -272,6 +294,19 @@ export default function VideoCarousel({
           console.log('⏸️ Force pausing video (became inactive):', itemId);
           video.pause();
         }
+        // Also mute to prevent any audio bleeding through
+        video.muted = true;
+      });
+      
+      // Also find and pause any video elements that might not be in our map
+      // This is a safety net for any edge cases
+      const videoElements = document.querySelectorAll('video');
+      videoElements.forEach((video) => {
+        if (!video.paused && video.closest('[data-carousel-item]')) {
+          console.log('⏸️ Safety pause for unmapped video element');
+          video.pause();
+          video.muted = true;
+        }
       });
       
       // Reset user pause state so videos auto-play when scrolled back to them
@@ -283,6 +318,49 @@ export default function VideoCarousel({
       setIsPlaying(false);
     }
   }, [isActive]);
+
+  // Additional safety effect - pause videos immediately when becoming inactive
+  useEffect(() => {
+    if (!isActive) {
+      // Use a small timeout to ensure this runs after any other effects
+      const timeoutId = setTimeout(() => {
+        console.log('🔄 Safety effect: Ensuring all videos are paused');
+        
+        // Double-check that all videos in our map are paused
+        videoRefsMap.current.forEach((video, itemId) => {
+          if (!video.paused) {
+            console.log('⏸️ Safety pause for video in map:', itemId);
+            video.pause();
+            video.muted = true;
+          }
+        });
+        
+        // Also check for any video elements in the DOM that might be playing
+        const allVideos = document.querySelectorAll('video');
+        allVideos.forEach((video) => {
+          if (!video.paused) {
+            console.log('⏸️ Safety pause for any playing video in DOM');
+            video.pause();
+            video.muted = true;
+          }
+        });
+      }, 0);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isActive]);
+
+  // Cleanup effect on unmount
+  useEffect(() => {
+    const currentVideoRefsMap = videoRefsMap.current;
+    return () => {
+      console.log('🔄 VideoCarousel unmounting, pausing all videos');
+      currentVideoRefsMap.forEach((video) => {
+        video.pause();
+        video.muted = true;
+      });
+    };
+  }, []);
 
   useEffect(() => {
     remixCountRef.current = remixFeed.length;
@@ -317,6 +395,8 @@ export default function VideoCarousel({
     setIsPlaying(false);
     userPausedRef.current = false;
     hasUserInteractedRef.current = false;
+    // Also reset showControls to ensure clean feed
+    setShowControls(false);
     
     console.log('🔄 Reset complete, userPaused = false');
     
@@ -336,11 +416,15 @@ export default function VideoCarousel({
   // Detect mobile
   // Mobile detection removed - not currently used
 
-  // Controls visibility
+  // Controls visibility - only show when user has interacted or explicitly paused
   useEffect(() => {
-    setShowControls(!isPlaying);
+    // Only show controls if:
+    // 1. Video is paused AND user has interacted, OR
+    // 2. Video is paused due to user action (userPausedRef.current is true)
+    const shouldShowControls = !isPlaying && (hasUserInteractedRef.current || userPausedRef.current);
+    setShowControls(shouldShowControls);
     if (onControlsChange) {
-      onControlsChange(!isPlaying);
+      onControlsChange(shouldShowControls);
     }
   }, [isPlaying, onControlsChange]);
 
@@ -379,6 +463,28 @@ export default function VideoCarousel({
     
     hasUserInteractedRef.current = true;
   }, [getCurrentVideo]);
+
+  // Format filter helpers
+  const getFormatFilterIcon = (filter: 'both' | 'tall' | 'wide') => {
+    switch (filter) {
+      case 'wide':
+        return <Monitor className="w-5 h-5 text-white" />;
+      case 'tall':
+        return <Smartphone className="w-5 h-5 text-white" />;
+      case 'both':
+      default:
+        return <Grid3X3 className="w-5 h-5 text-white" />;
+    }
+  };
+
+  const handleFormatFilterClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onFormatFilterChange) return;
+    
+    const nextFilter = formatFilter === 'both' ? 'tall' : formatFilter === 'tall' ? 'wide' : 'both';
+    onFormatFilterChange(nextFilter);
+    hasUserInteractedRef.current = true;
+  }, [formatFilter, onFormatFilterChange]);
 
   const handleVideoMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
@@ -429,8 +535,8 @@ export default function VideoCarousel({
                 width: videoWidth ? `${videoWidth}px` : 'auto',
                 height: videoWidth ? 'auto' : '100%',
               }}
-              muted={isMuted || !isActive}
               playsInline
+              data-carousel-item={videoItem.post.id}
               onLoadedMetadata={(e) => {
                 handleVideoMetadata(e);
                 // Call custom feed event handler if provided
@@ -469,7 +575,7 @@ export default function VideoCarousel({
         </div>
       </div>
     );
-  }, [videoWidth, isMuted, isActive, getVideoRef, handleVideoMetadata, onNext]);
+  }, [videoWidth, isActive, getVideoRef, handleVideoMetadata, onNext, onCustomFeedVideoEvent]);
 
   const currentItem = getCurrentItem();
   const allItems = getAllItems();
@@ -533,6 +639,17 @@ export default function VideoCarousel({
                   <Volume2 className="w-5 h-5 text-white" />
                 )}
               </button>
+
+              {/* Format Filter Button */}
+              {onFormatFilterChange && (
+                <button
+                  onClick={handleFormatFilterClick}
+                  className="bg-black/50 rounded-full p-2 hover:bg-black/70 transition-all cursor-pointer"
+                  title={`Format: ${formatFilter === 'both' ? 'All' : formatFilter === 'tall' ? 'Portrait' : 'Landscape'}`}
+                >
+                  {getFormatFilterIcon(formatFilter)}
+                </button>
+              )}
             </div>
           </div>
         

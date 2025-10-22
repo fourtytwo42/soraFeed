@@ -18,10 +18,15 @@ class RemixCacheManager {
   private fetchQueue: FetchQueueItem[] = [];
   private isFetching: boolean = false;
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-  private readonly MAX_RETRIES = 3;
+  private readonly MAX_RETRIES = 2; // Reduced from 3 to 2
   private readonly RETRY_DELAY = 1000; // 1 second
   private readonly CONCURRENT_FETCHES = 2;
   private activeFetches: Set<string> = new Set();
+  
+  // Circuit breaker for problematic posts
+  private failedPosts: Map<string, { count: number; lastFailed: number }> = new Map();
+  private readonly FAILURE_THRESHOLD = 3;
+  private readonly CIRCUIT_BREAKER_DURATION = 10 * 60 * 1000; // 10 minutes
 
   /**
    * Get remix feed from cache or fetch if not cached/expired
@@ -33,6 +38,15 @@ class RemixCacheManager {
     if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
       // console.log('✅ Cache hit for remix feed:', postId);
       return cached.data;
+    }
+
+    // Check circuit breaker
+    const failureInfo = this.failedPosts.get(postId);
+    if (failureInfo && 
+        failureInfo.count >= this.FAILURE_THRESHOLD && 
+        Date.now() - failureInfo.lastFailed < this.CIRCUIT_BREAKER_DURATION) {
+      console.log('🚫 Circuit breaker active for:', postId, '(using cache/empty)');
+      return cached ? cached.data : [];
     }
 
     // Cache miss or expired
@@ -50,14 +64,30 @@ class RemixCacheManager {
         postId,
       });
       
+      // Reset failure count on successful fetch
+      this.failedPosts.delete(postId);
+      
       return remixes;
     } catch (error) {
-      // Only log errors that aren't network timeouts or fetch failures
-      if (error instanceof Error && !error.message.includes('fetch')) {
-        console.error('❌ Failed to fetch remix feed:', postId, error);
+      // Handle different types of errors more gracefully
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          console.log('⏱️ Remix feed timeout for:', postId, '(using cache/empty)');
+        } else if (error.message.includes('fetch') || error.message.includes('network')) {
+          console.log('🌐 Network error fetching remix feed:', postId, '(using cache/empty)');
+        } else {
+          console.error('❌ Failed to fetch remix feed:', postId, error.message);
+        }
       } else {
-        console.log('⚠️ Network error fetching remix feed:', postId, '(using cache/empty)');
+        console.log('⚠️ Unknown error fetching remix feed:', postId, '(using cache/empty)');
       }
+      
+      // Track failure for circuit breaker
+      const currentFailure = this.failedPosts.get(postId) || { count: 0, lastFailed: 0 };
+      this.failedPosts.set(postId, {
+        count: currentFailure.count + 1,
+        lastFailed: Date.now()
+      });
       
       // Return expired cache if available
       if (cached) {
@@ -146,6 +176,15 @@ class RemixCacheManager {
       return;
     }
     
+    // Check circuit breaker for background fetches too
+    const failureInfo = this.failedPosts.get(postId);
+    if (failureInfo && 
+        failureInfo.count >= this.FAILURE_THRESHOLD && 
+        Date.now() - failureInfo.lastFailed < this.CIRCUIT_BREAKER_DURATION) {
+      console.log('🚫 Circuit breaker active for background fetch:', postId);
+      return;
+    }
+    
     this.activeFetches.add(postId);
     
     try {
@@ -161,25 +200,52 @@ class RemixCacheManager {
         postId,
       });
       
+      // Reset failure count on successful background fetch
+      this.failedPosts.delete(postId);
+      
       // console.log(`✅ Cached ${remixes.length} remixes for ${postId}`);
       
     } catch (error) {
-      console.error(`❌ Failed to fetch remix feed for ${postId}:`, error);
+      // Handle different types of errors more gracefully in background fetching
+      let shouldRetry = true;
       
-      // Retry if under max retries
-      if (retryCount < this.MAX_RETRIES) {
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          console.log(`⏱️ Background remix feed timeout for ${postId} (attempt ${retryCount + 1})`);
+        } else if (error.message.includes('fetch') || error.message.includes('network')) {
+          console.log(`🌐 Background network error for ${postId} (attempt ${retryCount + 1})`);
+        } else {
+          console.error(`❌ Background fetch error for ${postId}:`, error.message);
+          // Don't retry for non-network errors
+          shouldRetry = false;
+        }
+      } else {
+        console.log(`⚠️ Unknown background error for ${postId} (attempt ${retryCount + 1})`);
+      }
+      
+      // Track failure for circuit breaker (only for retryable errors)
+      if (shouldRetry) {
+        const currentFailure = this.failedPosts.get(postId) || { count: 0, lastFailed: 0 };
+        this.failedPosts.set(postId, {
+          count: currentFailure.count + 1,
+          lastFailed: Date.now()
+        });
+      }
+      
+      // Retry if under max retries and it's a retryable error
+      if (shouldRetry && retryCount < this.MAX_RETRIES) {
         // console.log(`🔄 Retrying ${postId} (${retryCount + 1}/${this.MAX_RETRIES})`);
         
-        // Wait before retry
-        await this.sleep(this.RETRY_DELAY * (retryCount + 1));
+        // Wait before retry with exponential backoff
+        await this.sleep(this.RETRY_DELAY * Math.pow(2, retryCount));
         
         // Re-add to queue with increased retry count
         this.fetchQueue.push({
           ...item,
           retryCount: retryCount + 1,
         });
-      } else {
-        console.error(`❌ Max retries exceeded for ${postId}`);
+      } else if (shouldRetry) {
+        console.log(`⏭️ Max retries exceeded for ${postId} (will use empty/cached)`);
       }
     } finally {
       this.activeFetches.delete(postId);
