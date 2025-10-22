@@ -41,7 +41,23 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     }
   }, [editingFeed, isOpen]);
 
-  const generateId = () => `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now().toString(36)}`;
+  // Use a counter to ensure absolutely unique IDs
+  const idCounterRef = useRef(0);
+  const generateId = () => {
+    idCounterRef.current += 1;
+    let newId;
+    let attempts = 0;
+    
+    do {
+      newId = `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now().toString(36)}_${idCounterRef.current}_${attempts}`;
+      attempts++;
+    } while (
+      (blocks.some(b => b.id === newId) || availableBlocks.some(b => b.id === newId)) && 
+      attempts < 10
+    );
+    
+    return newId;
+  };
 
   const createBlock = useCallback(() => {
     if (!newBlockSearch.trim()) return;
@@ -343,9 +359,9 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
                 Available Blocks (drag to timeline)
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {availableBlocks.map((block) => (
+                {availableBlocks.map((block, index) => (
                   <div
-                    key={block.id}
+                    key={`available-${block.id}-${index}`}
                     draggable
                     onDragStart={() => handleDragStart(block, false)}
                     onDragEnd={handleDragEnd}
@@ -416,7 +432,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
               ) : (
                 <div className="space-y-2">
                   {blocks.map((block, index) => (
-                    <div key={block.id}>
+                    <div key={`${block.id}-${index}`}>
                       {/* Drop zone indicator */}
                       {dragOverIndex === index && draggedBlock && (
                         <div className="h-2 bg-blue-500 rounded-full mb-2 animate-pulse" />
