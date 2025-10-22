@@ -41,20 +41,42 @@ export async function GET(request: NextRequest) {
 
     // Choose search strategy based on fast parameter
     const searchQuery = fast ? `
-      -- Ultra-fast search: minimal query for custom feeds
+      -- Fast random search: sample from matching posts
+      WITH matching_posts AS (
+        SELECT 
+          p.id,
+          p.text,
+          p.posted_at,
+          p.permalink,
+          p.video_url,
+          p.video_url_md,
+          p.thumbnail_url,
+          p.gif_url,
+          p.width,
+          p.height,
+          p.generation_id,
+          p.task_id,
+          p.creator_id,
+          -- Add random seed for each row
+          RANDOM() as rand_seed
+        FROM sora_posts p
+        WHERE p.text ILIKE $1
+        ORDER BY rand_seed
+        LIMIT ($2 * 3)  -- Get 3x more results to ensure variety
+      )
       SELECT 
-        p.id,
-        p.text,
-        p.posted_at,
-        p.permalink,
-        p.video_url,
-        p.video_url_md,
-        p.thumbnail_url,
-        p.gif_url,
-        p.width,
-        p.height,
-        p.generation_id,
-        p.task_id,
+        mp.id,
+        mp.text,
+        mp.posted_at,
+        mp.permalink,
+        mp.video_url,
+        mp.video_url_md,
+        mp.thumbnail_url,
+        mp.gif_url,
+        mp.width,
+        mp.height,
+        mp.generation_id,
+        mp.task_id,
         c.id as creator_id,
         c.username,
         c.display_name,
@@ -66,10 +88,9 @@ export async function GET(request: NextRequest) {
         c.verified,
         1.0 as text_relevance,
         0 as remix_score
-      FROM sora_posts p
-      JOIN creators c ON p.creator_id = c.id
-      WHERE p.text ILIKE $1
-      ORDER BY p.posted_at DESC
+      FROM matching_posts mp
+      JOIN creators c ON mp.creator_id = c.id
+      ORDER BY mp.rand_seed
       LIMIT $2
     ` : `
       -- Advanced search query with multiple matching strategies using normalized schema:

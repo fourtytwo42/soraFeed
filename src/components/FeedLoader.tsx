@@ -40,6 +40,9 @@ export default function FeedLoader() {
   // Block queue for prefetching
   const [blockQueue, setBlockQueue] = useState<Map<number, BlockQueue>>(new Map());
   const prefetchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Track seen videos to avoid repetition
+  const seenVideosRef = useRef<Set<string>>(new Set());
 
   // Favorites management
   const getFavorites = (): SoraFeedItem[] => {
@@ -148,7 +151,9 @@ export default function FeedLoader() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
       
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=8&fast=true`, {
+      // Add timestamp to ensure different results each time
+      const timestamp = Date.now();
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=8&fast=true&t=${timestamp}`, {
         signal: controller.signal
       });
       
@@ -161,10 +166,35 @@ export default function FeedLoader() {
       const data = await response.json();
       const videos = data.items || [];
       
-      // Shuffle for randomness
-      const shuffled = [...videos].sort(() => Math.random() - 0.5);
+      // Filter out already seen videos to reduce repetition
+      const unseenVideos = videos.filter((video: any) => {
+        const videoId = video.post?.id || video.id;
+        return !seenVideosRef.current.has(videoId);
+      });
       
-      console.log(`✅ Prefetched ${shuffled.length} videos for block ${blockIndex}`);
+      // If we filtered out too many, use some seen videos but prefer unseen ones
+      const videosToUse = unseenVideos.length >= 3 ? unseenVideos : videos;
+      
+      // Double shuffle for maximum randomness
+      const shuffled = [...videosToUse]
+        .sort(() => Math.random() - 0.5)  // First shuffle
+        .sort(() => Math.random() - 0.5); // Second shuffle for better distribution
+      
+      // Track these videos as seen
+      shuffled.forEach((video: any) => {
+        const videoId = video.post?.id || video.id;
+        if (videoId) {
+          seenVideosRef.current.add(videoId);
+        }
+      });
+      
+      // Periodically clear seen videos cache to prevent memory bloat
+      if (seenVideosRef.current.size > 200) {
+        console.log('🧹 Clearing seen videos cache (reached 200 videos)');
+        seenVideosRef.current.clear();
+      }
+      
+      console.log(`✅ Prefetched ${shuffled.length} videos for block ${blockIndex} (${unseenVideos.length} new, ${videos.length - unseenVideos.length} seen)`);
       return shuffled;
     } catch (err) {
       console.warn(`⚠️ Failed to prefetch block ${blockIndex}:`, err);
@@ -227,7 +257,7 @@ export default function FeedLoader() {
       const videos = await getBlockVideos(blockIndex, searchQuery);
       
       if (videos.length > 0) {
-        setItems(videos);
+        setItems(videos as SoraFeedItem[]);
         console.log(`✅ Loaded ${videos.length} videos for block ${blockIndex}: "${searchQuery}"`);
       } else {
         console.warn(`⚠️ No videos found for block ${blockIndex}: "${searchQuery}" - this may cause playback issues`);
@@ -364,6 +394,10 @@ export default function FeedLoader() {
 
     // Clear existing queue and start fresh
     setBlockQueue(new Map());
+    
+    // Clear seen videos for fresh randomization
+    seenVideosRef.current.clear();
+    console.log('🧹 Cleared seen videos cache for fresh randomization');
     
     // Load initial search results
     if (feed.blocks[0]) {
