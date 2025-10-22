@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     console.log('🔍 Searching database for:', query);
 
     client = await getClient();
+    console.log('🔗 Database client acquired successfully');
     
     // Enable pg_trgm extension for fuzzy matching if not already enabled
     try {
@@ -163,6 +164,18 @@ export async function GET(request: NextRequest) {
     // Format query parameter based on search type
     const queryParam = fast ? `%${query}%` : query;
     
+    // Quick sanity check - count total posts in database
+    if (fast) {
+      const countResult = await client.query('SELECT COUNT(*) as total FROM sora_posts');
+      const totalPosts = countResult.rows[0]?.total || 0;
+      console.log(`📊 Database has ${totalPosts} total posts`);
+      
+      // Also check how many match our search
+      const matchCountResult = await client.query('SELECT COUNT(*) as matches FROM sora_posts WHERE text ILIKE $1', [queryParam]);
+      const matchCount = matchCountResult.rows[0]?.matches || 0;
+      console.log(`🎯 Found ${matchCount} posts matching "${query}"`);
+    }
+
     // Time the query for performance monitoring
     const queryStart = Date.now();
     const result = await client.query(searchQuery, [queryParam, limit]);

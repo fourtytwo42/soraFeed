@@ -144,9 +144,9 @@ export default function FeedLoader() {
   }, []);
 
   // Prefetch videos for a specific block
-  const prefetchBlockVideos = async (blockIndex: number, searchQuery: string): Promise<SoraFeedItem[]> => {
+  const prefetchBlockVideos = async (blockIndex: number, searchQuery: string, retryCount = 0): Promise<SoraFeedItem[]> => {
     try {
-      console.log(`🔄 Prefetching block ${blockIndex}: "${searchQuery}"`);
+      console.log(`🔄 Prefetching block ${blockIndex}: "${searchQuery}" (attempt ${retryCount + 1})`);
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -166,9 +166,34 @@ export default function FeedLoader() {
       const data = await response.json();
       const videos = data.items || [];
       
+      // If no results and this is the first attempt, retry after a short delay
+      if (videos.length === 0 && retryCount === 0) {
+        console.log(`🔄 No results for "${searchQuery}" on first attempt, retrying in 1s...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return await prefetchBlockVideos(blockIndex, searchQuery, retryCount + 1);
+      }
+      
+      // If still no results after retry, try a broader search
+      if (videos.length === 0 && retryCount === 1) {
+        console.log(`🔄 Still no results for "${searchQuery}", trying broader search...`);
+        const broaderQuery = searchQuery.split(' ')[0]; // Use just the first word
+        if (broaderQuery !== searchQuery) {
+          const broaderResponse = await fetch(`/api/search?q=${encodeURIComponent(broaderQuery)}&limit=8&fast=true&t=${timestamp + 1}`, {
+            signal: controller.signal
+          });
+          if (broaderResponse.ok) {
+            const broaderData = await broaderResponse.json();
+            if (broaderData.items && broaderData.items.length > 0) {
+              console.log(`✅ Found ${broaderData.items.length} results with broader search: "${broaderQuery}"`);
+              videos.push(...broaderData.items);
+            }
+          }
+        }
+      }
+      
       // Filter out already seen videos to reduce repetition
-      const unseenVideos = videos.filter((video: any) => {
-        const videoId = video.post?.id || video.id;
+      const unseenVideos = videos.filter((video: SoraFeedItem) => {
+        const videoId = video.post?.id || video.post.id;
         return !seenVideosRef.current.has(videoId);
       });
       
@@ -181,8 +206,8 @@ export default function FeedLoader() {
         .sort(() => Math.random() - 0.5); // Second shuffle for better distribution
       
       // Track these videos as seen
-      shuffled.forEach((video: any) => {
-        const videoId = video.post?.id || video.id;
+      shuffled.forEach((video: SoraFeedItem) => {
+        const videoId = video.post?.id || video.post.id;
         if (videoId) {
           seenVideosRef.current.add(videoId);
         }
@@ -260,12 +285,15 @@ export default function FeedLoader() {
       
       if (videos.length > 0) {
         setItems(videos as SoraFeedItem[]);
+        setError(null); // Clear any previous errors
         console.log(`✅ Loaded ${videos.length} videos for block ${blockIndex}: "${searchQuery}"`);
       } else {
-        console.warn(`⚠️ No videos found for block ${blockIndex}: "${searchQuery}" - this may cause playback issues`);
-        // Don't set empty array, keep existing videos to prevent black screen
+        console.warn(`⚠️ No videos found for block ${blockIndex}: "${searchQuery}" - keeping existing videos`);
+        // Don't set error immediately, the retry mechanism will handle this
+        // Only set error if we have no videos at all and this is a critical failure
         if (items.length === 0) {
-          setError(`No videos found for "${searchQuery}"`);
+          console.log(`🔄 No existing videos, will retry search for "${searchQuery}"`);
+          // Don't set error yet, let the retry mechanism work
         }
       }
       
