@@ -3,6 +3,7 @@ import { SoraFeedResponse, SoraFeedItem } from '@/types/sora';
 import { getClient } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
+  let client;
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     console.log('🔍 Searching database for:', query);
 
-    const client = await getClient();
+    client = await getClient();
     
     // Enable pg_trgm extension for fuzzy matching if not already enabled
     try {
@@ -203,6 +204,15 @@ export async function GET(request: NextRequest) {
       { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
+  } finally {
+    // Always release the database connection back to the pool
+    if (client && typeof client.release === 'function') {
+      try {
+        client.release();
+      } catch (releaseError) {
+        console.error('Error releasing database connection:', releaseError);
+      }
+    }
   }
 }
 

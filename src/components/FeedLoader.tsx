@@ -221,6 +221,8 @@ export default function FeedLoader() {
       setLoading(true);
       setError(null);
       
+      console.log(`🎬 Loading block ${blockIndex}: "${searchQuery}"`);
+      
       // Get videos from queue or load immediately
       const videos = await getBlockVideos(blockIndex, searchQuery);
       
@@ -228,16 +230,19 @@ export default function FeedLoader() {
         setItems(videos);
         console.log(`✅ Loaded ${videos.length} videos for block ${blockIndex}: "${searchQuery}"`);
       } else {
-        console.warn('⚠️ No videos found for block:', blockIndex, searchQuery);
-        setItems([]);
+        console.warn(`⚠️ No videos found for block ${blockIndex}: "${searchQuery}" - this may cause playback issues`);
+        // Don't set empty array, keep existing videos to prevent black screen
+        if (items.length === 0) {
+          setError(`No videos found for "${searchQuery}"`);
+        }
       }
       
       setCursor(null);
       setHasMore(false);
     } catch (err) {
-      console.error('❌ Custom feed block load error:', err);
+      console.error(`❌ Custom feed block load error for block ${blockIndex}:`, err);
       setError(err instanceof Error ? err.message : 'Failed to load custom feed block');
-      setItems([]);
+      // Don't clear items on error to prevent black screen
     } finally {
       setLoading(false);
     }
@@ -288,15 +293,20 @@ export default function FeedLoader() {
     // Start prefetching for upcoming blocks
     startPrefetching(feed, currentIndex);
 
+    console.log(`⏰ Scheduling next block transition in ${durationMs}ms (${currentBlock.durationSeconds}s)`);
+    
     playbackTimerRef.current = setTimeout(() => {
       const nextIndex = currentIndex + 1;
+      console.log(`🔄 Block ${currentIndex} completed, moving to block ${nextIndex}/${feed.blocks.length}`);
 
       // Check if we should loop or stop
       if (nextIndex >= feed.blocks.length) {
         if (feed.loop) {
+          console.log('🔁 Looping back to start of custom feed');
           // Loop back to start
           startCustomFeedPlayback(feed);
         } else {
+          console.log('🏁 Custom feed completed, stopping playback');
           // End of feed, stop playback
           setCustomFeedPlayback(null);
           setBlockQueue(new Map()); // Clear queue
@@ -304,6 +314,8 @@ export default function FeedLoader() {
       } else {
         // Move to next block
         const nextBlock = feed.blocks[nextIndex];
+        console.log(`▶️ Starting block ${nextIndex}: "${nextBlock.searchQuery}" (${nextBlock.durationSeconds}s)`);
+        
         const newState: CustomFeedPlaybackState = {
           currentBlockIndex: nextIndex,
           blockStartTime: Date.now(),
@@ -321,9 +333,18 @@ export default function FeedLoader() {
   }, [startPrefetching]);
 
   const startCustomFeedPlayback: (feed: CustomFeed) => void = useCallback((feed: CustomFeed) => {
+    console.log(`🎵 Starting custom feed playback: "${feed.name}" (${feed.blocks.length} blocks, loop: ${feed.loop})`);
+    
     // Clear any existing timer
     if (playbackTimerRef.current) {
       clearTimeout(playbackTimerRef.current);
+      console.log('🧹 Cleared existing playback timer');
+    }
+
+    if (!feed.blocks || feed.blocks.length === 0) {
+      console.error('❌ Cannot start playback: feed has no blocks');
+      setError('Custom feed has no blocks');
+      return;
     }
 
     // Initialize playback state
@@ -335,6 +356,8 @@ export default function FeedLoader() {
       currentVideoStartTime: Date.now(),
       currentVideoDuration: 0,
     };
+
+    console.log(`▶️ Starting block 0: "${feed.blocks[0].searchQuery}" (${feed.blocks[0].durationSeconds}s)`);
 
     setCustomFeedPlayback(initialState);
     setSelectedCustomFeed(feed);

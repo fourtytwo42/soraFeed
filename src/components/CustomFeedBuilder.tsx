@@ -41,7 +41,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     }
   }, [editingFeed, isOpen]);
 
-  const generateId = () => `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const generateId = () => `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${performance.now().toString(36)}`;
 
   const createBlock = useCallback(() => {
     if (!newBlockSearch.trim()) return;
