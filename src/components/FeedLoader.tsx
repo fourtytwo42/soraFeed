@@ -139,64 +139,72 @@ export default function FeedLoader() {
   const loadCustomFeedBlock = async (searchQuery: string) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=50`);
+      setError(null);
+      
+      // Use a smaller limit for faster loading and add timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=10&fast=true`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        throw new Error('Failed to search database');
+        throw new Error(`Search failed: ${response.status} ${response.statusText}`);
       }
+      
       const data = await response.json();
       console.log('✅ Loaded', data.items?.length || 0, 'results for custom feed block:', searchQuery);
       
-      // Shuffle results for random playback
-      const shuffled = (data.items || []).sort(() => Math.random() - 0.5);
-      setItems(shuffled);
+      if (data.items && data.items.length > 0) {
+        // Shuffle results for random playback
+        const shuffled = [...data.items].sort(() => Math.random() - 0.5);
+        setItems(shuffled);
+      } else {
+        console.warn('⚠️ No results found for search query:', searchQuery);
+        setItems([]);
+      }
+      
       setCursor(null);
       setHasMore(false);
     } catch (err) {
       console.error('❌ Custom feed block load error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load custom feed block');
+      
+      if (err instanceof Error && err.name === 'AbortError') {
+        setError('Search timeout - please try a different query');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to load custom feed block');
+      }
+      
       setItems([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Smart timing function that considers video duration and rounding
-  const calculateNextTransition = useCallback((blockDurationSeconds: number, videoDurationSeconds: number, elapsedSeconds: number) => {
-    const remainingBlockTime = blockDurationSeconds - elapsedSeconds;
-    
-    // If video is between 10-25 seconds as specified
-    if (videoDurationSeconds >= 10 && videoDurationSeconds <= 25) {
-      // Round video duration to nearest 15 seconds
-      const roundedVideoDuration = Math.round(videoDurationSeconds / 15) * 15;
-      
-      // If rounded duration fits in remaining block time, use it
-      if (roundedVideoDuration <= remainingBlockTime) {
-        return roundedVideoDuration * 1000; // Convert to milliseconds
-      }
-    }
-    
-    // Default: use remaining block time
-    return remainingBlockTime * 1000;
-  }, []);
 
-  const scheduleNextVideoOrBlock = useCallback((feed: CustomFeed, currentIndex: number, startPlayback: (f: CustomFeed) => void) => {
+  const scheduleNextBlock = useCallback((feed: CustomFeed, currentIndex: number) => {
     const currentBlock = feed.blocks[currentIndex];
-    if (!currentBlock || !customFeedPlayback) return;
+    if (!currentBlock) return;
 
-    const elapsedTime = (Date.now() - customFeedPlayback.blockStartTime) / 1000;
-    const remainingBlockTime = currentBlock.durationSeconds - elapsedTime;
+    const durationMs = currentBlock.durationSeconds * 1000;
 
-    // If block time is up, move to next block
-    if (remainingBlockTime <= 0) {
+    playbackTimerRef.current = setTimeout(() => {
       const nextIndex = currentIndex + 1;
 
+      // Check if we should loop or stop
       if (nextIndex >= feed.blocks.length) {
         if (feed.loop) {
-          startPlayback(feed);
+          // Loop back to start
+          startCustomFeedPlayback(feed);
         } else {
+          // End of feed, stop playback
           setCustomFeedPlayback(null);
         }
       } else {
+        // Move to next block
         const nextBlock = feed.blocks[nextIndex];
         const newState: CustomFeedPlaybackState = {
           currentBlockIndex: nextIndex,
@@ -209,23 +217,10 @@ export default function FeedLoader() {
 
         setCustomFeedPlayback(newState);
         loadCustomFeedBlock(nextBlock.searchQuery);
-        scheduleNextVideoOrBlock(feed, nextIndex, startPlayback);
+        scheduleNextBlock(feed, nextIndex);
       }
-      return;
-    }
-
-    // Calculate when to check again (either video end or block end)
-    const checkInterval = Math.min(remainingBlockTime * 1000, 15000); // Check at least every 15 seconds
-
-    playbackTimerRef.current = setTimeout(() => {
-      scheduleNextVideoOrBlock(feed, currentIndex, startPlayback);
-    }, checkInterval);
-  }, [customFeedPlayback, calculateNextTransition]);
-
-  const scheduleNextBlock = useCallback((feed: CustomFeed, currentIndex: number, startPlayback: (f: CustomFeed) => void) => {
-    // Use the new smart scheduling
-    scheduleNextVideoOrBlock(feed, currentIndex, startPlayback);
-  }, [scheduleNextVideoOrBlock]);
+    }, durationMs);
+  }, []);
 
   const startCustomFeedPlayback = useCallback((feed: CustomFeed) => {
     // Clear any existing timer
@@ -251,7 +246,7 @@ export default function FeedLoader() {
       loadCustomFeedBlock(feed.blocks[0].searchQuery);
       
       // Schedule next block transition
-      scheduleNextBlock(feed, 0, startCustomFeedPlayback);
+      scheduleNextBlock(feed, 0);
     }
   }, [scheduleNextBlock]);
 
@@ -267,29 +262,9 @@ export default function FeedLoader() {
         currentVideoStartTime: Date.now(),
       } : null);
     } else if (eventType === 'ended') {
-      // Video ended, decide whether to play another video or move to next block
-      const currentBlock = selectedCustomFeed.blocks[customFeedPlayback.currentBlockIndex];
-      if (!currentBlock) return;
-
-      const elapsedTime = (Date.now() - customFeedPlayback.blockStartTime) / 1000;
-      const remainingBlockTime = currentBlock.durationSeconds - elapsedTime;
-
-      // If there's still significant time left in the block (more than 15 seconds), 
-      // load another video from the same search
-      if (remainingBlockTime > 15) {
-        // Reload the same search to get a new random video
-        loadCustomFeedBlock(currentBlock.searchQuery);
-        
-        // Update the video start time
-        setCustomFeedPlayback(prev => prev ? {
-          ...prev,
-          currentVideoStartTime: Date.now(),
-          currentVideoDuration: 0,
-        } : null);
-      } else {
-        // Close to block end, let the timer handle the transition
-        // The scheduleNextVideoOrBlock will handle the transition
-      }
+      // Video ended - for now, just let the block timer handle transitions
+      // This prevents the infinite loop while still tracking video events
+      console.log('🎬 Custom feed video ended, waiting for block timer');
     }
   }, [feedType, customFeedPlayback, selectedCustomFeed]);
 

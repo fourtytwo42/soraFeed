@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q');
     const limit = parseInt(searchParams.get('limit') || '50');
+    const fast = searchParams.get('fast') === 'true';
 
     if (!query || query.trim().length === 0) {
       return NextResponse.json(
@@ -37,12 +38,44 @@ export async function GET(request: NextRequest) {
       console.log('Trigram index check:', err);
     }
 
-    // Advanced search query with multiple matching strategies using normalized schema:
-    // 1. Full-text search (ts_rank for relevance)
-    // 2. Partial match (ILIKE for case-insensitive substring)
-    // 3. Fuzzy match (similarity for typo tolerance)
-    // Results are weighted by: text relevance + remix count
-    const searchQuery = `
+    // Choose search strategy based on fast parameter
+    const searchQuery = fast ? `
+      -- Fast search: simple ILIKE with index
+      SELECT 
+        p.id,
+        p.text,
+        p.posted_at,
+        p.permalink,
+        p.video_url,
+        p.video_url_md,
+        p.thumbnail_url,
+        p.gif_url,
+        p.width,
+        p.height,
+        p.generation_id,
+        p.task_id,
+        c.id as creator_id,
+        c.username,
+        c.display_name,
+        c.profile_picture_url,
+        c.permalink as creator_permalink,
+        c.follower_count,
+        c.following_count,
+        c.post_count,
+        c.verified,
+        1.0 as text_relevance,
+        0 as remix_score
+      FROM sora_posts p
+      JOIN creators c ON p.creator_id = c.id
+      WHERE LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
+      ORDER BY p.posted_at DESC
+      LIMIT $2
+    ` : `
+      -- Advanced search query with multiple matching strategies using normalized schema:
+      -- 1. Full-text search (ts_rank for relevance)
+      -- 2. Partial match (ILIKE for case-insensitive substring)
+      -- 3. Fuzzy match (similarity for typo tolerance)
+      -- Results are weighted by: text relevance + remix count
       WITH search_results AS (
         SELECT 
           p.id,
