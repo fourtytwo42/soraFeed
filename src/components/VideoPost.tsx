@@ -41,7 +41,7 @@ export default function VideoPost({
   isUpcoming: _isUpcoming, // Keep for interface compatibility but mark as unused
   isTargetVideo: _isTargetVideo, // Keep for interface compatibility but mark as unused
   scrollDirection: _scrollDirection, // Keep for interface compatibility but mark as unused
-  onNext: _onNext, // Keep for interface compatibility but mark as unused
+  onNext, // Keep for auto-scroll functionality
   onAddToFavorites, 
   onRemoveFromFavorites, 
   isInFavorites, 
@@ -65,10 +65,8 @@ export default function VideoPost({
   const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [videoWidth, setVideoWidth] = useState<number | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [leftVideoReady, setLeftVideoReady] = useState(false);
   const [rightVideoReady, setRightVideoReady] = useState(false);
@@ -91,7 +89,7 @@ export default function VideoPost({
   
   // Motion values for both directions
   const x = useMotionValue(0);
-  const _y = useMotionValue(0); // For potential future vertical remix scrolling
+  // const _y = useMotionValue(0); // For potential future vertical remix scrolling
   
   // Video refs - use a Map to track videos by item ID for stable references
   const videoRefsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
@@ -118,7 +116,7 @@ export default function VideoPost({
   
   // Control refs
   const userPausedRef = useRef(false);
-  const _isFirstVideoRef = useRef(true); // Keep for potential future use
+  // const _isFirstVideoRef = useRef(true); // Keep for potential future use
   const hasUserInteractedRef = useRef(false);
   const lastInteractionRef = useRef<number>(Date.now());
   
@@ -211,12 +209,29 @@ export default function VideoPost({
       video.muted = videoElement.shouldMute;
       
       // Control playback
-      if (videoElement.shouldPlay && video.paused) {
-        console.log(`▶️ Playing video at position (${videoElement.position.x}, ${videoElement.position.y})`);
+      if (videoElement.shouldPlay && video.paused && !video.ended) {
+        console.log(`▶️ Playing video at position (${videoElement.position.x}, ${videoElement.position.y})`, {
+          videoId: videoElement.item.post.id,
+          currentTime: video.currentTime,
+          duration: video.duration,
+          ended: video.ended
+        });
         video.play().catch(err => console.log('❌ Play failed:', err));
       } else if (!videoElement.shouldPlay && !video.paused) {
-        console.log(`⏸️ Pausing video at position (${videoElement.position.x}, ${videoElement.position.y})`);
+        console.log(`⏸️ Pausing video at position (${videoElement.position.x}, ${videoElement.position.y})`, {
+          videoId: videoElement.item.post.id,
+          currentTime: video.currentTime,
+          duration: video.duration,
+          ended: video.ended
+        });
         video.pause();
+      } else if (video.ended) {
+        console.log(`🏁 Video ended at position (${videoElement.position.x}, ${videoElement.position.y}) - not restarting`, {
+          videoId: videoElement.item.post.id,
+          currentTime: video.currentTime,
+          duration: video.duration,
+          ended: video.ended
+        });
       }
     });
     
@@ -296,6 +311,12 @@ export default function VideoPost({
   
   // ===== USER INTERACTION HANDLERS =====
   
+  // Interaction tracking
+  const handleInteraction = useCallback(() => {
+    lastInteractionRef.current = Date.now();
+    hasUserInteractedRef.current = true;
+  }, []);
+  
   // Unified click handler
   const handleVideoClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -324,21 +345,15 @@ export default function VideoPost({
     }
     
         handleInteraction();
-  }, [currentRemixIndex, isPlaying]);
+  }, [currentRemixIndex, isPlaying, handleInteraction]);
   
-  // Interaction tracking
-  const handleInteraction = useCallback(() => {
-    lastInteractionRef.current = Date.now();
-    hasUserInteractedRef.current = true;
-  }, []);
-  
-  // Mouse handlers
+  // Mouse handlers - removed unused hover state
   const handleMouseEnter = useCallback(() => {
-    setIsHovering(true);
+    // Hover state removed - not currently used
   }, []);
   
   const handleMouseLeave = useCallback(() => {
-    setIsHovering(false);
+    // Hover state removed - not currently used
   }, []);
   
   // ===== DRAG HANDLERS =====
@@ -629,9 +644,18 @@ export default function VideoPost({
     [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
       const video = ref.current;
       if (video) {
+        console.log('🔄 Resetting video on item change', {
+          videoId: video.src,
+          currentTime: video.currentTime,
+          duration: video.duration,
+          ended: video.ended
+        });
         video.pause();
         video.muted = true;
-        video.currentTime = 0;
+        // Only reset currentTime if video hasn't ended naturally
+        if (!video.ended) {
+          video.currentTime = 0;
+        }
       }
     });
     
@@ -656,9 +680,18 @@ export default function VideoPost({
       [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
         const video = ref.current;
         if (video) {
+          console.log('🧹 Cleaning up video on unmount', {
+            videoId: video.src,
+            currentTime: video.currentTime,
+            duration: video.duration,
+            ended: video.ended
+          });
           video.pause();
           video.muted = true;
-          video.currentTime = 0;
+          // Only reset currentTime if video hasn't ended naturally
+          if (!video.ended) {
+            video.currentTime = 0;
+          }
         }
       });
     };
@@ -671,18 +704,7 @@ export default function VideoPost({
     }
   }, [getCurrentItem, isInFavorites]);
   
-  // Detect mobile
-  useEffect(() => {
-    const checkMobile = () => {
-      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                            (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
-      setIsMobile(isMobileDevice);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  // Mobile detection removed - not currently used
 
   // Controls visibility
   useEffect(() => {
@@ -750,6 +772,26 @@ export default function VideoPost({
     video.muted = !video.muted;
     setIsMuted(video.muted);
   }, []);
+
+  // Handle video end - auto-scroll to next video using existing navigation
+  const handleVideoEnd = useCallback(() => {
+    console.log('🎬 handleVideoEnd called', { 
+      isActive, 
+      hasOnNext: !!onNext, 
+      videoId: item.post.id,
+      currentTime: new Date().toISOString()
+    });
+    
+    if (isActive && onNext) {
+      console.log('🎬 Video ended, auto-scrolling to next video using goToNext()');
+      // Use the same navigation function as keyboard down arrow
+      onNext();
+    } else {
+      console.log('🎬 Video ended but not auto-scrolling', { 
+        reason: !isActive ? 'not active' : 'no onNext handler' 
+      });
+    }
+  }, [isActive, onNext, item.post.id]);
   
   // ===== RENDER =====
   
@@ -808,10 +850,68 @@ export default function VideoPost({
                 }}
                 muted={isMuted}
                 playsInline
-                loop
+                loop={false}
                 onLoadedMetadata={handleVideoMetadata}
-                onCanPlay={(e) => handleVideoCanPlay(e.currentTarget)}
-                onLoadedData={(e) => handleVideoLoad(e.currentTarget)}
+                onCanPlay={(e) => {
+                  console.log('🎬 Video can play', { 
+                    videoId: videoItem.post.id, 
+                    isCenter, 
+                    duration: e.currentTarget.duration,
+                    currentTime: e.currentTarget.currentTime
+                  });
+                  handleVideoCanPlay(e.currentTarget);
+                }}
+                onLoadedData={(e) => {
+                  console.log('🎬 Video loaded data', { 
+                    videoId: videoItem.post.id, 
+                    isCenter,
+                    duration: e.currentTarget.duration
+                  });
+                  handleVideoLoad(e.currentTarget);
+                }}
+                onPlay={(e) => {
+                  console.log('🎬 Video started playing', { 
+                    videoId: videoItem.post.id, 
+                    isCenter,
+                    duration: e.currentTarget.duration,
+                    currentTime: e.currentTarget.currentTime,
+                    ended: e.currentTarget.ended
+                  });
+                }}
+                onPause={(e) => {
+                  console.log('🎬 Video paused', { 
+                    videoId: videoItem.post.id, 
+                    isCenter,
+                    duration: e.currentTarget.duration,
+                    currentTime: e.currentTarget.currentTime
+                  });
+                }}
+                onTimeUpdate={(e) => {
+                  const video = e.currentTarget;
+                  const progress = (video.currentTime / video.duration) * 100;
+                  // Log when video is near the end (last 5%)
+                  if (progress > 95 && progress < 100) {
+                    console.log('🎬 Video near end', { 
+                      videoId: videoItem.post.id, 
+                      progress: progress.toFixed(1) + '%',
+                      currentTime: video.currentTime,
+                      duration: video.duration,
+                      ended: video.ended
+                    });
+                  }
+                }}
+                onEnded={isCenter ? ((e) => {
+                  console.log('🎬 Video onEnded event fired', { 
+                    videoId: videoItem.post.id, 
+                    isCenter,
+                    duration: e.currentTarget.duration,
+                    currentTime: e.currentTarget.currentTime,
+                    ended: e.currentTarget.ended,
+                    paused: e.currentTarget.paused,
+                    readyState: e.currentTarget.readyState
+                  });
+                  handleVideoEnd();
+                }) : undefined}
                 preload="auto"
               >
                 <source src={videoUrl} type="video/mp4" />
@@ -827,9 +927,9 @@ export default function VideoPost({
               opacity: isReady ? 1 : 0,
               transition: 'opacity 0.3s ease-in-out'
             }}
-            loop
             muted
             playsInline
+            loop={false}
             preload="auto"
             onCanPlay={() => {
               if (isLeft) handleLeftVideoCanPlay();
@@ -845,7 +945,7 @@ export default function VideoPost({
     );
   }, [getAllItems, videoWidth, videoReady, leftVideoReady, rightVideoReady, isMuted, 
       getVideoRefForItem, handleVideoMetadata, handleVideoCanPlay, handleVideoLoad, 
-      handleLeftVideoCanPlay, handleRightVideoCanPlay]);
+      handleLeftVideoCanPlay, handleRightVideoCanPlay, handleVideoEnd]);
 
     return (
     <div className="relative w-full h-full bg-black overflow-hidden">

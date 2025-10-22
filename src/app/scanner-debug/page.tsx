@@ -17,6 +17,10 @@ interface ScannerStats {
     scanCountChange: string;
     lastScanDuplicates: number;
     lastScanUnique: number;
+    avgVideosPerSecond: number;
+    avgUniqueVideosPerSecond: number;
+    currentPollInterval: number;
+    pollIntervalChange: string;
   };
   database: {
     totalPosts: number;
@@ -266,6 +270,29 @@ export default function ScannerDebugPage() {
                   <div className="flex justify-between">
                     <span className="text-gray-400">Unique in Scan:</span>
                     <span className="font-mono text-green-400">{stats.scanner.lastScanUnique}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Avg Videos/Second:</span>
+                    <span className="font-mono text-blue-400">{stats.scanner.avgVideosPerSecond.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Avg Unique Videos/Second:</span>
+                    <span className="font-mono text-green-400">{stats.scanner.avgUniqueVideosPerSecond.toFixed(1)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Poll Interval:</span>
+                    <span className="font-mono text-purple-400">
+                      {(stats.scanner.currentPollInterval / 1000).toFixed(1)}s
+                      {stats.scanner.pollIntervalChange && stats.scanner.pollIntervalChange !== '=' && (
+                        <span className={`ml-2 ${
+                          stats.scanner.pollIntervalChange.startsWith('+') ? 'text-red-400' :
+                          stats.scanner.pollIntervalChange.startsWith('-') ? 'text-green-400' :
+                          'text-gray-400'
+                        }`}>
+                          ({stats.scanner.pollIntervalChange})
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">Total Errors:</span>

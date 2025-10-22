@@ -2,6 +2,7 @@ export interface SoraPost {
   id: string;
   text: string | null;
   posted_at: number;
+  updated_at: number;
   posted_to_public: boolean;
   preview_image_url: string | null;
   attachments: SoraAttachment[];

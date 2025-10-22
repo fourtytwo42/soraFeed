@@ -14,6 +14,7 @@ interface VideoCarouselProps {
   onRemoveFromFavorites?: (postId: string) => void;
   isInFavorites?: (postId: string) => boolean;
   onControlsChange?: (showing: boolean) => void;
+  onNext?: () => void;
 }
 
 export default function VideoCarousel({
@@ -23,7 +24,8 @@ export default function VideoCarousel({
   onAddToFavorites,
   onRemoveFromFavorites,
   isInFavorites,
-  onControlsChange
+  onControlsChange,
+  onNext
 }: VideoCarouselProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data in VideoCarousel
@@ -39,10 +41,8 @@ export default function VideoCarousel({
   const [isMuted, setIsMuted] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [videoWidth, setVideoWidth] = useState<number | null>(null);
-  const [isMobile, setIsMobile] = useState(false);
   
   // Remix state
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
@@ -332,17 +332,7 @@ export default function VideoCarousel({
   }, [getCurrentItem, isInFavorites]);
 
   // Detect mobile
-  useEffect(() => {
-    const checkMobile = () => {
-      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
-                            (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
-      setIsMobile(isMobileDevice);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  // Mobile detection removed - not currently used
 
   // Controls visibility
   useEffect(() => {
@@ -439,8 +429,24 @@ export default function VideoCarousel({
               }}
               muted={isMuted || !isActive}
               playsInline
-              loop
               onLoadedMetadata={handleVideoMetadata}
+              onEnded={() => {
+                console.log('🎬 Video ended:', {
+                  postId: videoItem.post.id,
+                  isActive,
+                  hasOnNext: !!onNext,
+                  currentTime: new Date().toISOString()
+                });
+                
+                if (isActive && onNext) {
+                  console.log('🎬 Video ended, auto-progressing to next video');
+                  onNext();
+                } else {
+                  console.log('🎬 Video ended but not auto-progressing:', {
+                    reason: !isActive ? 'not active' : 'no onNext handler'
+                  });
+                }
+              }}
               preload="auto"
             >
               <source src={videoUrl} type="video/mp4" />
@@ -449,7 +455,7 @@ export default function VideoCarousel({
         </div>
       </div>
     );
-  }, [videoWidth, isMuted, isActive, getVideoRef, handleVideoMetadata]);
+  }, [videoWidth, isMuted, isActive, getVideoRef, handleVideoMetadata, onNext]);
 
   const currentItem = getCurrentItem();
   const allItems = getAllItems();
@@ -463,8 +469,8 @@ export default function VideoCarousel({
       <div 
         className="h-full cursor-pointer select-none"
         onClick={handleVideoClick}
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
+        onMouseEnter={() => {}}
+        onMouseLeave={() => {}}
       >
         <div className="h-full" ref={emblaRef}>
           <div className="flex h-full">

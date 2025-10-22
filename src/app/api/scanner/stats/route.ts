@@ -17,14 +17,18 @@ export async function GET() {
       last_scan_count: 0,
       previous_scan_count: 0,
       last_scan_duplicates: 0,
-      last_scan_unique: 0
+      last_scan_unique: 0,
+      avg_videos_per_second: 0,
+      avg_unique_videos_per_second: 0,
+      current_poll_interval: 10000,
+      previous_poll_interval: 10000
     };
 
     // Get current and previous scan counts
     const currentScanCount = stats.last_scan_count || 0;
     const previousScanCount = stats.previous_scan_count || 0;
     
-    // Calculate change
+    // Calculate scan count change
     let scanCountChange = '';
     if (previousScanCount > 0) {
       const change = currentScanCount - previousScanCount;
@@ -34,6 +38,21 @@ export async function GET() {
         scanCountChange = `${change}`;
       } else {
         scanCountChange = '=';
+      }
+    }
+
+    // Calculate interval change
+    const currentInterval = stats.current_poll_interval || 10000;
+    const previousInterval = stats.previous_poll_interval || 10000;
+    let intervalChange = '';
+    if (previousInterval > 0) {
+      const change = currentInterval - previousInterval;
+      if (change > 0) {
+        intervalChange = `+${change}ms`;
+      } else if (change < 0) {
+        intervalChange = `${change}ms`;
+      } else {
+        intervalChange = '=';
       }
     }
 
@@ -151,7 +170,11 @@ export async function GET() {
         lastScanCount: currentScanCount,
         scanCountChange: scanCountChange,
         lastScanDuplicates: stats.last_scan_duplicates || 0,
-        lastScanUnique: stats.last_scan_unique || 0
+        lastScanUnique: stats.last_scan_unique || 0,
+        avgVideosPerSecond: parseFloat(stats.avg_videos_per_second) || 0,
+        avgUniqueVideosPerSecond: parseFloat(stats.avg_unique_videos_per_second) || 0,
+        currentPollInterval: currentInterval,
+        pollIntervalChange: intervalChange
       },
       database: {
         totalPosts,

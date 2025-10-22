@@ -255,6 +255,14 @@ export default function VerticalCarousel({
               onRemoveFromFavorites={onRemoveFromFavorites}
               isInFavorites={isInFavorites}
               onControlsChange={onControlsChange}
+              onNext={() => {
+                console.log('🎬 VideoCarousel requested next video via onNext');
+                if (emblaApi && currentIndex < items.length - 1) {
+                  emblaApi.scrollNext();
+                } else {
+                  console.log('🎬 Cannot go to next video - at end of feed');
+                }
+              }}
             />
           </div>
         ))}

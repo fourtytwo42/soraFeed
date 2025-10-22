@@ -14,10 +14,18 @@ const pool = new Pool({
   connectionTimeoutMillis: 2000,
 });
 
-// Adaptive throttling configuration
-let currentFetchLimit = 200; // Start with 200 (minimum)
-const MIN_FETCH_LIMIT = 200;
-const MAX_FETCH_LIMIT = 1000; // Reasonable upper bound
+// Simplified configuration - fixed batch size, dynamic timing
+const FIXED_FETCH_LIMIT = 200; // Fixed at 200 posts for optimal performance
+const TARGET_OVERLAP_PERCENTAGE = 30; // Target 30% overlap to ensure no missed posts
+const MIN_POLL_INTERVAL = 6000; // 6 seconds minimum
+const MAX_POLL_INTERVAL = 30000; // 30 seconds maximum
+const BASE_POLL_INTERVAL = 10000; // 10 seconds starting point
+const TIMING_INCREMENT = 100; // 100ms increments for granular timing
+
+// Performance tracking for overlap-based timing
+let scanPerformanceHistory = [];
+const MAX_PERFORMANCE_HISTORY = 6; // Track last 6 polling events for videos/second
+let lastScanPostIds = new Set(); // Track post IDs from last scan for overlap detection
 
 // Scan lock to prevent overlapping scans
 let isScanning = false;
@@ -25,7 +33,7 @@ const MAX_SCAN_DURATION = 300000; // 5 minutes maximum scan duration
 
 // Rate limiting
 let consecutiveErrors = 0;
-let scanInterval = 10000; // Start with 10 seconds
+let scanInterval = BASE_POLL_INTERVAL; // Start with 10 seconds
 
 // Cookie management
 let lastCookieRefresh = Date.now();
@@ -34,24 +42,80 @@ const COOKIE_REFRESH_INTERVAL = 12 * 60 * 60 * 1000; // 12 hours
 // Track previous scan count for change calculation
 let previousScanCount = 0;
 
-// Adaptive throttling logic
-function adjustFetchLimit(duplicates) {
-  const previousLimit = currentFetchLimit;
+// Simple overlap-based timing adjustment with granular precision
+function calculateOptimalPollInterval(overlapPercentage) {
+  const currentInterval = scanInterval;
+  let newInterval = currentInterval;
+  let reasoning = '';
   
-  if (duplicates < 50) {
-    // Low duplicates = increase fetch size for efficiency
-    currentFetchLimit = Math.min(currentFetchLimit + 50, MAX_FETCH_LIMIT);
-  } else if (duplicates > 100) {
-    // High duplicates = decrease fetch size to reduce waste
-    currentFetchLimit = Math.max(currentFetchLimit - 20, MIN_FETCH_LIMIT);
+  if (overlapPercentage < TARGET_OVERLAP_PERCENTAGE - 5) {
+    // Too little overlap - risk missing posts, poll more frequently
+    // Use smaller adjustments for more precision
+    newInterval = Math.max(MIN_POLL_INTERVAL, currentInterval - 500); // Reduce by 500ms
+    reasoning = `low overlap (${overlapPercentage.toFixed(1)}% < ${TARGET_OVERLAP_PERCENTAGE}%)`;
+  } else if (overlapPercentage > TARGET_OVERLAP_PERCENTAGE + 10) {
+    // Too much overlap - inefficient, poll less frequently
+    newInterval = Math.min(MAX_POLL_INTERVAL, currentInterval + 1000); // Increase by 1s
+    reasoning = `high overlap (${overlapPercentage.toFixed(1)}% > ${TARGET_OVERLAP_PERCENTAGE}%)`;
   }
-  // If duplicates are between 50-100, keep current limit (optimal range)
   
-  if (currentFetchLimit !== previousLimit) {
-    console.log(`🎯 Adaptive throttling: ${duplicates} duplicates → limit ${previousLimit} → ${currentFetchLimit}`);
+  // Round to nearest 100ms for granular intervals
+  newInterval = Math.round(newInterval / TIMING_INCREMENT) * TIMING_INCREMENT;
+  
+  if (newInterval !== currentInterval && reasoning) {
+    console.log(`⏰ Timing adjustment: ${reasoning} → interval ${(currentInterval/1000).toFixed(1)}s → ${(newInterval/1000).toFixed(1)}s`);
   }
   
-  return currentFetchLimit;
+  return newInterval;
+}
+
+// Calculate overlap percentage with previous scan
+function calculateOverlapPercentage(currentPostIds) {
+  if (lastScanPostIds.size === 0) {
+    return 0; // First scan, no overlap possible
+  }
+  
+  const intersection = new Set([...currentPostIds].filter(id => lastScanPostIds.has(id)));
+  const overlapCount = intersection.size;
+  const overlapPercentage = (overlapCount / currentPostIds.size) * 100;
+  
+  return overlapPercentage;
+}
+
+// Update performance history for videos/second tracking
+function updatePerformanceHistory(metrics) {
+  const uniqueVideosPerSecond = metrics.newPosts / (metrics.duration / 1000);
+  
+  scanPerformanceHistory.push({
+    timestamp: metrics.timestamp,
+    videosPerSecond: metrics.postsPerSecond, // Total posts (including duplicates)
+    uniqueVideosPerSecond: uniqueVideosPerSecond, // Only new/unique posts
+    duration: metrics.duration,
+    totalPosts: metrics.totalPosts,
+    newPosts: metrics.newPosts,
+    duplicates: metrics.duplicates,
+    overlapPercentage: metrics.overlapPercentage
+  });
+  
+  if (scanPerformanceHistory.length > MAX_PERFORMANCE_HISTORY) {
+    scanPerformanceHistory.shift(); // Keep only last 6 polling events
+  }
+}
+
+// Calculate average videos per second over recent polling events
+function getAverageVideosPerSecond() {
+  if (scanPerformanceHistory.length === 0) return 0;
+  
+  const totalVideosPerSecond = scanPerformanceHistory.reduce((sum, h) => sum + h.videosPerSecond, 0);
+  return totalVideosPerSecond / scanPerformanceHistory.length;
+}
+
+// Calculate average unique videos per second over recent polling events
+function getAverageUniqueVideosPerSecond() {
+  if (scanPerformanceHistory.length === 0) return 0;
+  
+  const totalUniqueVideosPerSecond = scanPerformanceHistory.reduce((sum, h) => sum + h.uniqueVideosPerSecond, 0);
+  return totalUniqueVideosPerSecond / scanPerformanceHistory.length;
 }
 
 // Check if cookies need refresh
@@ -75,7 +139,7 @@ async function refreshCookies() {
 }
 
 // Fetch feed from Sora API with dynamic limit
-async function fetchSoraFeed(limit = currentFetchLimit) {
+async function fetchSoraFeed(limit = FIXED_FETCH_LIMIT) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'sora.chatgpt.com',
@@ -107,6 +171,13 @@ async function fetchSoraFeed(limit = currentFetchLimit) {
       res.on('end', () => {
         try {
           const jsonData = JSON.parse(data);
+          
+          // Debug logging for API response
+          console.log(`🔍 API Response Debug:`);
+          console.log(`   - Items count: ${jsonData.items?.length || 0}`);
+          console.log(`   - Has cursor: ${!!jsonData.cursor}`);
+          console.log(`   - Response keys: ${Object.keys(jsonData).join(', ')}`);
+          
           resolve(jsonData);
         } catch (error) {
           reject(new Error(`JSON parse error: ${error.message}`));
@@ -135,43 +206,51 @@ async function fetchSoraFeed(limit = currentFetchLimit) {
   });
 }
 
-// Fetch feed with minimum guarantee of 200 posts
-async function fetchSoraFeedWithMinimum(limit = currentFetchLimit) {
-  const minPosts = 200;
+// Fetch feed with retry logic (fixed at 200 posts)
+async function fetchSoraFeedWithRetry(limit = FIXED_FETCH_LIMIT) {
   let attempts = 0;
   const maxAttempts = 3;
   
   while (attempts < maxAttempts) {
-    const feedData = await fetchSoraFeed(limit);
-    const postCount = feedData.items?.length || 0;
-    
-    if (postCount >= minPosts) {
-      if (attempts > 0) {
-        console.log(`✅ Successfully fetched ${postCount} posts with limit ${limit}`);
+    try {
+      const feedData = await fetchSoraFeed(limit);
+      const postCount = feedData.items?.length || 0;
+      
+      if (postCount > 0) {
+        if (attempts > 0) {
+          console.log(`✅ Successfully fetched ${postCount} posts with limit ${limit}`);
+        }
+        return feedData;
       }
-      return feedData;
-    }
-    
-    attempts++;
-    
-    if (attempts === 1) {
-      console.log(`📊 Got ${postCount} posts on first try (requested ${limit})`);
-      console.log(`🔄 Checking if more posts available with higher limit...`);
-    } else {
-      console.log(`⚠️  Only got ${postCount} posts (need ${minPosts}), attempt ${attempts}/${maxAttempts}`);
-    }
-    
-    if (attempts < maxAttempts) {
-      // Increase limit for next attempt
-      limit = Math.max(limit + 50, minPosts);
-      console.log(`🔄 Retrying with limit ${limit}...`);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+      
+      attempts++;
+      
+      if (attempts === 1) {
+        console.log(`📊 Got ${postCount} posts on first try (requested ${limit})`);
+        console.log(`🔄 Retrying with higher limit...`);
+      } else {
+        console.log(`⚠️  Got ${postCount} posts, attempt ${attempts}/${maxAttempts}`);
+      }
+      
+      if (attempts < maxAttempts) {
+        // Increase limit for next attempt
+        limit = limit + 50;
+        console.log(`🔄 Retrying with limit ${limit}...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+      }
+    } catch (error) {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        throw error;
+      }
+      console.log(`⚠️  Fetch error on attempt ${attempts}/${maxAttempts}: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds on error
     }
   }
   
-  // If we still don't have enough posts after all attempts, return what we have
-  console.log(`⚠️  Could not get minimum ${minPosts} posts after ${maxAttempts} attempts`);
-  return await fetchSoraFeed(limit);
+  // If we still don't have any posts after all attempts, try one more time with original limit
+  console.log(`⚠️  Retrying with original limit ${FIXED_FETCH_LIMIT} as final attempt...`);
+  return await fetchSoraFeed(FIXED_FETCH_LIMIT);
 }
 
 // Initialize database tables
@@ -201,10 +280,16 @@ async function initDatabase() {
         post_count INTEGER DEFAULT 0,
         verified BOOLEAN DEFAULT false,
         first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(username)
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    
+    // Remove the username unique constraint if it exists (causes conflicts)
+    try {
+      await client.query(`ALTER TABLE creators DROP CONSTRAINT IF EXISTS creators_username_key`);
+    } catch (error) {
+      // Constraint might not exist, ignore error
+    }
 
     // Create posts table (normalized schema)
     await client.query(`
@@ -290,16 +375,42 @@ async function initDatabase() {
         last_scan_count INTEGER DEFAULT 0,
         previous_scan_count INTEGER DEFAULT 0,
         last_scan_duplicates INTEGER DEFAULT 0,
-        last_scan_unique INTEGER DEFAULT 0
+        last_scan_unique INTEGER DEFAULT 0,
+        avg_videos_per_second DECIMAL(10,2) DEFAULT 0,
+        avg_unique_videos_per_second DECIMAL(10,2) DEFAULT 0,
+        current_poll_interval INTEGER DEFAULT 10000,
+        previous_poll_interval INTEGER DEFAULT 10000
       );
     `);
+    
+    // Add new columns if they don't exist (for existing databases)
+    try {
+      await client.query(`
+        ALTER TABLE scanner_stats 
+        ADD COLUMN IF NOT EXISTS avg_videos_per_second DECIMAL(10,2) DEFAULT 0
+      `);
+      await client.query(`
+        ALTER TABLE scanner_stats 
+        ADD COLUMN IF NOT EXISTS avg_unique_videos_per_second DECIMAL(10,2) DEFAULT 0
+      `);
+      await client.query(`
+        ALTER TABLE scanner_stats 
+        ADD COLUMN IF NOT EXISTS current_poll_interval INTEGER DEFAULT 10000
+      `);
+      await client.query(`
+        ALTER TABLE scanner_stats 
+        ADD COLUMN IF NOT EXISTS previous_poll_interval INTEGER DEFAULT 10000
+      `);
+    } catch (error) {
+      // Columns might already exist, ignore error
+    }
 
     // Initialize scanner_stats if empty
     const statsCheck = await client.query('SELECT COUNT(*) FROM scanner_stats');
     if (parseInt(statsCheck.rows[0].count) === 0) {
       await client.query(`
-        INSERT INTO scanner_stats (total_scanned, new_posts, duplicate_posts, errors, status)
-        VALUES (0, 0, 0, 0, 'idle')
+        INSERT INTO scanner_stats (total_scanned, new_posts, duplicate_posts, errors, status, avg_videos_per_second, avg_unique_videos_per_second, current_poll_interval, previous_poll_interval)
+        VALUES (0, 0, 0, 0, 'idle', 0, 0, 10000, 10000)
       `);
     }
 
@@ -350,8 +461,8 @@ async function processPosts(feedData) {
           permalink, follower_count, following_count,
           post_count, verified
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (username) DO UPDATE SET
-          id = EXCLUDED.id,
+        ON CONFLICT (id) DO UPDATE SET
+          username = EXCLUDED.username,
           display_name = EXCLUDED.display_name,
           profile_picture_url = EXCLUDED.profile_picture_url,
           permalink = EXCLUDED.permalink,
@@ -410,11 +521,12 @@ async function processPosts(feedData) {
 }
 
 // Update scanner statistics
-async function updateStats(stats, duration, error = null, scanCount = 0, scanDuplicates = 0, scanUnique = 0) {
+async function updateStats(stats, duration, error = null, scanCount = 0, scanDuplicates = 0, scanUnique = 0, avgVideosPerSecond = 0, avgUniqueVideosPerSecond = 0, currentInterval = 10000) {
   try {
-    // First, get the current last_scan_count to store as previous
-    const currentStats = await pool.query('SELECT last_scan_count FROM scanner_stats WHERE id = 1');
+    // First, get the current stats to store as previous
+    const currentStats = await pool.query('SELECT last_scan_count, current_poll_interval FROM scanner_stats WHERE id = 1');
     const previousScanCount = currentStats.rows[0]?.last_scan_count || 0;
+    const previousInterval = currentStats.rows[0]?.current_poll_interval || 10000;
     
     await pool.query(`
       UPDATE scanner_stats
@@ -430,7 +542,11 @@ async function updateStats(stats, duration, error = null, scanCount = 0, scanDup
         previous_scan_count = $8,
         last_scan_count = $9,
         last_scan_duplicates = $10,
-        last_scan_unique = $11
+        last_scan_unique = $11,
+        avg_videos_per_second = $12,
+        avg_unique_videos_per_second = $13,
+        previous_poll_interval = $14,
+        current_poll_interval = $15
       WHERE id = 1
     `, [
       stats.total || 0,
@@ -443,7 +559,11 @@ async function updateStats(stats, duration, error = null, scanCount = 0, scanDup
       previousScanCount,
       scanCount,
       scanDuplicates,
-      scanUnique
+      scanUnique,
+      avgVideosPerSecond,
+      avgUniqueVideosPerSecond,
+      previousInterval,
+      currentInterval
     ]);
   } catch (err) {
     console.error('Failed to update stats:', err);
@@ -454,14 +574,14 @@ async function updateStats(stats, duration, error = null, scanCount = 0, scanDup
 async function scanFeed() {
   // Check if already scanning to prevent overlaps
   if (isScanning) {
-    console.log(`⏸️  [${new Date().toISOString()}] Scan already in progress, skipping... (current limit: ${currentFetchLimit})`);
+    console.log(`⏸️  [${new Date().toISOString()}] Scan already in progress, skipping... (limit: ${FIXED_FETCH_LIMIT})`);
     return;
   }
 
   // Set scan lock
   isScanning = true;
   const startTime = Date.now();
-  console.log(`\n🔍 [${new Date().toISOString()}] Starting scan (limit: ${currentFetchLimit})...`);
+  console.log(`\n🔍 [${new Date().toISOString()}] Starting scan (limit: ${FIXED_FETCH_LIMIT})...`);
 
   // Set timeout to prevent stuck locks
   const scanTimeout = setTimeout(() => {
@@ -481,14 +601,45 @@ async function scanFeed() {
     // Update status to scanning
     await pool.query(`UPDATE scanner_stats SET status = 'scanning' WHERE id = 1`);
 
-    // Fetch feed with current limit (guaranteed minimum 200 posts)
-    const feedData = await fetchSoraFeedWithMinimum(currentFetchLimit);
-    console.log(`📥 Fetched ${feedData.items?.length || 0} posts from API`);
+    // Fetch feed with fixed limit (200 posts)
+    const feedData = await fetchSoraFeedWithRetry(FIXED_FETCH_LIMIT);
+    const actualCount = feedData.items?.length || 0;
+    console.log(`📥 Fetched ${actualCount} posts from API (requested ${FIXED_FETCH_LIMIT})`);
+    
+    // Debug: Check if there's a cursor or other pagination info
+    if (feedData.cursor) {
+      console.log(`🔍 API cursor present: ${feedData.cursor.substring(0, 20)}...`);
+    }
+    if (actualCount < FIXED_FETCH_LIMIT) {
+      console.log(`⚠️  Received ${FIXED_FETCH_LIMIT - actualCount} fewer posts than requested`);
+    }
 
-    // Process posts
+    // Process posts and collect metrics
     const result = await processPosts(feedData);
     const duration = Date.now() - startTime;
     const currentScanCount = feedData.items?.length || 0;
+    
+    // Extract post IDs for overlap calculation
+    const currentPostIds = new Set(feedData.items?.map(item => item.post.id) || []);
+    const overlapPercentage = calculateOverlapPercentage(currentPostIds);
+    
+    // Calculate performance metrics
+    const postsPerSecond = currentScanCount / (duration / 1000);
+    const scanMetrics = {
+      duration,
+      totalPosts: currentScanCount,
+      newPosts: result.newPosts,
+      duplicates: result.duplicates,
+      overlapPercentage,
+      postsPerSecond,
+      timestamp: Date.now()
+    };
+    
+    // Update performance history
+    updatePerformanceHistory(scanMetrics);
+    
+    // Update post IDs for next overlap calculation
+    lastScanPostIds = currentPostIds;
     
     // Calculate change from previous scan
     let changeText = '';
@@ -510,24 +661,34 @@ async function scanFeed() {
     console.log(`   - Posts scanned: ${currentScanCount}${changeText}`);
     console.log(`   - New posts: ${result.newPosts}`);
     console.log(`   - Duplicates: ${result.duplicates}`);
-    console.log(`   - Total: ${result.total}`);
-    console.log(`   - Duration: ${duration}ms`);
+    console.log(`   - Overlap: ${overlapPercentage.toFixed(1)}%`);
+    console.log(`   - Speed: ${postsPerSecond.toFixed(1)} videos/sec`);
+    console.log(`   - Duration: ${(duration/1000).toFixed(1)}s`);
+    
+    // Show average videos/second over recent polling events
+    const avgVideosPerSecond = getAverageVideosPerSecond();
+    const avgUniqueVideosPerSecond = getAverageUniqueVideosPerSecond();
+    if (scanPerformanceHistory.length >= 2) {
+      console.log(`📊 Avg videos/sec (last ${scanPerformanceHistory.length} polls): ${avgVideosPerSecond.toFixed(1)} total, ${avgUniqueVideosPerSecond.toFixed(1)} unique`);
+    }
 
-    // Apply adaptive throttling based on duplicate count
-    const newLimit = adjustFetchLimit(result.duplicates);
+    // Simple overlap-based timing adjustment
+    const newInterval = calculateOptimalPollInterval(overlapPercentage);
+    if (newInterval !== scanInterval) {
+      scanInterval = newInterval;
+    }
     
     // Update statistics
     await updateStats({
       total: result.total,
       newPosts: result.newPosts,
       duplicates: result.duplicates
-    }, duration, null, currentScanCount, result.duplicates, result.newPosts);
+    }, duration, null, currentScanCount, result.duplicates, result.newPosts, avgVideosPerSecond, avgUniqueVideosPerSecond, scanInterval);
 
     // Reset consecutive errors on successful scan
     if (consecutiveErrors > 0) {
       console.log(`✅ Scan successful, resetting error counter (was ${consecutiveErrors})`);
       consecutiveErrors = 0;
-      scanInterval = 10000; // Reset to 10 seconds
     }
 
   } catch (error) {
@@ -547,19 +708,17 @@ async function scanFeed() {
       const refreshSuccess = await refreshCookies();
       if (refreshSuccess) {
         consecutiveErrors = 0; // Reset on successful refresh
-        currentFetchLimit = 200; // Reset to minimum limit
-        scanInterval = 10000; // Reset to minimum interval
-        console.log('✅ Cookie refresh successful, resetting error counter and limits');
+        scanInterval = BASE_POLL_INTERVAL; // Reset to base interval
+        console.log('✅ Cookie refresh successful, resetting error counter and interval');
       }
     }
     
     // If we have too many consecutive errors, reset everything
     if (consecutiveErrors >= 10) {
       console.log('🔄 Too many consecutive errors, resetting scanner state...');
-      currentFetchLimit = 200; // Reset to minimum
-      scanInterval = 30000; // Increase interval to 30 seconds
+      scanInterval = MAX_POLL_INTERVAL; // Increase interval to maximum
       consecutiveErrors = 0; // Reset error counter
-      console.log('🔄 Scanner state reset - limit: 200, interval: 30s');
+      console.log('🔄 Scanner state reset - interval: 30s');
     }
     
     // Increment consecutive errors and adjust rate limiting

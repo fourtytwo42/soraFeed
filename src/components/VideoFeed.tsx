@@ -377,7 +377,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
           const isTargetVideo = targetIndex === index;
           
           // Always show current video and adjacent videos (±1) for smooth transitions
-          const isVisible = Math.abs(offset) <= 1; // Used for potential future optimizations
+          // const isVisible = Math.abs(offset) <= 1; // Used for potential future optimizations
           
           // Simple z-index: current video on top, adjacent videos below
           let zIndex = 10;
