@@ -237,8 +237,10 @@ export default function FeedLoader() {
     const queued = blockQueue.get(blockIndex);
     
     if (queued && !queued.isLoading && queued.videos.length > 0) {
-      console.log(`📦 Using prefetched videos for block ${blockIndex} (${queued.videos.length} videos)`);
-      return queued.videos;
+      const cacheAge = Date.now() - queued.loadedAt;
+      const isLoop = blockIndex === 0 && customFeedPlayback && customFeedPlayback.currentBlockIndex > 0;
+      console.log(`📦 Using ${isLoop ? 'loop-preloaded' : 'prefetched'} videos for block ${blockIndex} (${queued.videos.length} videos, cached ${Math.round(cacheAge/1000)}s ago)`);
+      return queued.videos as SoraFeedItem[];
     }
     
     // Fallback to immediate load
@@ -304,11 +306,21 @@ export default function FeedLoader() {
         }
       }
 
-      // If looping, also prefetch first few blocks when near the end
-      if (feed.loop && currentIndex >= feed.blocks.length - 2) {
-        for (let i = 0; i < Math.min(2, feed.blocks.length); i++) {
-          const loopBlock = feed.blocks[i];
-          queueBlock(i, loopBlock.searchQuery);
+      // If looping, prefetch beginning blocks when approaching the end
+      if (feed.loop) {
+        const blocksFromEnd = feed.blocks.length - currentIndex;
+        
+        // Start preloading loop content when we're 3 blocks from the end
+        if (blocksFromEnd <= 3) {
+          console.log(`🔄 Preloading loop content (${blocksFromEnd} blocks from end)`);
+          
+          // Preload first few blocks for seamless loop transition
+          const loopBlocksToPreload = Math.min(3, feed.blocks.length);
+          for (let i = 0; i < loopBlocksToPreload; i++) {
+            const loopBlock = feed.blocks[i];
+            queueBlock(i, loopBlock.searchQuery);
+            console.log(`📦 Preloading loop block ${i}: "${loopBlock.searchQuery}"`);
+          }
         }
       }
     }, prefetchDelay);
@@ -332,9 +344,28 @@ export default function FeedLoader() {
       // Check if we should loop or stop
       if (nextIndex >= feed.blocks.length) {
         if (feed.loop) {
-          console.log('🔁 Looping back to start of custom feed');
-          // Loop back to start
-          startCustomFeedPlayback(feed);
+          console.log('🔁 Seamless loop transition to block 0');
+          
+          // Seamless loop transition - use preloaded content
+          const firstBlock = feed.blocks[0];
+          const loopState: CustomFeedPlaybackState = {
+            currentBlockIndex: 0,
+            blockStartTime: Date.now(),
+            currentSearchQuery: firstBlock.searchQuery,
+            blockElapsedTime: 0,
+            currentVideoStartTime: Date.now(),
+            currentVideoDuration: 0,
+          };
+
+          setCustomFeedPlayback(loopState);
+          
+          // Use preloaded content if available, otherwise load immediately
+          loadCustomFeedBlock(0, firstBlock.searchQuery);
+          
+          // Continue the prefetch cycle
+          scheduleNextBlock(feed, 0);
+          
+          // Note: Don't clear seen videos cache on loop to maintain variety across loops
         } else {
           console.log('🏁 Custom feed completed, stopping playback');
           // End of feed, stop playback
@@ -748,6 +779,9 @@ export default function FeedLoader() {
                 <div className="w-px h-4 bg-white/30" />
                 <span className="text-xs opacity-75">
                   📦 {Array.from(blockQueue.values()).filter(b => !b.isLoading && b.videos.length > 0).length} ready
+                  {selectedCustomFeed?.loop && blockQueue.has(0) && customFeedPlayback && customFeedPlayback.currentBlockIndex > 0 && (
+                    <span className="text-green-400"> • Loop ready</span>
+                  )}
                 </span>
               </>
             )}
