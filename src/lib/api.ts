@@ -96,17 +96,34 @@ export async function fetchRemixFeed(postId: string, limit: number = 20, cursor?
     params.append('cursor', cursor);
   }
   
-  const response = await fetch(`/api/post/${postId}/remix_feed?${params.toString()}`, {
-    cache: 'no-store',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
+  // Add timeout to prevent hanging requests
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+  
+  try {
+    const response = await fetch(`/api/post/${postId}/remix_feed?${params.toString()}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Failed to fetch remix feed: ${response.status}`);
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Failed to fetch remix feed: ${response.status}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Remix feed request timeout');
+    }
+    
+    throw error;
   }
-
-  return response.json();
 }

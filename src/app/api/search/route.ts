@@ -174,8 +174,8 @@ export async function GET(request: NextRequest) {
       }
     }));
 
-    console.log(`✅ Found ${items.length} results for query: "${query}"`);
-    if (result.rows.length > 0) {
+    console.log(`✅ Found ${items.length} results for query: "${query}" (fast=${fast})`);
+    if (result.rows.length > 0 && !fast) {
       console.log(`📊 Top result: text_relevance=${result.rows[0].text_relevance?.toFixed(3)}, remix_score=${result.rows[0].remix_score?.toFixed(3)}`);
     }
 

@@ -52,14 +52,20 @@ class RemixCacheManager {
       
       return remixes;
     } catch (error) {
-      console.error('❌ Failed to fetch remix feed:', postId, error);
+      // Only log errors that aren't network timeouts or fetch failures
+      if (error instanceof Error && !error.message.includes('fetch')) {
+        console.error('❌ Failed to fetch remix feed:', postId, error);
+      } else {
+        console.log('⚠️ Network error fetching remix feed:', postId, '(using cache/empty)');
+      }
       
       // Return expired cache if available
       if (cached) {
-        console.log('⚠️ Returning expired cache for:', postId);
+        console.log('📦 Using cached remix feed for:', postId);
         return cached.data;
       }
       
+      // Return empty array as fallback
       return [];
     }
   }
