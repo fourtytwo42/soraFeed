@@ -15,6 +15,7 @@ interface VideoCarouselProps {
   isInFavorites?: (postId: string) => boolean;
   onControlsChange?: (showing: boolean) => void;
   onNext?: () => void;
+  onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
 }
 
 export default function VideoCarousel({
@@ -25,7 +26,8 @@ export default function VideoCarousel({
   onRemoveFromFavorites,
   isInFavorites,
   onControlsChange,
-  onNext
+  onNext,
+  onCustomFeedVideoEvent
 }: VideoCarouselProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data in VideoCarousel
@@ -429,7 +431,14 @@ export default function VideoCarousel({
               }}
               muted={isMuted || !isActive}
               playsInline
-              onLoadedMetadata={handleVideoMetadata}
+              onLoadedMetadata={(e) => {
+                handleVideoMetadata(e);
+                // Call custom feed event handler if provided
+                if (onCustomFeedVideoEvent) {
+                  const video = e.currentTarget;
+                  onCustomFeedVideoEvent('loadedmetadata', video.duration);
+                }
+              }}
               onEnded={() => {
                 console.log('🎬 Video ended:', {
                   postId: videoItem.post.id,
@@ -437,6 +446,11 @@ export default function VideoCarousel({
                   hasOnNext: !!onNext,
                   currentTime: new Date().toISOString()
                 });
+                
+                // Call custom feed event handler if provided
+                if (onCustomFeedVideoEvent) {
+                  onCustomFeedVideoEvent('ended');
+                }
                 
                 if (isActive && onNext) {
                   console.log('🎬 Video ended, auto-progressing to next video');
@@ -481,15 +495,15 @@ export default function VideoCarousel({
       
       {/* Controls Overlay */}
       <>
-        {/* Play/Pause Button - Upper Left Corner - Always Visible */}
+        {/* Play/Pause Button - Upper Left Corner - Controlled by showControls */}
         <div 
           className="absolute top-4 z-30"
           style={{ 
             left: videoWidth ? `calc(50% - ${videoWidth/2}px + 1rem)` : '1rem',
-            opacity: 1,
-            transform: 'translateX(0)',
+            opacity: showControls ? 1 : 0,
+            transform: showControls ? 'translateX(0)' : 'translateX(-20px)',
             transition: 'opacity 0.3s ease, transform 0.3s ease',
-            pointerEvents: 'auto'
+            pointerEvents: showControls ? 'auto' : 'none'
           }}
         >
             <div className="flex flex-col gap-2">
@@ -588,16 +602,16 @@ export default function VideoCarousel({
         )}
       </div>
       
-      {/* Remix Navigation - positioned at very bottom center of video - Always Visible */}
+      {/* Remix Navigation - positioned at very bottom center of video - Controlled by showControls */}
       {hasRemixes && (
         <div 
           className="absolute bottom-4 z-40"
           style={{ 
             left: '50%',
-            transform: 'translateX(-50%) translateY(0)',
-            opacity: 1,
+            transform: showControls ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(20px)',
+            opacity: showControls ? 1 : 0,
             transition: 'opacity 0.3s ease, transform 0.3s ease',
-            pointerEvents: 'auto'
+            pointerEvents: showControls ? 'auto' : 'none'
           }}
         >
           <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2">

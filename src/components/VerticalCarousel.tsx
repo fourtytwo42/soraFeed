@@ -15,6 +15,7 @@ interface VerticalCarouselProps {
   onRemoveFromFavorites?: (postId: string) => void;
   isInFavorites?: (postId: string) => boolean;
   onControlsChange?: (showing: boolean) => void;
+  onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
 }
 
 export default function VerticalCarousel({
@@ -25,7 +26,8 @@ export default function VerticalCarousel({
   onAddToFavorites,
   onRemoveFromFavorites,
   isInFavorites,
-  onControlsChange
+  onControlsChange,
+  onCustomFeedVideoEvent
 }: VerticalCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const wheelAccumulator = useRef(0);
@@ -255,6 +257,7 @@ export default function VerticalCarousel({
               onRemoveFromFavorites={onRemoveFromFavorites}
               isInFavorites={isInFavorites}
               onControlsChange={onControlsChange}
+              onCustomFeedVideoEvent={onCustomFeedVideoEvent}
               onNext={() => {
                 console.log('🎬 VideoCarousel requested next video via onNext');
                 if (emblaApi && currentIndex < items.length - 1) {

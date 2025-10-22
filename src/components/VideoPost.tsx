@@ -967,15 +967,18 @@ export default function VideoPost({
       {/* Controls Overlay */}
       {videoReady && (
         <>
-          {/* Play/Pause Button - Upper Left Corner - Always Visible */}
+          {/* Play/Pause Button - Upper Left Corner - Controlled by showControls */}
           {videoReady && (
             <motion.div
               initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
+              animate={{ 
+                opacity: showControls ? 1 : 0,
+                x: showControls ? 0 : -20
+              }}
               className="absolute top-4 z-30"
               style={{ 
                 left: videoWidth ? `calc(50% - ${videoWidth/2}px + 1rem)` : '1rem',
-                pointerEvents: 'auto'
+                pointerEvents: showControls ? 'auto' : 'none'
               }}
             >
               <div className="flex flex-col gap-2">
@@ -1080,19 +1083,19 @@ export default function VideoPost({
         </motion.div>
       )}
       
-      {/* Remix Navigation - positioned at very bottom center of video - Always Visible */}
+      {/* Remix Navigation - positioned at very bottom center of video - Controlled by showControls */}
       {videoReady && hasRemixes && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ 
-            opacity: 1,
-            y: 0
+            opacity: showControls ? 1 : 0,
+            y: showControls ? 0 : 20
           }}
           className="absolute bottom-4 z-40"
           style={{ 
             left: '50%',
             transform: 'translateX(-50%)',
-            pointerEvents: 'auto'
+            pointerEvents: showControls ? 'auto' : 'none'
           }}
         >
           <div className="flex items-center gap-2 bg-black/50 rounded-full px-4 py-2">
