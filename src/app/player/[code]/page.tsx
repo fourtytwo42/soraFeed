@@ -7,7 +7,6 @@ import { TimelineVideo, DisplayCommand } from '@/types/timeline';
 import SimpleVideoPlayer from '@/components/player/SimpleVideoPlayer';
 import CodeDisplay from '@/components/player/CodeDisplay';
 import ConnectedDisplay from '@/components/player/ConnectedDisplay';
-import LoadingDisplay from '@/components/player/LoadingDisplay';
 
 interface VMState {
   status: 'idle' | 'playing' | 'paused' | 'loading';
@@ -120,7 +119,7 @@ export default function VMPlayer() {
               ...prev,
               currentVideo: data.nextVideo.video_data,
               currentTimelineVideo: data.nextVideo,
-              status: 'loading',
+              status: 'playing',
               hasActivePlaylist: true // Mark that we have an active playlist
             }));
           }
@@ -190,14 +189,13 @@ export default function VMPlayer() {
       }
     }
 
-    // Set to loading state while waiting for next video, but keep playlist active
+    // Trigger scroll animation to next video - don't clear current video yet
     setVMState(prev => ({
       ...prev,
-      status: 'loading',
-      currentVideo: null,
-      currentTimelineVideo: null,
+      status: 'idle', // This will trigger next video fetch in polling
       isPlaying: false,
       position: 0
+      // Keep current video and timeline video for scroll animation
       // Keep hasActivePlaylist true so we don't show connected screen
     }));
   }, [vmState.currentTimelineVideo]);
@@ -278,8 +276,8 @@ export default function VMPlayer() {
 
     initializeDisplay();
 
-    // Start polling
-    pollIntervalRef.current = setInterval(pollServer, 2500);
+        // Start polling - faster interval for smoother video transitions
+        pollIntervalRef.current = setInterval(pollServer, 1000);
 
     return () => {
       if (pollIntervalRef.current) {
@@ -319,11 +317,6 @@ export default function VMPlayer() {
           isMuted={vmState.isMuted}
           onVideoEnd={handleVideoEnd}
           onVideoReady={handleVideoReady}
-        />
-      ) : vmState.hasActivePlaylist ? (
-        <LoadingDisplay 
-          code={code} 
-          displayName={vmState.displayName}
         />
       ) : vmState.isConnected ? (
         <ConnectedDisplay 
