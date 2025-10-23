@@ -130,11 +130,14 @@ export async function GET(request: NextRequest) {
         FROM sora_posts p
         WHERE (
           p.text ILIKE $1
-          OR LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M')
+          OR (LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M')
+              AND LENGTH(REPLACE($1, '%', '')) - LENGTH(REPLACE(REPLACE($1, '%', ''), ' ', '')) = 0)
         )${exclusionConditions}${formatConditions}
-        -- Prioritize word boundary matches, then randomize
+        -- Prioritize exact phrase matches, then word boundary matches, then randomize
         ORDER BY 
-          CASE WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M') THEN 0 ELSE 1 END,
+          CASE WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER($1) THEN 0
+               WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M') THEN 1 
+               ELSE 2 END,
           rand_seed1, rand_seed2, time_seed
         LIMIT ($2 * 4)  -- Get 4x more results to ensure variety after filtering
       )
@@ -203,9 +206,16 @@ export async function GET(request: NextRequest) {
               to_tsvector('english', COALESCE(p.text, '')),
               plainto_tsquery('english', $1)
             ), 0) * 0.3 +
-            -- Word boundary matches get highest priority (whole word matches)
+            -- Multi-word phrase matches get highest priority
             CASE 
-              WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M') THEN 0.5
+              WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%') 
+                   AND LENGTH($1) - LENGTH(REPLACE($1, ' ', '')) > 0 THEN 0.6
+              ELSE 0
+            END +
+            -- Single word boundary matches get high priority  
+            CASE 
+              WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M') 
+                   AND LENGTH($1) - LENGTH(REPLACE($1, ' ', '')) = 0 THEN 0.5
               ELSE 0
             END +
             -- Exact phrase match gets high score
@@ -225,14 +235,15 @@ export async function GET(request: NextRequest) {
         JOIN creators c ON p.creator_id = c.id
         WHERE 
           (
-            -- Full-text search match
+            -- Full-text search match (best for multi-word)
             to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
             OR
-            -- Word boundary match (whole word)
-            LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M')
-            OR
-            -- Partial match (case-insensitive)
+            -- Exact phrase match (case-insensitive)
             LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
+            OR
+            -- Word boundary match for single words only
+            (LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M') 
+             AND LENGTH($1) - LENGTH(REPLACE($1, ' ', '')) = 0)
             OR
             -- Fuzzy match (similarity threshold of 0.3)
             similarity(LOWER(COALESCE(p.text, '')), LOWER($1)) > 0.3
