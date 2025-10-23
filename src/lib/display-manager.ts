@@ -3,7 +3,7 @@ import { Display, DisplayCommand } from '@/types/timeline';
 import { v4 as uuidv4 } from 'uuid';
 
 export class DisplayManager {
-  // Create a new display
+  // Create a new display with auto-generated code
   static createDisplay(name: string): Display {
     const id = generateUniqueDisplayCode();
     const stmt = queueDb.prepare(`
@@ -14,6 +14,18 @@ export class DisplayManager {
     stmt.run(id, name);
     
     return this.getDisplay(id)!;
+  }
+
+  // Create a new display with specific code
+  static createDisplayWithCode(name: string, code: string): Display {
+    const stmt = queueDb.prepare(`
+      INSERT INTO displays (id, name, status, current_position, timeline_position, commands)
+      VALUES (?, ?, 'offline', 0, 0, '[]')
+    `);
+    
+    stmt.run(code, name);
+    
+    return this.getDisplay(code)!;
   }
 
   // Get display by ID

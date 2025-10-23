@@ -22,6 +22,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
+  const [newDisplayCode, setNewDisplayCode] = useState('');
 
   // Fetch displays and their status
   const fetchDisplays = async () => {
@@ -68,7 +69,10 @@ export default function AdminDashboard() {
 
   // Create new display
   const createDisplay = async () => {
-    if (!newDisplayName.trim()) return;
+    if (!newDisplayName.trim() || !newDisplayCode.trim()) {
+      setError('Please enter both display name and code');
+      return;
+    }
     
     try {
       const response = await fetch('/api/displays', {
@@ -76,13 +80,21 @@ export default function AdminDashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: newDisplayName.trim() })
+        body: JSON.stringify({ 
+          name: newDisplayName.trim(),
+          code: newDisplayCode.trim().toUpperCase()
+        })
       });
       
-      if (!response.ok) throw new Error('Failed to create display');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create display');
+      }
       
       setNewDisplayName('');
+      setNewDisplayCode('');
       setShowCreateModal(false);
+      setError(null);
       fetchDisplays();
     } catch (err) {
       console.error('Error creating display:', err);
@@ -287,7 +299,9 @@ export default function AdminDashboard() {
           <div className="text-center py-12">
             <Monitor className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No displays yet</h3>
-            <p className="text-gray-600 mb-6">Create your first display to get started</p>
+            <p className="text-gray-600 mb-6">
+              Open <code className="bg-gray-100 px-2 py-1 rounded text-sm">/player</code> on a VM to get a code, then add it here
+            </p>
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -318,18 +332,48 @@ export default function AdminDashboard() {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">Create New Display</h3>
-            <input
-              type="text"
-              placeholder="Display name (e.g., Living Room TV)"
-              value={newDisplayName}
-              onChange={(e) => setNewDisplayName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-              onKeyPress={(e) => e.key === 'Enter' && createDisplay()}
-            />
-            <div className="flex gap-3">
+            <h3 className="text-lg font-semibold mb-4">Add Display</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Display Code
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter 6-digit code from VM (e.g., ABC123)"
+                  value={newDisplayCode}
+                  onChange={(e) => setNewDisplayCode(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  maxLength={6}
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Get this code from the VM display screen
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Display Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="Display name (e.g., Living Room TV)"
+                  value={newDisplayName}
+                  onChange={(e) => setNewDisplayName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyPress={(e) => e.key === 'Enter' && createDisplay()}
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewDisplayName('');
+                  setNewDisplayCode('');
+                  setError(null);
+                }}
                 className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Cancel
@@ -337,9 +381,9 @@ export default function AdminDashboard() {
               <button
                 onClick={createDisplay}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                disabled={!newDisplayName.trim()}
+                disabled={!newDisplayName.trim() || !newDisplayCode.trim()}
               >
-                Create
+                Add Display
               </button>
             </div>
           </div>

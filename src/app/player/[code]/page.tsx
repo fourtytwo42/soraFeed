@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { SoraFeedItem } from '@/types/sora';
 import { TimelineVideo, DisplayCommand } from '@/types/timeline';
 import SimpleVideoPlayer from '@/components/player/SimpleVideoPlayer';
@@ -18,10 +18,22 @@ interface VMState {
   error: string | null;
 }
 
+// Generate a random 6-digit alphanumeric code
+function generateDisplayCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 export default function VMPlayer() {
   const params = useParams();
-  const code = params.code as string;
+  const router = useRouter();
+  const urlCode = params.code as string;
   
+  const [code, setCode] = useState<string>('');
   const [vmState, setVMState] = useState<VMState>({
     status: 'idle',
     currentVideo: null,
@@ -35,6 +47,7 @@ export default function VMPlayer() {
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoPreloadRef = useRef<HTMLVideoElement[]>([]);
+  const codeInitialized = useRef(false);
 
   // Polling function
   const pollServer = useCallback(async () => {
@@ -157,11 +170,53 @@ export default function VMPlayer() {
     }));
   }, []);
 
-  // Initialize display and start polling
+  // Initialize code and display
   useEffect(() => {
+    if (codeInitialized.current) return;
+    codeInitialized.current = true;
+
+    const initializeCode = () => {
+      // Check if we have a stored code in localStorage
+      const storedCode = localStorage.getItem('sorafeed-display-code');
+      
+      if (storedCode) {
+        // Use existing code from localStorage
+        console.log('🔑 Using stored display code:', storedCode);
+        setCode(storedCode);
+        
+        // If URL code doesn't match stored code, redirect to correct URL
+        if (urlCode !== storedCode) {
+          router.replace(`/player/${storedCode}`);
+          return;
+        }
+      } else {
+        // Generate new code and store it
+        const newCode = generateDisplayCode();
+        console.log('🆕 Generated new display code:', newCode);
+        localStorage.setItem('sorafeed-display-code', newCode);
+        setCode(newCode);
+        
+        // If URL code doesn't match new code, redirect to correct URL
+        if (urlCode !== newCode) {
+          router.replace(`/player/${newCode}`);
+          return;
+        }
+      }
+      
+      // If we're here, the URL code matches our code
+      setCode(urlCode);
+    };
+
+    initializeCode();
+  }, [urlCode, router]);
+
+  // Initialize display and start polling (only when code is set)
+  useEffect(() => {
+    if (!code) return;
+
     const initializeDisplay = async () => {
       try {
-        // Get display info
+        // Try to get existing display info
         const response = await fetch(`/api/displays/${code}`);
         if (response.ok) {
           const display = await response.json();
@@ -169,6 +224,9 @@ export default function VMPlayer() {
             ...prev,
             displayName: display.name
           }));
+        } else if (response.status === 404) {
+          // Display doesn't exist yet, that's fine
+          console.log('🔍 Display not found in database yet, waiting for admin to add it');
         }
       } catch (error) {
         console.error('Failed to get display info:', error);

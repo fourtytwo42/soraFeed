@@ -23,7 +23,7 @@ export async function GET() {
 // POST /api/displays - Create new display
 export async function POST(request: NextRequest) {
   try {
-    const { name } = await request.json();
+    const { name, code } = await request.json();
     
     if (!name || typeof name !== 'string') {
       return NextResponse.json(
@@ -32,7 +32,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const display = DisplayManager.createDisplay(name);
+    if (!code || typeof code !== 'string' || code.length !== 6) {
+      return NextResponse.json(
+        { error: 'Display code must be exactly 6 characters' },
+        { status: 400 }
+      );
+    }
+
+    // Check if code already exists
+    const existingDisplay = DisplayManager.getDisplay(code.toUpperCase());
+    if (existingDisplay) {
+      return NextResponse.json(
+        { error: 'Display code already exists' },
+        { status: 409 }
+      );
+    }
+
+    const display = DisplayManager.createDisplayWithCode(name, code.toUpperCase());
     
     return NextResponse.json(display, { status: 201 });
   } catch (error) {
