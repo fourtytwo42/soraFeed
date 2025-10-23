@@ -1,9 +1,5 @@
-import FeedLoader from '@/components/FeedLoader';
+import { redirect } from 'next/navigation';
 
 export default function Home() {
-  return (
-    <main className="w-full h-dvh overflow-hidden">
-      <FeedLoader />
-    </main>
-  );
+  redirect('/admin');
 }

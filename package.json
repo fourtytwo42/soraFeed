@@ -13,9 +13,13 @@
     "setup": "node scripts/setup.js"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@headlessui/react": "^2.2.9",
     "@tailwindcss/line-clamp": "^0.4.4",
     "@use-gesture/react": "^10.3.1",
+    "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "embla-carousel-react": "^8.3.1",
     "embla-carousel-wheel-gestures": "^8.1.0",
@@ -25,15 +29,18 @@
     "pg": "^8.12.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "save": "^2.9.0"
+    "save": "^2.9.0",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/pg": "^8.11.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.6",
     "tailwindcss": "^4",
