@@ -321,6 +321,14 @@ export class QueueManager {
 
       // Update block play statistics
       PlaylistManager.updateBlockPlayStats(video.block_id);
+
+      // Update display's timeline position to the next video position
+      const updateDisplayStmt = queueDb.prepare(`
+        UPDATE displays 
+        SET timeline_position = ? 
+        WHERE id = ?
+      `);
+      updateDisplayStmt.run(video.timeline_position + 1, video.display_id);
     });
 
     transaction();
