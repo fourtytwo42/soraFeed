@@ -169,6 +169,14 @@ export default function VMPlayer() {
     }
   }, [code, vmState.status, vmState.currentTimelineVideo, vmState.position]);
 
+  // Stop video progress tracking
+  const stopVideoProgressTracking = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
+
   // Handle video end
   const handleVideoEnd = useCallback(async () => {
     console.log('🎬 Video ended, marking as played');
@@ -325,13 +333,6 @@ export default function VMPlayer() {
       }
     }, 1000); // Update every second
   }, [wsConnected, vmState.currentTimelineVideo, sendProgressUpdate]);
-
-  const stopVideoProgressTracking = useCallback(() => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-  }, []);
 
   // Initialize code and display
   useEffect(() => {
