@@ -121,7 +121,10 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-xl text-gray-600">Loading dashboard...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="text-xl text-gray-600">Loading dashboard...</div>
+        </div>
       </div>
     );
   }
@@ -193,7 +196,7 @@ export default function AdminDashboard() {
         {/* Displays Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {displays.map((display) => (
-            <div key={display.id} className="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div key={display.id} className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow duration-200">
               {/* Display Header */}
               <div className="p-6 border-b">
                 <div className="flex items-center justify-between">
@@ -294,6 +297,22 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 border-t border-gray-200 mt-12">
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <div>
+            SoraFeed Admin • Dual-sided video display management
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <span>Scanner Active</span>
+            </div>
+            <div>Auto-refresh: 5s</div>
+          </div>
+        </div>
+      </footer>
 
       {/* Create Display Modal */}
       {showCreateModal && (

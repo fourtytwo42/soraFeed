@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sora67",
-  description: "A mobile and desktop-friendly video feed viewer for Sora AI-generated content",
+  title: "SoraFeed Admin",
+  description: "Dual-sided video display management system for Sora AI-generated content",
 };
 
 export default function RootLayout({

@@ -69,7 +69,7 @@ export default function CodeDisplay({ code, displayName }: CodeDisplayProps) {
         {/* Instructions */}
         <div className="mt-12 text-white/60 text-lg max-w-md">
           <p className="mb-4">Enter this code in the admin dashboard to control this display.</p>
-          <p className="text-sm">Waiting for playlist assignment...</p>
+          <p className="text-sm animate-pulse">Waiting for playlist assignment...</p>
         </div>
       </div>
 
