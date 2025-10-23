@@ -37,15 +37,21 @@ export default function SimpleVideoPlayer({
     if (!isPlaying && videoElement.paused) return;
 
     if (isPlaying) {
-      videoElement.play().catch(err => {
-        console.error('Failed to play video:', err);
-        if (err.name === 'NotAllowedError') {
-          console.log('🚫 Autoplay blocked by browser');
-          onAutoplayBlocked?.();
-        } else {
-          setError('Failed to play video');
-        }
-      });
+      const playPromise = videoElement.play();
+      if (playPromise) {
+        playPromise.then(() => {
+          console.log('✅ Video playing successfully');
+          setError(null);
+        }).catch(err => {
+          console.error('Failed to play video:', err);
+          if (err.name === 'NotAllowedError') {
+            console.log('🚫 Autoplay blocked by browser');
+            onAutoplayBlocked?.();
+          } else {
+            setError('Failed to play video');
+          }
+        });
+      }
     } else {
       videoElement.pause();
     }

@@ -238,13 +238,28 @@ export default function VMPlayer() {
   }, []);
 
   // Handle user interaction to start playback
-  const handleUserInteraction = useCallback(() => {
+  const handleUserInteraction = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
     console.log('👆 User interaction detected, enabling autoplay');
     setNeedsUserInteraction(false);
-    setVMState(prev => ({ 
-      ...prev, 
-      isPlaying: true 
+    setVMState(prev => ({
+      ...prev,
+      isPlaying: true
     }));
+    
+    // Immediately try to play the video to establish user interaction
+    const video = document.querySelector('video');
+    if (video) {
+      console.log('🎬 Attempting direct video play after user interaction');
+      video.play().then(() => {
+        console.log('✅ Video started playing successfully');
+      }).catch(err => {
+        console.error('❌ Direct video play failed:', err);
+        // If it still fails, the video component will handle it
+      });
+    }
   }, []);
 
   // Handle video ready
@@ -405,17 +420,17 @@ export default function VMPlayer() {
             onAutoplayBlocked={handleAutoplayBlocked}
           />
           {needsUserInteraction && (
-            <div 
-              className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center cursor-pointer z-50"
-              onClick={handleUserInteraction}
-            >
-              <div className="text-center text-white">
+            <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+              <button
+                onClick={handleUserInteraction}
+                className="text-center text-white bg-transparent border-none cursor-pointer focus:outline-none"
+              >
                 <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
                   <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
                 </div>
                 <div className="text-xl font-semibold mb-2">Click to Play</div>
                 <div className="text-sm opacity-75">Browser requires interaction to start video</div>
-              </div>
+              </button>
             </div>
           )}
         </div>
