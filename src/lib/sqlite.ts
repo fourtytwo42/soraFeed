@@ -1,0 +1,137 @@
+import Database from 'better-sqlite3';
+import path from 'path';
+
+// Initialize SQLite database
+const dbPath = path.join(process.cwd(), 'data', 'queue_system.db');
+export const queueDb = new Database(dbPath);
+
+// Enable foreign keys
+queueDb.pragma('foreign_keys = ON');
+
+// Initialize database tables
+export function initQueueDatabase() {
+  console.log('🗄️ Initializing queue database...');
+
+  // 1. displays table
+  queueDb.exec(`
+    CREATE TABLE IF NOT EXISTS displays (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_ping DATETIME,
+      status TEXT DEFAULT 'offline',
+      current_video_id TEXT,
+      current_position INTEGER DEFAULT 0,
+      current_block_id TEXT,
+      current_playlist_id TEXT,
+      timeline_position INTEGER DEFAULT 0,
+      commands TEXT DEFAULT '[]'
+    )
+  `);
+
+  // 2. playlists table
+  queueDb.exec(`
+    CREATE TABLE IF NOT EXISTS playlists (
+      id TEXT PRIMARY KEY,
+      display_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      is_active BOOLEAN DEFAULT false,
+      total_blocks INTEGER DEFAULT 0,
+      total_videos INTEGER DEFAULT 0,
+      loop_count INTEGER DEFAULT 0,
+      FOREIGN KEY (display_id) REFERENCES displays(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 3. playlist_blocks table
+  queueDb.exec(`
+    CREATE TABLE IF NOT EXISTS playlist_blocks (
+      id TEXT PRIMARY KEY,
+      playlist_id TEXT NOT NULL,
+      search_term TEXT NOT NULL,
+      video_count INTEGER NOT NULL,
+      fetch_mode TEXT DEFAULT 'newest',
+      block_order INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      times_played INTEGER DEFAULT 0,
+      last_played_at DATETIME,
+      FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 4. timeline_videos table
+  queueDb.exec(`
+    CREATE TABLE IF NOT EXISTS timeline_videos (
+      id TEXT PRIMARY KEY,
+      display_id TEXT NOT NULL,
+      playlist_id TEXT NOT NULL,
+      block_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      block_position INTEGER NOT NULL,
+      timeline_position INTEGER NOT NULL,
+      loop_iteration INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'queued',
+      played_at DATETIME,
+      video_data TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (display_id) REFERENCES displays(id) ON DELETE CASCADE,
+      FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+      FOREIGN KEY (block_id) REFERENCES playlist_blocks(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 5. video_history table
+  queueDb.exec(`
+    CREATE TABLE IF NOT EXISTS video_history (
+      id TEXT PRIMARY KEY,
+      display_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      block_id TEXT NOT NULL,
+      loop_iteration INTEGER,
+      played_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (display_id) REFERENCES displays(id) ON DELETE CASCADE,
+      FOREIGN KEY (block_id) REFERENCES playlist_blocks(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Create indexes for performance
+  queueDb.exec(`
+    CREATE INDEX IF NOT EXISTS idx_displays_status ON displays(status);
+    CREATE INDEX IF NOT EXISTS idx_playlists_display_active ON playlists(display_id, is_active);
+    CREATE INDEX IF NOT EXISTS idx_blocks_playlist_order ON playlist_blocks(playlist_id, block_order);
+    CREATE INDEX IF NOT EXISTS idx_timeline_display_position ON timeline_videos(display_id, timeline_position);
+    CREATE INDEX IF NOT EXISTS idx_timeline_status ON timeline_videos(status);
+    CREATE INDEX IF NOT EXISTS idx_history_display_video ON video_history(display_id, video_id);
+  `);
+
+  console.log('✅ Queue database initialized successfully');
+}
+
+// Helper functions for database operations
+export function generateDisplayCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// Ensure code is unique
+export function generateUniqueDisplayCode(): string {
+  let code: string;
+  let exists: boolean;
+  
+  do {
+    code = generateDisplayCode();
+    const stmt = queueDb.prepare('SELECT id FROM displays WHERE id = ?');
+    exists = !!stmt.get(code);
+  } while (exists);
+  
+  return code;
+}
+
+// Initialize database on import
+initQueueDatabase();
