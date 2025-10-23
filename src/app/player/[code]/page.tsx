@@ -7,6 +7,7 @@ import { TimelineVideo, DisplayCommand } from '@/types/timeline';
 import SimpleVideoPlayer from '@/components/player/SimpleVideoPlayer';
 import CodeDisplay from '@/components/player/CodeDisplay';
 import ConnectedDisplay from '@/components/player/ConnectedDisplay';
+import { useVMWebSocket } from '@/hooks/useVMWebSocket';
 
 interface VMState {
   status: 'idle' | 'playing' | 'paused' | 'loading';
@@ -55,6 +56,9 @@ export default function VMPlayer() {
   const videoPreloadRef = useRef<HTMLVideoElement[]>([]);
   const codeInitialized = useRef(false);
   const autoInteractionTriggered = useRef(false);
+
+  // Initialize WebSocket connection
+  const { isConnected: wsConnected, sendProgressUpdate, sendVideoChange } = useVMWebSocket(code);
 
   // Polling function
   const pollServer = useCallback(async () => {
@@ -117,13 +121,36 @@ export default function VMPlayer() {
           // Load next video if provided
           if (data.nextVideo && (!vmState.currentTimelineVideo || data.nextVideo.id !== vmState.currentTimelineVideo.id)) {
             console.log('🎬 Loading new video:', data.nextVideo.video_id);
+            
+            const videoData = data.nextVideo.video_data;
+            
             setVMState(prev => ({
               ...prev,
-              currentVideo: data.nextVideo.video_data,
+              currentVideo: videoData,
               currentTimelineVideo: data.nextVideo,
               status: 'playing',
               hasActivePlaylist: true // Mark that we have an active playlist
             }));
+
+            // Send video change to WebSocket
+            if (wsConnected && videoData) {
+              sendVideoChange({
+                id: videoData.post?.id || data.nextVideo.video_id,
+                username: videoData.profile?.username || 'Unknown',
+                description: (videoData.post?.text || '').substring(0, 100) + ((videoData.post?.text || '').length > 100 ? '...' : ''),
+                duration: 0, // We don't have duration info yet
+                position: 0
+              });
+            }
+          }
+
+          // Send progress update if we have timeline data
+          if (wsConnected && data.progress) {
+            sendProgressUpdate({
+              currentIndex: data.progress.overallProgress?.currentPosition || 0,
+              totalVideos: data.progress.overallProgress?.totalInCurrentLoop || 0,
+              playlistName: data.progress.currentBlock?.name || 'Unknown Playlist'
+            });
           }
 
     } catch (error) {

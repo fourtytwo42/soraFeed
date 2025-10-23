@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List, Trash2, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List, Trash2, ChevronDown, Wifi, WifiOff } from 'lucide-react';
 import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
 import PlaylistBuilder from '@/components/admin/PlaylistBuilder';
 import TimelineProgressComponent from '@/components/admin/TimelineProgress';
+import { useAdminWebSocket } from '@/hooks/useAdminWebSocket';
 
 interface DisplayWithProgress extends Display {
   isOnline: boolean;
@@ -32,6 +33,19 @@ export default function AdminDashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [displayToDelete, setDisplayToDelete] = useState<DisplayWithProgress | null>(null);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
+
+  // Generate a unique admin ID for this session
+  const adminId = useMemo(() => {
+    const stored = localStorage.getItem('sorafeed-admin-id');
+    if (stored) return stored;
+    
+    const newId = `admin-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem('sorafeed-admin-id', newId);
+    return newId;
+  }, []);
+
+  // Initialize WebSocket connection
+  const { isConnected: wsConnected, displayStatuses, registerDisplays, requestDisplayStatus } = useAdminWebSocket(adminId);
 
   // Get owned display codes from localStorage
   const getOwnedDisplayCodes = (): string[] => {
@@ -70,6 +84,11 @@ export default function AdminDashboard() {
         return;
       }
 
+      // Register displays with WebSocket server
+      if (wsConnected) {
+        registerDisplays(ownedCodes);
+      }
+
       // Fetch each owned display individually with progress
       const displayPromises = ownedCodes.map(async (code) => {
         try {
@@ -80,12 +99,41 @@ export default function AdminDashboard() {
           
           if (displayResponse.ok) {
             const display = await displayResponse.json();
-            // Check if online based on last_ping
-            const isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
             
-            // Get timeline progress if available
+            // Get WebSocket status if available
+            const wsStatus = displayStatuses.get(display.id);
+            let isOnline = false;
+            
+            if (wsStatus) {
+              isOnline = wsStatus.isConnected;
+              if (wsStatus.currentVideo) {
+                display.status = 'playing';
+              }
+            } else {
+              // Fallback to last_ping check
+              isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
+            }
+            
+            // Get timeline progress
             let progress = null;
-            if (timelineResponse.ok) {
+            if (wsStatus?.playlistProgress) {
+              // Use WebSocket progress data
+              progress = {
+                currentBlock: {
+                  name: wsStatus.playlistProgress.playlistName,
+                  progress: (wsStatus.playlistProgress.currentIndex / wsStatus.playlistProgress.totalVideos) * 100,
+                  currentVideo: wsStatus.playlistProgress.currentIndex + 1,
+                  totalVideos: wsStatus.playlistProgress.totalVideos
+                },
+                blocks: [],
+                overallProgress: {
+                  currentPosition: wsStatus.playlistProgress.currentIndex,
+                  totalInCurrentLoop: wsStatus.playlistProgress.totalVideos,
+                  loopCount: 0
+                }
+              };
+            } else if (timelineResponse.ok) {
+              // Fallback to API progress
               const timelineData = await timelineResponse.json();
               progress = timelineData.progress;
             }
@@ -306,10 +354,20 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchDisplays();
     
-    // Refresh every 5 seconds
-    const interval = setInterval(fetchDisplays, 5000);
+    // Refresh every 30 seconds (less frequent since WebSocket provides real-time updates)
+    const interval = setInterval(fetchDisplays, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [wsConnected, displayStatuses]);
+
+  // Re-register displays when WebSocket connects
+  useEffect(() => {
+    if (wsConnected) {
+      const ownedCodes = getOwnedDisplayCodes();
+      if (ownedCodes.length > 0) {
+        registerDisplays(ownedCodes);
+      }
+    }
+  }, [wsConnected, registerDisplays]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -355,7 +413,19 @@ export default function AdminDashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
               <div>
-                <h1 className="text-3xl font-bold text-gray-900">SoraFeed Admin</h1>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-3xl font-bold text-gray-900">SoraFeed Admin</h1>
+                  <div className="flex items-center gap-2">
+                    {wsConnected ? (
+                      <Wifi className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <WifiOff className="w-5 h-5 text-red-500" />
+                    )}
+                    <span className={`text-sm font-medium ${wsConnected ? 'text-green-600' : 'text-red-600'}`}>
+                      {wsConnected ? 'Live' : 'Offline'}
+                    </span>
+                  </div>
+                </div>
                 <p className="text-gray-600">Manage your personal video displays and playlists</p>
                 <p className="text-sm text-gray-500 mt-1">
                   You can only see displays that you've added to this browser
@@ -470,6 +540,22 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               </div>
+
+              {/* Current Video Info */}
+              {(() => {
+                const wsStatus = displayStatuses.get(display.id);
+                return wsStatus?.currentVideo ? (
+                  <div className="p-4 bg-blue-50 border-l-4 border-blue-400">
+                    <div className="text-sm font-medium text-blue-900 mb-1">Now Playing</div>
+                    <div className="text-sm text-blue-800">
+                      <div className="font-medium">@{wsStatus.currentVideo.username}</div>
+                      <div className="text-xs text-blue-600 mt-1 line-clamp-2">
+                        {wsStatus.currentVideo.description}
+                      </div>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
 
               {/* Timeline Progress */}
               {display.progress ? (
