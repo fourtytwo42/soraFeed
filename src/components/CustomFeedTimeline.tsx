@@ -98,19 +98,23 @@ export default function CustomFeedTimeline({
       currentVideoIndex,
       totalVideos,
       blockPositions,
-      segments: segments.map(s => ({
+      actualBlockRanges: blockPositions.map((start, i) => ({
+        blockIndex: i,
+        actualStart: start,
+        actualEnd: i + 1 < blockPositions.length ? blockPositions[i + 1] : totalVideos,
+        actualCount: (i + 1 < blockPositions.length ? blockPositions[i + 1] : totalVideos) - start
+      })),
+      plannedSegments: segments.map(s => ({
         blockIndex: s.blockIndex,
         searchQuery: s.searchQuery,
-        startVideoIndex: s.startVideoIndex,
-        videoCount: s.videoCount,
-        range: `${s.startVideoIndex}-${s.startVideoIndex + s.videoCount - 1}`,
-        widthPercent: totalVideos > 0 ? (s.videoCount / totalVideos) * 100 : 0,
-        leftPercent: totalVideos > 0 ? (s.startVideoIndex / totalVideos) * 100 : 0
+        plannedStart: s.startVideoIndex,
+        plannedCount: s.videoCount,
+        plannedRange: `${s.startVideoIndex}-${s.startVideoIndex + s.videoCount - 1}`
       })),
       activeSegment: activeSegment ? {
         blockIndex: activeSegment.blockIndex,
         searchQuery: activeSegment.searchQuery,
-        range: `${activeSegment.startVideoIndex}-${activeSegment.startVideoIndex + activeSegment.videoCount - 1}`
+        isCorrect: blockPositions[activeSegment.blockIndex] !== undefined
       } : null
     });
   }

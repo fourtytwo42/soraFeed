@@ -536,6 +536,7 @@ export default function FeedLoader() {
         };
         console.log(`✅ Added ${uniqueBlockVideos.length}/${blockVideos.length} unique videos from block ${blockIndex} to queue (${blockVideos.length - uniqueBlockVideos.length} duplicates filtered, total: ${newQueue.videos.length})`);
         console.log(`📍 Block ${blockIndex} starts at position ${newBlockPositions[blockIndex]}`);
+        console.log(`🎯 Block ${blockIndex} planned: ${feed.blocks[blockIndex].videoCount} videos, actual: ${uniqueBlockVideos.length} videos`);
         return newQueue;
       });
     } catch (error) {
@@ -879,6 +880,24 @@ export default function FeedLoader() {
         ...prev,
         currentVideoIndex: videoIndex
       }));
+      
+      // Debug: Log which block this video should belong to
+      if (selectedCustomFeed && videoQueue.blockPositions.length > 0) {
+        let expectedBlock = 'unknown';
+        for (let i = 0; i < videoQueue.blockPositions.length; i++) {
+          const blockStart = videoQueue.blockPositions[i];
+          const blockEnd = i + 1 < videoQueue.blockPositions.length ? videoQueue.blockPositions[i + 1] : videoQueue.videos.length;
+          if (videoIndex >= blockStart && videoIndex < blockEnd) {
+            expectedBlock = `Block ${i} (${selectedCustomFeed.blocks[i]?.searchQuery})`;
+            break;
+          }
+        }
+        console.log(`🎥 Playing video ${videoIndex}: Expected to be in ${expectedBlock}`);
+        const currentVideo = videoQueue.videos[videoIndex] as SoraFeedItem;
+        if (currentVideo && currentVideo.post) {
+          console.log(`🎥 Video content: "${currentVideo.post.text?.substring(0, 100)}..."`);
+        }
+      }
       
       // Update video queue current index
       setVideoQueue(prev => ({
