@@ -30,40 +30,73 @@ export default function AdminDashboard() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [displayToDelete, setDisplayToDelete] = useState<DisplayWithProgress | null>(null);
 
-  // Fetch displays and their status
+  // Get owned display codes from localStorage
+  const getOwnedDisplayCodes = (): string[] => {
+    try {
+      const stored = localStorage.getItem('sorafeed-owned-displays');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  // Add display code to owned list in localStorage
+  const addOwnedDisplayCode = (code: string) => {
+    const owned = getOwnedDisplayCodes();
+    if (!owned.includes(code)) {
+      owned.push(code);
+      localStorage.setItem('sorafeed-owned-displays', JSON.stringify(owned));
+    }
+  };
+
+  // Remove display code from owned list in localStorage
+  const removeOwnedDisplayCode = (code: string) => {
+    const owned = getOwnedDisplayCodes();
+    const updated = owned.filter(c => c !== code);
+    localStorage.setItem('sorafeed-owned-displays', JSON.stringify(updated));
+  };
+
+  // Fetch displays and their status (only owned displays)
   const fetchDisplays = async () => {
     try {
-      const response = await fetch('/api/displays');
-      if (!response.ok) throw new Error('Failed to fetch displays');
-      
-      const data = await response.json();
-      setStats(data.stats);
-      
-      // Fetch progress for each display
-      const displaysWithProgress = await Promise.all(
-        data.displays.map(async (display: Display) => {
-          try {
-            const progressResponse = await fetch(`/api/poll/${display.id}`);
-            if (progressResponse.ok) {
-              const progressData = await progressResponse.json();
-              return {
-                ...display,
-                isOnline: progressData.display.isOnline,
-                progress: progressData.progress
-              };
-            }
-          } catch (err) {
-            console.error('Failed to fetch progress for display:', display.id);
+      const ownedCodes = getOwnedDisplayCodes();
+      if (ownedCodes.length === 0) {
+        setDisplays([]);
+        setStats({ total: 0, online: 0, playing: 0 });
+        setLoading(false);
+        return;
+      }
+
+      // Fetch each owned display individually
+      const displayPromises = ownedCodes.map(async (code) => {
+        try {
+          const response = await fetch(`/api/displays/${code}`);
+          if (response.ok) {
+            const display = await response.json();
+            // Check if online based on last_ping
+            const isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
+            return { ...display, isOnline };
+          } else if (response.status === 404) {
+            // Display was deleted, remove from owned list
+            removeOwnedDisplayCode(code);
+            return null;
           }
-          
-          return {
-            ...display,
-            isOnline: false
-          };
-        })
-      );
+        } catch (error) {
+          console.error(`Error fetching display ${code}:`, error);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(displayPromises);
+      const validDisplays = results.filter(d => d !== null) as DisplayWithProgress[];
       
-      setDisplays(displaysWithProgress);
+      setDisplays(validDisplays);
+
+      // Calculate stats
+      const total = validDisplays.length;
+      const online = validDisplays.filter(d => d.isOnline).length;
+      const playing = validDisplays.filter(d => d.status === 'playing').length;
+      setStats({ total, online, playing });
       setError(null);
     } catch (err) {
       console.error('Error fetching displays:', err);
@@ -96,6 +129,9 @@ export default function AdminDashboard() {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to create display');
       }
+      
+      // Add the display code to this admin's owned list
+      addOwnedDisplayCode(newDisplayCode.trim().toUpperCase());
       
       setNewDisplayName('');
       setNewDisplayCode('');
@@ -182,6 +218,9 @@ export default function AdminDashboard() {
         throw new Error(errorData.error || 'Failed to delete display');
       }
       
+      // Remove the display code from this admin's owned list
+      removeOwnedDisplayCode(displayToDelete.id);
+      
       setShowDeleteModal(false);
       setDisplayToDelete(null);
       setError(null);
@@ -233,10 +272,13 @@ export default function AdminDashboard() {
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">SoraFeed Admin</h1>
-              <p className="text-gray-600">Manage your video displays and playlists</p>
-            </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">SoraFeed Admin</h1>
+                <p className="text-gray-600">Manage your personal video displays and playlists</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  You can only see displays that you've added to this browser
+                </p>
+              </div>
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -400,27 +442,34 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Empty state */}
-        {displays.length === 0 && (
-          <div className="text-center py-12">
-            <Monitor className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No displays yet</h3>
-            <div className="text-gray-600 mb-6 space-y-2">
-              <p>Get started in 3 steps:</p>
-              <div className="text-sm space-y-1">
-                <p>1. Open <code className="bg-gray-100 px-2 py-1 rounded">/player</code> on a VM to get a code</p>
-                <p>2. Add the display here with that code</p>
-                <p>3. Create a playlist with video blocks to start playing</p>
+            {/* Empty state */}
+            {displays.length === 0 && (
+              <div className="text-center py-12">
+                <Monitor className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No displays added yet</h3>
+                <div className="text-gray-600 mb-6 space-y-2">
+                  <p>You can only see and control displays that you've personally added.</p>
+                  <div className="text-sm space-y-1 mt-4">
+                    <p><strong>Get started:</strong></p>
+                    <p>1. Open <code className="bg-gray-100 px-2 py-1 rounded">/player</code> on a VM to get a code</p>
+                    <p>2. Add the display here with that code</p>
+                    <p>3. Create a playlist with video blocks to start playing</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                    <p className="text-sm text-blue-800">
+                      <strong>Privacy:</strong> Each admin client manages their own displays independently. 
+                      Other admins cannot see or control your displays.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Add Your First Display
+                </button>
               </div>
-            </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Add Display
-            </button>
-          </div>
-        )}
+            )}
       </div>
 
       {/* Footer */}
