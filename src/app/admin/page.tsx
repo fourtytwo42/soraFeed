@@ -131,6 +131,14 @@ export default function AdminDashboard() {
                 // Calculate progress: (completed videos + current video progress) / total videos in block
                 const smoothBlockProgress = ((blockPosition + videoProgressFraction) / totalVideosInBlock) * 100;
                 
+                // Debug logging
+                console.log(`📊 Block Progress Debug:`, {
+                  blockPosition,
+                  videoProgress: wsStatus.playlistProgress.videoProgress,
+                  totalVideosInBlock,
+                  smoothBlockProgress: Math.round(smoothBlockProgress * 100) / 100
+                });
+                
                 progress.currentBlock.progress = Math.min(smoothBlockProgress, 100);
                 progress.currentBlock.currentVideo = blockPosition + 1; // Update current video number
               }
@@ -383,6 +391,14 @@ export default function AdminDashboard() {
               
               // Calculate progress: (completed videos + current video progress) / total videos in block
               const smoothBlockProgress = ((blockPosition + videoProgressFraction) / totalVideosInBlock) * 100;
+              
+              // Debug logging for real-time updates
+              console.log(`📊 Real-time Block Progress Debug:`, {
+                blockPosition,
+                videoProgress: wsStatus.playlistProgress.videoProgress,
+                totalVideosInBlock,
+                smoothBlockProgress: Math.round(smoothBlockProgress * 100) / 100
+              });
               
               updatedDisplay.progress = {
                 ...display.progress,
