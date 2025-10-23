@@ -199,6 +199,12 @@ export default function AdminDashboard() {
   const createPlaylist = async (name: string, blocks: BlockDefinition[]) => {
     if (!selectedDisplayForPlaylist) return;
     
+    console.log('Creating playlist with data:', {
+      displayId: selectedDisplayForPlaylist,
+      name,
+      blocks
+    });
+    
     try {
       const response = await fetch('/api/playlists', {
         method: 'POST',
@@ -214,6 +220,7 @@ export default function AdminDashboard() {
       
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Playlist creation failed:', errorData);
         throw new Error(errorData.error || 'Failed to create playlist');
       }
       

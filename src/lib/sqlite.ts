@@ -107,6 +107,15 @@ export function initQueueDatabase() {
     CREATE INDEX IF NOT EXISTS idx_history_display_video ON video_history(display_id, video_id);
   `);
 
+  // Migration: Add format column if it doesn't exist
+  try {
+    queueDb.exec(`ALTER TABLE playlist_blocks ADD COLUMN format TEXT DEFAULT 'mixed'`);
+    console.log('✅ Added format column to playlist_blocks table');
+  } catch (error) {
+    // Column already exists, ignore error
+    console.log('📝 Format column already exists in playlist_blocks table');
+  }
+
   console.log('✅ Queue database initialized successfully');
 }
 
