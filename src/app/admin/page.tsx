@@ -415,7 +415,7 @@ export default function AdminDashboard() {
                   placeholder="Enter 6-digit code from VM (e.g., ABC123)"
                   value={newDisplayCode}
                   onChange={(e) => setNewDisplayCode(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-gray-900 bg-white"
                   maxLength={6}
                 />
                 <div className="text-xs text-gray-500 mt-1">
@@ -432,7 +432,7 @@ export default function AdminDashboard() {
                   placeholder="Display name (e.g., Living Room TV)"
                   value={newDisplayName}
                   onChange={(e) => setNewDisplayName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
                   onKeyPress={(e) => e.key === 'Enter' && createDisplay()}
                 />
               </div>

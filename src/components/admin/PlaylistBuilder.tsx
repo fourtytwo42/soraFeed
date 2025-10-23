@@ -65,13 +65,13 @@ function SortableBlock({ block, onUpdate, onDelete, onPreview }: {
 
         {/* Search term input */}
         <div className="flex-1">
-          <input
-            type="text"
-            placeholder="Search term (e.g., cats, dogs, nature)"
-            value={block.searchTerm}
-            onChange={(e) => onUpdate(block.id, { searchTerm: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+            <input
+              type="text"
+              placeholder="Search term (e.g., cats, dogs, nature)"
+              value={block.searchTerm}
+              onChange={(e) => onUpdate(block.id, { searchTerm: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+            />
         </div>
 
         {/* Video count */}
@@ -83,7 +83,7 @@ function SortableBlock({ block, onUpdate, onDelete, onPreview }: {
             placeholder="Count"
             value={block.videoCount}
             onChange={(e) => onUpdate(block.id, { videoCount: parseInt(e.target.value) || 1 })}
-            className="w-full px-2 py-2 border border-gray-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-2 py-2 border border-gray-300 rounded-md text-center focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
           />
         </div>
 
@@ -91,7 +91,7 @@ function SortableBlock({ block, onUpdate, onDelete, onPreview }: {
         <select
           value={block.fetchMode}
           onChange={(e) => onUpdate(block.id, { fetchMode: e.target.value as 'newest' | 'random' })}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
         >
           <option value="newest">Newest</option>
           <option value="random">Random</option>
@@ -226,7 +226,7 @@ export default function PlaylistBuilder({ onSave, onCancel, initialName = '', in
               placeholder="Enter playlist name..."
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
             />
           </div>
 
