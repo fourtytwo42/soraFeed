@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List, Trash2 } from 'lucide-react';
+import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List, Trash2, ChevronDown } from 'lucide-react';
 import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
 import PlaylistBuilder from '@/components/admin/PlaylistBuilder';
 import TimelineProgressComponent from '@/components/admin/TimelineProgress';
@@ -23,12 +23,15 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showAddExistingModal, setShowAddExistingModal] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newDisplayCode, setNewDisplayCode] = useState('');
+  const [existingDisplayCode, setExistingDisplayCode] = useState('');
   const [showPlaylistBuilder, setShowPlaylistBuilder] = useState(false);
   const [selectedDisplayForPlaylist, setSelectedDisplayForPlaylist] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [displayToDelete, setDisplayToDelete] = useState<DisplayWithProgress | null>(null);
+  const [showAddDropdown, setShowAddDropdown] = useState(false);
 
   // Get owned display codes from localStorage
   const getOwnedDisplayCodes = (): string[] => {
@@ -127,6 +130,9 @@ export default function AdminDashboard() {
       
       if (!response.ok) {
         const errorData = await response.json();
+        if (response.status === 409) {
+          throw new Error(`Display code ${newDisplayCode.trim().toUpperCase()} already exists. Please use a different code or add the existing display instead.`);
+        }
         throw new Error(errorData.error || 'Failed to create display');
       }
       
@@ -141,6 +147,51 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error('Error creating display:', err);
       setError(err instanceof Error ? err.message : 'Failed to create display');
+    }
+  };
+
+  // Add existing display by code
+  const addExistingDisplay = async () => {
+    if (!existingDisplayCode.trim()) {
+      setError('Please enter a display code');
+      return;
+    }
+
+    const code = existingDisplayCode.trim().toUpperCase();
+    
+    // Check if already owned
+    if (getOwnedDisplayCodes().includes(code)) {
+      setError('You already have access to this display');
+      return;
+    }
+
+    try {
+      // Try to fetch the display to verify it exists
+      const response = await fetch(`/api/displays/${code}`);
+      
+      if (response.status === 404) {
+        setError('Display code not found. Make sure the code is correct and the VM is running.');
+        return;
+      }
+      
+      if (!response.ok) {
+        throw new Error('Failed to verify display code');
+      }
+
+      const display = await response.json();
+      
+      // Add the display code to this admin's owned list
+      addOwnedDisplayCode(code);
+      
+      setExistingDisplayCode('');
+      setShowAddExistingModal(false);
+      setError(null);
+      fetchDisplays();
+      
+      console.log(`✅ Added existing display: ${display.name} (${code})`);
+    } catch (err) {
+      console.error('Error adding existing display:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add display');
     }
   };
 
@@ -241,6 +292,18 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showAddDropdown) {
+        setShowAddDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAddDropdown]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -279,13 +342,49 @@ export default function AdminDashboard() {
                   You can only see displays that you've added to this browser
                 </p>
               </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Add Display
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowAddDropdown(!showAddDropdown)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                Add Display
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              
+              {showAddDropdown && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="py-2">
+                    <button
+                      onClick={() => {
+                        setShowCreateModal(true);
+                        setShowAddDropdown(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                    >
+                      <Plus className="w-4 h-4 text-blue-600" />
+                      <div>
+                        <div className="font-medium">Create New Display</div>
+                        <div className="text-sm text-gray-500">Set up a new VM display</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddExistingModal(true);
+                        setShowAddDropdown(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-50 flex items-center gap-3"
+                    >
+                      <Monitor className="w-4 h-4 text-green-600" />
+                      <div>
+                        <div className="font-medium">Add Existing Display</div>
+                        <div className="text-sm text-gray-500">Add a display from another device</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -462,12 +561,20 @@ export default function AdminDashboard() {
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Add Your First Display
-                </button>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Create New Display
+                  </button>
+                  <button
+                    onClick={() => setShowAddExistingModal(true)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Add Existing Display
+                  </button>
+                </div>
               </div>
             )}
       </div>
@@ -542,6 +649,64 @@ export default function AdminDashboard() {
                     onClick={createDisplay}
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     disabled={!newDisplayName.trim() || !newDisplayCode.trim()}
+                  >
+                    Add Display
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Add Existing Display Modal */}
+          {showAddExistingModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
+                    <Monitor className="w-6 h-6 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Add Existing Display</h3>
+                    <p className="text-sm text-gray-500">Add a display from another device</p>
+                  </div>
+                </div>
+                
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Display Code
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter 6-digit code (e.g., ABC123)"
+                    value={existingDisplayCode}
+                    onChange={(e) => setExistingDisplayCode(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-gray-900 bg-white"
+                    maxLength={6}
+                    onKeyPress={(e) => e.key === 'Enter' && addExistingDisplay()}
+                  />
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-3">
+                    <p className="text-sm text-blue-800">
+                      <strong>Cross-device management:</strong> Enter a display code from another admin client 
+                      to manage it from this device. Both devices will have full control.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowAddExistingModal(false);
+                      setExistingDisplayCode('');
+                      setError(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={addExistingDisplay}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                    disabled={!existingDisplayCode.trim()}
                   >
                     Add Display
                   </button>
