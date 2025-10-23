@@ -316,7 +316,7 @@ export default function FeedLoader() {
       // Debug: Log the actual video descriptions to verify they match the search
       if (videos.length > 0) {
         console.log(`🔍 Sample video descriptions for "${searchQuery}":`);
-        videos.slice(0, 3).forEach((video, i) => {
+        videos.slice(0, 3).forEach((video: SoraFeedItem, i: number) => {
           console.log(`   ${i + 1}. "${video.post.text}" (ID: ${video.post.id})`);
         });
       }
@@ -521,8 +521,8 @@ export default function FeedLoader() {
       
       setVideoQueue(prev => {
         // Deduplicate new videos against existing queue
-        const existingIds = new Set(prev.videos.map(video => video.post.id));
-        const uniqueBlockVideos = blockVideos.filter(video => !existingIds.has(video.post.id));
+        const existingIds = new Set((prev.videos as SoraFeedItem[]).map(video => video.post.id));
+        const uniqueBlockVideos = blockVideos.filter((video: SoraFeedItem) => !existingIds.has(video.post.id));
         
         const newBlockPositions = [...prev.blockPositions];
         newBlockPositions[blockIndex] = prev.videos.length; // Record where this block starts
@@ -1378,6 +1378,7 @@ export default function FeedLoader() {
         currentVideoIndex={timelineState.currentVideoIndex}
         totalVideos={timelineState.totalVideos}
         videoProgress={timelineState.videoProgress}
+        blockPositions={videoQueue.blockPositions}
         isVisible={feedType === 'custom' && selectedCustomFeed !== null && (blockIndicatorPinned || showControls)}
       />
       

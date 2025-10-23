@@ -16,6 +16,7 @@ interface CustomFeedTimelineProps {
   currentVideoIndex: number; // Current video index in the queue
   totalVideos: number; // Total number of videos in timeline
   videoProgress: number; // Progress within current video (0-1)
+  blockPositions: number[]; // Actual positions where each block starts in the queue
   isVisible: boolean;
 }
 
@@ -35,30 +36,33 @@ export default function CustomFeedTimeline({
   currentVideoIndex, 
   totalVideos, 
   videoProgress,
+  blockPositions,
   isVisible 
 }: CustomFeedTimelineProps) {
   const [segments, setSegments] = useState<TimelineSegment[]>([]);
 
-  // Calculate timeline segments from feed blocks
+  // Calculate timeline segments from feed blocks using actual positions
   const timelineSegments = useMemo(() => {
     if (!feed || !feed.blocks.length) return [];
 
     const segments: TimelineSegment[] = [];
-    let currentStartVideoIndex = 0;
 
     feed.blocks.forEach((block, index) => {
+      const startVideoIndex = blockPositions[index] || 0;
+      const nextBlockStart = blockPositions[index + 1] || totalVideos;
+      const actualVideoCount = nextBlockStart - startVideoIndex;
+
       segments.push({
         blockIndex: index,
         searchQuery: block.searchQuery,
-        startVideoIndex: currentStartVideoIndex,
-        videoCount: block.videoCount,
+        startVideoIndex: startVideoIndex,
+        videoCount: actualVideoCount,
         color: generateColor(block.searchQuery)
       });
-      currentStartVideoIndex += block.videoCount;
     });
 
     return segments;
-  }, [feed]);
+  }, [feed, blockPositions, totalVideos]);
 
   // Update segments when feed changes
   useEffect(() => {
@@ -74,6 +78,26 @@ export default function CustomFeedTimeline({
     currentVideoIndex >= segment.startVideoIndex && 
     currentVideoIndex < segment.startVideoIndex + segment.videoCount
   );
+
+  // Debug logging for header sync issues
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🎯 Timeline Debug:', {
+      currentVideoIndex,
+      totalVideos,
+      segments: segments.map(s => ({
+        blockIndex: s.blockIndex,
+        searchQuery: s.searchQuery,
+        startVideoIndex: s.startVideoIndex,
+        videoCount: s.videoCount,
+        range: `${s.startVideoIndex}-${s.startVideoIndex + s.videoCount - 1}`
+      })),
+      activeSegment: activeSegment ? {
+        blockIndex: activeSegment.blockIndex,
+        searchQuery: activeSegment.searchQuery,
+        range: `${activeSegment.startVideoIndex}-${activeSegment.startVideoIndex + activeSegment.videoCount - 1}`
+      } : null
+    });
+  }
 
   if (!isVisible || !feed || segments.length === 0) {
     return null;
