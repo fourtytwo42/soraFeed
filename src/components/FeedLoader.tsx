@@ -821,16 +821,28 @@ export default function FeedLoader() {
       });
     }
     
-    // Set initial videos from collected videos
+    // Set initial videos from collected videos - they're already in correct block order
     if (allInitialVideos.length > 0) {
       const initialDisplayVideos = allInitialVideos.slice(0, 20);
-      setItems(initialDisplayVideos); // Show first 20 videos
+      setItems(initialDisplayVideos);
       console.log(`🎬 Custom feed ready with ${allInitialVideos.length} total videos (showing first 20)`);
       
-      // Debug: Log what videos are actually being displayed
+      // Debug: Log what videos are actually being displayed with their block info
       console.log(`🎭 Videos being displayed in custom feed:`);
       initialDisplayVideos.slice(0, 5).forEach((video, i) => {
-        console.log(`   ${i + 1}. "${video.post.text}" (ID: ${video.post.id})`);
+        // Determine which block this video belongs to
+        let blockInfo = 'unknown';
+        for (let blockIndex = 0; blockIndex < blocksToLoadAtStart; blockIndex++) {
+          const blockStart = blockIndex === 0 ? 0 : allInitialVideos.findIndex((v, idx) => {
+            // This is a simplified check - in practice the blockPositions would be more accurate
+            return idx > 0 && feed.blocks[blockIndex] && video.post.text?.toLowerCase().includes(feed.blocks[blockIndex].searchQuery.toLowerCase());
+          });
+          if (blockStart !== -1 || blockIndex === 0) {
+            blockInfo = `Block ${blockIndex} (${feed.blocks[blockIndex]?.searchQuery})`;
+            break;
+          }
+        }
+        console.log(`   ${i + 1}. "${video.post.text}" (ID: ${video.post.id}) - ${blockInfo}`);
       });
       
       // Initialize timeline state

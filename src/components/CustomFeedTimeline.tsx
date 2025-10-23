@@ -41,43 +41,29 @@ export default function CustomFeedTimeline({
 }: CustomFeedTimelineProps) {
   const [segments, setSegments] = useState<TimelineSegment[]>([]);
 
-  // Calculate timeline segments from feed blocks using actual positions where available
+  // Calculate timeline segments - always use planned proportions for visual consistency
   const timelineSegments = useMemo(() => {
     if (!feed || !feed.blocks.length) return [];
 
     const segments: TimelineSegment[] = [];
-    let theoreticalStartIndex = 0;
+    let plannedStartIndex = 0;
 
     feed.blocks.forEach((block, index) => {
-      let startVideoIndex: number;
-      let videoCount: number;
-
-      if (index < blockPositions.length && blockPositions[index] !== undefined) {
-        // Use actual position for loaded blocks
-        startVideoIndex = blockPositions[index];
-        const nextBlockStart = index + 1 < blockPositions.length && blockPositions[index + 1] !== undefined
-          ? blockPositions[index + 1] 
-          : (index === blockPositions.length - 1 ? totalVideos : startVideoIndex + block.videoCount);
-        videoCount = Math.max(0, nextBlockStart - startVideoIndex);
-      } else {
-        // Use theoretical position for unloaded blocks
-        startVideoIndex = theoreticalStartIndex;
-        videoCount = block.videoCount;
-      }
-
+      // Always use planned positions for consistent visual layout
+      // The actual positions are only used for determining which segment is active
       segments.push({
         blockIndex: index,
         searchQuery: block.searchQuery,
-        startVideoIndex: startVideoIndex,
-        videoCount: videoCount,
+        startVideoIndex: plannedStartIndex,
+        videoCount: block.videoCount, // Always use planned video count for proportions
         color: generateColor(block.searchQuery)
       });
 
-      theoreticalStartIndex += block.videoCount;
+      plannedStartIndex += block.videoCount;
     });
 
     return segments;
-  }, [feed, blockPositions, totalVideos]);
+  }, [feed]); // Remove blockPositions and totalVideos from dependencies to prevent resizing
 
   // Update segments when feed changes
   useEffect(() => {
@@ -89,11 +75,22 @@ export default function CustomFeedTimeline({
   const totalPlannedVideos = feed ? feed.blocks.reduce((sum, block) => sum + block.videoCount, 0) : totalVideos;
   const progressPercentage = totalPlannedVideos > 0 ? (currentPositionWithProgress / totalPlannedVideos) * 100 : 0;
 
-  // Find current active segment
-  const activeSegment = segments.find(segment => 
-    currentVideoIndex >= segment.startVideoIndex && 
-    currentVideoIndex < segment.startVideoIndex + segment.videoCount
-  );
+  // Find current active segment using actual block positions
+  const activeSegment = useMemo(() => {
+    if (!segments.length || blockPositions.length === 0) return null;
+    
+    // Find which block the current video index falls into using actual positions
+    for (let i = 0; i < blockPositions.length; i++) {
+      const blockStart = blockPositions[i];
+      const blockEnd = i + 1 < blockPositions.length ? blockPositions[i + 1] : totalVideos;
+      
+      if (currentVideoIndex >= blockStart && currentVideoIndex < blockEnd) {
+        return segments.find(seg => seg.blockIndex === i) || null;
+      }
+    }
+    
+    return null;
+  }, [segments, blockPositions, currentVideoIndex, totalVideos]);
 
   // Debug logging for header sync issues
   if (process.env.NODE_ENV === 'development') {
