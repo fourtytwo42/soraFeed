@@ -75,17 +75,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Build exclusion conditions for SQL
-    const buildExclusionConditions = (excludeTerms: string[]) => {
+    const buildExclusionConditions = (excludeTerms: string[], isFast: boolean = false) => {
       if (excludeTerms.length === 0) return '';
       
+      // For fast queries, we have an extra timestamp parameter, so start from index 4
+      const startIndex = isFast ? 4 : 3;
       const conditions = excludeTerms.map((_, index) => 
-        `NOT LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $${index + 3} || '%')`
+        `NOT LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $${index + startIndex} || '%')`
       ).join(' AND ');
       
       return ` AND ${conditions}`;
     };
 
-    const exclusionConditions = buildExclusionConditions(excludeTerms);
+    const exclusionConditions = buildExclusionConditions(excludeTerms, fast);
 
     // Build format filtering conditions
     const buildFormatConditions = (format: string) => {
@@ -122,7 +124,9 @@ export async function GET(request: NextRequest) {
           RANDOM() as rand_seed1,
           RANDOM() as rand_seed2,
           -- Add timestamp-based randomization to ensure different results each call
-          ((EXTRACT(EPOCH FROM NOW()) * RANDOM())::bigint % 1000000)::integer as time_seed
+          ((EXTRACT(EPOCH FROM NOW()) * RANDOM())::bigint % 1000000)::integer as time_seed,
+          -- Add request-specific randomization using query parameters
+          ((EXTRACT(EPOCH FROM NOW()) + $3)::bigint % 2147483647)::integer as request_seed
         FROM sora_posts p
         WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}
         -- Use multiple random orderings for better variety
@@ -189,21 +193,24 @@ export async function GET(request: NextRequest) {
           c.verified,
           -- Calculate combined relevance score
           (
-            -- Full-text search relevance (0-1 scale)
+            -- Full-text search relevance (0-1 scale) - increased weight for exact matches
             COALESCE(ts_rank_cd(
               to_tsvector('english', COALESCE(p.text, '')),
               plainto_tsquery('english', $1)
-            ), 0) * 0.4 +
-            -- Partial match score (0-1 scale)
+            ), 0) * 0.5 +
+            -- Exact phrase match gets highest score
             CASE 
-              WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%') THEN 0.3
+              WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%') THEN 0.4
               ELSE 0
             END +
-            -- Fuzzy match score (0-1 scale, using similarity)
-            COALESCE(similarity(LOWER(COALESCE(p.text, '')), LOWER($1)), 0) * 0.3
+            -- Fuzzy match score (0-1 scale, using similarity) - reduced weight
+            COALESCE(similarity(LOWER(COALESCE(p.text, '')), LOWER($1)), 0) * 0.1
           ) as text_relevance,
-          -- Remix score (always 0 since remix_count was removed)
-          0 as remix_score
+          -- Use view count as popularity score (normalized)
+          CASE 
+            WHEN p.view_count > 0 THEN LEAST(LOG(p.view_count + 1) / 15, 1)
+            ELSE 0
+          END as popularity_score
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
         WHERE 
@@ -221,9 +228,9 @@ export async function GET(request: NextRequest) {
       SELECT *
       FROM search_results
       ORDER BY 
-        -- Combined score: 40% text relevance + 60% remix score
-        -- Videos with more remixes are weighted higher as they're more popular/trending
-        (text_relevance * 0.4 + remix_score * 0.6) DESC,
+        -- Combined score: 70% text relevance + 30% popularity score
+        -- Prioritize relevance over popularity for better search results
+        (text_relevance * 0.7 + popularity_score * 0.3) DESC,
         posted_at DESC
       LIMIT $2
     `;
@@ -231,8 +238,11 @@ export async function GET(request: NextRequest) {
     // Format query parameter based on search type
     const queryParam = fast ? `%${includeQuery}%` : includeQuery;
     
-    // Build parameters array including exclude terms
-    const queryParams = [queryParam, limit, ...excludeTerms];
+    // Build parameters array including exclude terms and timestamp for randomization
+    const timestamp = Date.now();
+    const queryParams = fast ? 
+      [queryParam, limit, timestamp, ...excludeTerms] : 
+      [queryParam, limit, ...excludeTerms];
     
     // Quick sanity check - count total posts in database
     if (fast) {
@@ -242,7 +252,10 @@ export async function GET(request: NextRequest) {
       
       // Also check how many match our search (including exclusions)
       const matchCountQuery = `SELECT COUNT(*) as matches FROM sora_posts p WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}`;
-      const matchCountResult = await client.query(matchCountQuery, queryParams.slice(0, 1 + excludeTerms.length));
+      const matchCountParams = fast ? 
+        [queryParams[0], ...queryParams.slice(3)] : // Skip limit and timestamp for fast queries
+        queryParams.slice(0, 1 + excludeTerms.length);
+      const matchCountResult = await client.query(matchCountQuery, matchCountParams);
       const matchCount = matchCountResult.rows[0]?.matches || 0;
       console.log(`🎯 Found ${matchCount} posts matching "${query}" (with exclusions)`);
     }

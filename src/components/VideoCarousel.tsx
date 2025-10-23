@@ -37,13 +37,7 @@ export default function VideoCarousel({
 }: VideoCarouselProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data in VideoCarousel
-  console.log('🎠 VideoCarousel received item:', {
-    postId: item.post.id,
-    username: item.profile.username,
-    displayName: item.profile.display_name,
-    userId: item.profile.user_id,
-    fullProfile: item.profile
-  });
+  // Removed excessive logging that was causing performance issues
   // State
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -207,7 +201,7 @@ export default function VideoCarousel({
         videoRefsMap.current.set(itemId, el);
         // Set initial mute state when video element is created
         el.muted = !isActive || isMuted;
-        console.log('🎬 Video ref created:', { itemId, muted: el.muted, isActive, isMuted });
+        // Video ref created for item: ${itemId}
       } else {
         videoRefsMap.current.delete(itemId);
       }
@@ -244,16 +238,7 @@ export default function VideoCarousel({
     
     // Only log control playback in development or when there are issues
     if (process.env.NODE_ENV === 'development' || currentVideo.error) {
-      console.log('🎬 Control playback', { 
-        isActive: currentIsActive, 
-        userPaused: userPausedRef.current, 
-        shouldPlay,
-        videoPaused: currentVideo.paused,
-        isMuted,
-        videoReadyState: currentVideo.readyState,
-        networkState: currentVideo.networkState,
-        error: currentVideo.error?.message
-      });
+      // Control playback for active video
     }
 
     // Only control playback if video is ready and has no errors
@@ -394,7 +379,7 @@ export default function VideoCarousel({
     }, 200);
     
     return () => clearTimeout(timeoutId);
-  }, [isActive, currentRemixIndex, isMuted, controlVideoPlayback]);
+  }, [isActive, currentRemixIndex, isMuted]); // Removed controlVideoPlayback from deps to prevent infinite loop
 
   // Effect to ensure proper mute state when becoming active
   useEffect(() => {
@@ -406,7 +391,7 @@ export default function VideoCarousel({
         console.log('🔊 Restored mute state for active video:', { isMuted, postId: getCurrentItem().post.id });
       }
     }
-  }, [isActive, isMuted, getCurrentVideo, getCurrentItem]);
+  }, [isActive, isMuted]); // Removed function deps to prevent infinite loop
 
   // Load remix feed - only when becoming active for a new item
   useEffect(() => {
@@ -532,7 +517,7 @@ export default function VideoCarousel({
     if (isInFavorites) {
       setIsLiked(isInFavorites(getCurrentItem().post.id));
     }
-  }, [getCurrentItem, isInFavorites]);
+  }, [isInFavorites, currentRemixIndex, item.post.id]); // Use stable deps instead of function
 
   // Detect mobile
   // Mobile detection removed - not currently used
@@ -712,13 +697,7 @@ export default function VideoCarousel({
     const shouldRenderVideo = itemIndex >= startIndex && itemIndex <= endIndex;
     
     // Log virtualization decisions
-    console.log('🎬 Video virtualization:', {
-      itemId: videoItem.post.id,
-      itemIndex,
-      startIndex,
-      endIndex,
-      shouldRender: shouldRenderVideo
-    });
+    // Removed excessive virtualization logging
     
     const videoUrl = videoItem.post.attachments[0]?.encodings?.md?.path || 
                      videoItem.post.attachments[0]?.encodings?.source?.path;
@@ -959,13 +938,7 @@ export default function VideoCarousel({
               const finalName = displayName || username || 'Sora User';
               
               // 🔍 USERNAME LOGGING: Log username rendering decision in VideoCarousel
-              console.log('👤 VideoCarousel rendering username:', {
-                postId: currentItem.post.id,
-                displayName,
-                username,
-                finalName,
-                fallbackUsed: finalName === 'Sora User'
-              });
+              // Removed excessive username rendering logging
               
               return finalName;
             })()}
