@@ -51,8 +51,10 @@ export default function VMPlayer() {
     hasActivePlaylist: false
   });
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
+  const [videoProgress, setVideoProgress] = useState({ currentTime: 0, duration: 0 });
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoPreloadRef = useRef<HTMLVideoElement[]>([]);
   const codeInitialized = useRef(false);
   const autoInteractionTriggered = useRef(false);
@@ -171,6 +173,9 @@ export default function VMPlayer() {
   const handleVideoEnd = useCallback(async () => {
     console.log('🎬 Video ended, marking as played');
     
+    // Stop video progress tracking
+    stopVideoProgressTracking();
+    
     if (vmState.currentTimelineVideo) {
       // Mark video as played
       try {
@@ -197,7 +202,7 @@ export default function VMPlayer() {
       // Keep current video and timeline video for scroll animation
       // Keep hasActivePlaylist true so we don't show connected screen
     }));
-  }, [vmState.currentTimelineVideo]);
+  }, [vmState.currentTimelineVideo, stopVideoProgressTracking]);
 
   // Handle autoplay failure
   const handleAutoplayBlocked = useCallback(() => {
@@ -279,8 +284,54 @@ export default function VMPlayer() {
       isPlaying: true,
       error: null
     }));
-  }, [needsUserInteraction]);
 
+    // Start tracking video progress for smooth updates
+    startVideoProgressTracking();
+  }, [needsUserInteraction, startVideoProgressTracking]);
+
+  // Track video progress for smooth progress updates
+  const startVideoProgressTracking = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+
+    progressIntervalRef.current = setInterval(() => {
+      const videoElement = document.querySelector('video');
+      if (videoElement && !videoElement.paused && vmState.currentTimelineVideo) {
+        const currentTime = videoElement.currentTime;
+        const duration = videoElement.duration;
+        
+        if (duration > 0) {
+          setVideoProgress({ currentTime, duration });
+          
+          // Send enhanced progress update with video-level progress
+          if (wsConnected && vmState.currentTimelineVideo) {
+            const videoProgressPercent = (currentTime / duration) * 100;
+            
+            // Calculate overall progress including current video progress
+            const baseProgress = vmState.currentTimelineVideo.timeline_position;
+            const videoFraction = videoProgressPercent / 100;
+            const enhancedPosition = baseProgress + videoFraction;
+            
+            sendProgressUpdate({
+              currentIndex: Math.floor(enhancedPosition),
+              totalVideos: vmState.currentTimelineVideo.timeline_position + 10, // Approximate total
+              playlistName: 'Current Playlist',
+              videoProgress: videoProgressPercent,
+              enhancedPosition: enhancedPosition
+            });
+          }
+        }
+      }
+    }, 1000); // Update every second
+  }, [wsConnected, vmState.currentTimelineVideo, sendProgressUpdate]);
+
+  const stopVideoProgressTracking = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
 
   // Initialize code and display
   useEffect(() => {

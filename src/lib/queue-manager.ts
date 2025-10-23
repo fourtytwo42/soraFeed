@@ -384,14 +384,21 @@ export class QueueManager {
     // Calculate which block we're in
     let blockIndex = 0;
     let positionInBlock = currentPosition;
+    let totalVideosProcessed = 0;
     
     for (let i = 0; i < blocks.length; i++) {
-      if (positionInBlock < blocks[i].video_count) {
+      if (positionInBlock < totalVideosProcessed + blocks[i].video_count) {
         blockIndex = i;
+        positionInBlock = positionInBlock - totalVideosProcessed;
         break;
       }
-      positionInBlock -= blocks[i].video_count;
-      blockIndex = i + 1;
+      totalVideosProcessed += blocks[i].video_count;
+    }
+
+    // Handle overflow - if position is beyond all blocks, use last block
+    if (blockIndex >= blocks.length) {
+      blockIndex = blocks.length - 1;
+      positionInBlock = blocks[blockIndex]?.video_count || 0;
     }
 
     const currentBlock = blocks[blockIndex] || blocks[0];

@@ -8,6 +8,8 @@ export interface VMWebSocketHook {
     currentIndex: number;
     totalVideos: number;
     playlistName: string;
+    videoProgress?: number; // 0-100% progress within current video
+    enhancedPosition?: number; // Precise position including video progress
   }) => void;
   sendVideoChange: (video: {
     id: string;
