@@ -140,6 +140,33 @@ export class QueueManager {
     };
   }
 
+  // Get upcoming videos in the queue for a display
+  static getUpcomingVideos(displayId: string, limit: number = 10): TimelineVideo[] {
+    const stmt = queueDb.prepare(`
+      SELECT * FROM timeline_videos 
+      WHERE display_id = ? AND status = 'queued'
+      ORDER BY timeline_position ASC 
+      LIMIT ?
+    `);
+    
+    const rows = stmt.all(displayId, limit) as any[];
+    
+    return rows.map(row => ({
+      id: row.id,
+      display_id: row.display_id,
+      playlist_id: row.playlist_id,
+      block_id: row.block_id,
+      video_id: row.video_id,
+      block_position: row.block_position,
+      timeline_position: row.timeline_position,
+      loop_iteration: row.loop_iteration,
+      status: row.status,
+      played_at: row.played_at,
+      video_data: row.video_data,
+      created_at: row.created_at
+    }));
+  }
+
   // Populate timeline videos for a playlist
   static async populateTimelineVideos(
     displayId: string,

@@ -5,6 +5,7 @@ import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Ey
 import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
 import PlaylistBuilder from '@/components/admin/PlaylistBuilder';
 import TimelineProgressComponent from '@/components/admin/TimelineProgress';
+import QueuePreview from '@/components/admin/QueuePreview';
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket';
 
 interface DisplayWithProgress extends Display {
@@ -356,7 +357,50 @@ export default function AdminDashboard() {
     // Refresh every 30 seconds (less frequent since WebSocket provides real-time updates)
     const interval = setInterval(fetchDisplays, 30000);
     return () => clearInterval(interval);
-  }, [wsConnected, displayStatuses]);
+  }, [wsConnected]);
+
+  // Update displays when WebSocket status changes
+  useEffect(() => {
+    if (displays.length > 0 && wsConnected) {
+      setDisplays(prevDisplays => 
+        prevDisplays.map(display => {
+          const wsStatus = displayStatuses.get(display.id);
+          if (wsStatus) {
+            let updatedDisplay = { ...display };
+            
+            // Update online status
+            updatedDisplay.isOnline = wsStatus.isConnected;
+            
+            // Update playing status
+            if (wsStatus.currentVideo) {
+              updatedDisplay.status = 'playing';
+            }
+            
+            // Update progress from WebSocket data
+            if (wsStatus.playlistProgress) {
+              updatedDisplay.progress = {
+                currentBlock: {
+                  name: wsStatus.playlistProgress.playlistName,
+                  progress: (wsStatus.playlistProgress.currentIndex / wsStatus.playlistProgress.totalVideos) * 100,
+                  currentVideo: wsStatus.playlistProgress.currentIndex + 1,
+                  totalVideos: wsStatus.playlistProgress.totalVideos
+                },
+                blocks: display.progress?.blocks || [],
+                overallProgress: {
+                  currentPosition: wsStatus.playlistProgress.currentIndex,
+                  totalInCurrentLoop: wsStatus.playlistProgress.totalVideos,
+                  loopCount: display.progress?.overallProgress?.loopCount || 0
+                }
+              };
+            }
+            
+            return updatedDisplay;
+          }
+          return display;
+        })
+      );
+    }
+  }, [displayStatuses, displays.length, wsConnected]);
 
   // Register displays when WebSocket connects (only once per connection)
   useEffect(() => {
@@ -556,6 +600,9 @@ export default function AdminDashboard() {
                   </div>
                 ) : null;
               })()}
+
+              {/* Queue Preview */}
+              <QueuePreview displayId={display.id} />
 
               {/* Timeline Progress */}
               {display.progress ? (
