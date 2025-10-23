@@ -69,7 +69,18 @@ export default function CodeDisplay({ code, displayName }: CodeDisplayProps) {
         {/* Instructions */}
         <div className="mt-12 text-white/60 text-lg max-w-md">
           <p className="mb-4">Enter this code in the admin dashboard to control this display.</p>
-          <p className="text-sm animate-pulse">Waiting for playlist assignment...</p>
+          <div className="space-y-2">
+            <p className="text-sm">
+              1. Go to <span className="text-white font-mono">/admin</span> in another browser
+            </p>
+            <p className="text-sm">
+              2. Click "Add Display" and enter this code
+            </p>
+            <p className="text-sm">
+              3. Create a playlist to start playing videos
+            </p>
+          </div>
+          <p className="text-sm animate-pulse mt-4 text-blue-200">Waiting to be added to system...</p>
         </div>
       </div>
 

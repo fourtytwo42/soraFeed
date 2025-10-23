@@ -51,6 +51,8 @@ export default function VMPlayer() {
 
   // Polling function
   const pollServer = useCallback(async () => {
+    if (!code) return;
+    
     try {
       const response = await fetch(`/api/poll/${code}`, {
         method: 'POST',
@@ -64,11 +66,27 @@ export default function VMPlayer() {
         })
       });
 
+      if (response.status === 404) {
+        // Display not found - this is normal until admin adds it
+        console.log('🔍 Display not found in system yet, waiting for admin to add it');
+        setVMState(prev => ({
+          ...prev,
+          error: null // Clear any previous errors
+        }));
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`Poll failed: ${response.status}`);
       }
 
       const data = await response.json();
+      
+      // Clear any previous errors since polling is working
+      setVMState(prev => ({
+        ...prev,
+        error: null
+      }));
       
       // Process commands
       if (data.commands && data.commands.length > 0) {
@@ -88,10 +106,13 @@ export default function VMPlayer() {
 
     } catch (error) {
       console.error('❌ Poll error:', error);
-      setVMState(prev => ({
-        ...prev,
-        error: error instanceof Error ? error.message : 'Connection error'
-      }));
+      // Only set error for non-404 errors
+      if (!error.message?.includes('404')) {
+        setVMState(prev => ({
+          ...prev,
+          error: error instanceof Error ? error.message : 'Connection error'
+        }));
+      }
     }
   }, [code, vmState.status, vmState.currentTimelineVideo, vmState.position]);
 
