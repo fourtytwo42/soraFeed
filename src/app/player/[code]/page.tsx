@@ -250,21 +250,20 @@ export default function VMPlayer() {
   // Handle video ready
   const handleVideoReady = useCallback(() => {
     console.log('✅ Video ready, attempting to start playback');
-    
-    // Auto-simulate user interaction for kiosk mode
+
+    // Don't auto-start if user interaction is needed
     if (needsUserInteraction) {
-      console.log('🤖 Auto-simulating user interaction for kiosk mode');
-      handleUserInteraction();
+      console.log('⏸️ User interaction required, waiting for click');
       return;
     }
-    
-    setVMState(prev => ({ 
-      ...prev, 
-      status: 'playing', 
+
+    setVMState(prev => ({
+      ...prev,
+      status: 'playing',
       isPlaying: true,
-      error: null 
+      error: null
     }));
-  }, [needsUserInteraction, handleUserInteraction]);
+  }, [needsUserInteraction]);
 
 
   // Initialize code and display
@@ -407,16 +406,6 @@ export default function VMPlayer() {
           />
           {needsUserInteraction && (
             <div 
-              ref={(el) => {
-                // Auto-click for kiosk mode after a short delay
-                if (el && !el.dataset.autoClicked) {
-                  el.dataset.autoClicked = 'true';
-                  setTimeout(() => {
-                    console.log('🤖 Auto-clicking play overlay for kiosk mode');
-                    el.click();
-                  }, 1000); // 1 second delay to ensure everything is loaded
-                }
-              }}
               className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center cursor-pointer z-50"
               onClick={handleUserInteraction}
             >
@@ -424,8 +413,8 @@ export default function VMPlayer() {
                 <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
                   <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
                 </div>
-                <div className="text-xl font-semibold mb-2">Starting Playback...</div>
-                <div className="text-sm opacity-75">Kiosk mode - auto-starting in 1 second</div>
+                <div className="text-xl font-semibold mb-2">Click to Play</div>
+                <div className="text-sm opacity-75">Browser requires interaction to start video</div>
               </div>
             </div>
           )}
