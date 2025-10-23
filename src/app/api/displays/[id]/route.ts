@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DisplayManager } from '@/lib/display-manager';
 
 // GET /api/displays/[id] - Get specific display
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const display = DisplayManager.getDisplay(id);
     
     if (!display) {
@@ -25,9 +25,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 }
 
 // DELETE /api/displays/[id] - Delete display and all associated data
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const deleted = DisplayManager.deleteDisplay(id);
     
     if (!deleted) {
@@ -51,9 +51,9 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 }
 
 // PATCH /api/displays/[id] - Update display name
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const { name } = await request.json();
     
     if (!name || typeof name !== 'string') {

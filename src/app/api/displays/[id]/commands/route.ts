@@ -3,9 +3,9 @@ import { DisplayManager } from '@/lib/display-manager';
 import { DisplayCommand } from '@/types/timeline';
 
 // POST /api/displays/[id]/commands - Send command to display
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const { type, payload } = await request.json();
     
     if (!type || typeof type !== 'string') {

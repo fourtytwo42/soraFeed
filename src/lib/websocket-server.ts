@@ -140,12 +140,22 @@ class SoraFeedWebSocketServer {
     const client = this.clients.get(adminClientId);
     if (!client || client.type !== 'admin') return;
 
+    // Check if displays are already registered to prevent spam
+    const newDisplays = displayIds.filter(displayId => 
+      this.displayAdminMap.get(displayId) !== client.adminId
+    );
+
+    if (newDisplays.length === 0) {
+      // All displays already registered, skip
+      return;
+    }
+
     // Register this admin as owner of these displays
-    displayIds.forEach(displayId => {
+    newDisplays.forEach(displayId => {
       this.displayAdminMap.set(displayId, client.adminId!);
     });
 
-    console.log(`📋 Admin ${client.adminId} registered displays:`, displayIds);
+    console.log(`📋 Admin ${client.adminId} registered new displays:`, newDisplays);
 
     // Send current status for each display
     displayIds.forEach(displayId => {

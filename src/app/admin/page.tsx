@@ -84,10 +84,7 @@ export default function AdminDashboard() {
         return;
       }
 
-      // Register displays with WebSocket server
-      if (wsConnected) {
-        registerDisplays(ownedCodes);
-      }
+      // Note: Display registration is handled in the WebSocket connection useEffect
 
       // Fetch each owned display individually with progress
       const displayPromises = ownedCodes.map(async (code) => {
@@ -359,11 +356,12 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, [wsConnected, displayStatuses]);
 
-  // Re-register displays when WebSocket connects
+  // Register displays when WebSocket connects (only once per connection)
   useEffect(() => {
     if (wsConnected) {
       const ownedCodes = getOwnedDisplayCodes();
       if (ownedCodes.length > 0) {
+        console.log('🔌 Registering displays with WebSocket:', ownedCodes);
         registerDisplays(ownedCodes);
       }
     }
