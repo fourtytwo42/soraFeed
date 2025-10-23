@@ -16,8 +16,9 @@ export class QueueManager {
   ): Promise<SoraFeedItem[]> {
     const client = await getClient();
     
-    let query: string;
-    let params: any[];
+    try {
+      let query: string;
+      let params: any[];
 
     // Build format filtering conditions
     let formatClause = '';
@@ -69,38 +70,41 @@ export class QueueManager {
 
     const result = await client.query(query, params);
     
-    // Transform to SoraFeedItem format
-    return result.rows.map((row: any) => ({
-      post: {
-        id: row.id,
-        text: row.text,
-        posted_at: row.posted_at,
-        permalink: row.permalink,
-        attachments: [{
-          generation_id: row.generation_id,
-          task_id: row.task_id,
-          width: row.width,
-          height: row.height,
-          encodings: {
-            source: { path: row.video_url },
-            md: { path: row.video_url_md },
-            thumbnail: { path: row.thumbnail_url },
-            gif: { path: row.gif_url }
-          }
-        }]
-      },
-      profile: {
-        user_id: row.creator_id,
-        username: row.username,
-        display_name: row.display_name,
-        profile_picture_url: row.profile_picture_url,
-        permalink: row.creator_permalink,
-        follower_count: row.follower_count,
-        following_count: row.following_count,
-        post_count: row.post_count,
-        verified: row.verified
-      }
-    }));
+      // Transform to SoraFeedItem format
+      return result.rows.map((row: any) => ({
+        post: {
+          id: row.id,
+          text: row.text,
+          posted_at: row.posted_at,
+          permalink: row.permalink,
+          attachments: [{
+            generation_id: row.generation_id,
+            task_id: row.task_id,
+            width: row.width,
+            height: row.height,
+            encodings: {
+              source: { path: row.video_url },
+              md: { path: row.video_url_md },
+              thumbnail: { path: row.thumbnail_url },
+              gif: { path: row.gif_url }
+            }
+          }]
+        },
+        profile: {
+          user_id: row.creator_id,
+          username: row.username,
+          display_name: row.display_name,
+          profile_picture_url: row.profile_picture_url,
+          permalink: row.creator_permalink,
+          follower_count: row.follower_count,
+          following_count: row.following_count,
+          post_count: row.post_count,
+          verified: row.verified
+        }
+      }));
+    } finally {
+      client.release();
+    }
   }
 
   // Get videos already played for a block across all loops
@@ -209,6 +213,33 @@ export class QueueManager {
 
         videos.forEach((video, index) => {
           const videoId = uuidv4();
+          
+          // Store only essential video data to reduce memory usage
+          const essentialVideoData = {
+            post: {
+              id: video.post.id,
+              text: video.post.text,
+              permalink: video.post.permalink,
+              attachments: video.post.attachments ? [{
+                generation_id: video.post.attachments[0]?.generation_id,
+                task_id: video.post.attachments[0]?.task_id,
+                width: video.post.attachments[0]?.width,
+                height: video.post.attachments[0]?.height,
+                encodings: {
+                  source: { path: video.post.attachments[0]?.encodings?.source?.path },
+                  md: { path: video.post.attachments[0]?.encodings?.md?.path },
+                  thumbnail: { path: video.post.attachments[0]?.encodings?.thumbnail?.path }
+                }
+              }] : []
+            },
+            profile: {
+              user_id: video.profile.user_id,
+              username: video.profile.username,
+              display_name: video.profile.display_name,
+              profile_picture_url: video.profile.profile_picture_url
+            }
+          };
+          
           stmt.run(
             videoId,
             displayId,
@@ -218,7 +249,7 @@ export class QueueManager {
             index,
             timelinePosition,
             loopIteration,
-            JSON.stringify(video)
+            JSON.stringify(essentialVideoData) // Store only essential data
           );
           timelinePosition++;
         });

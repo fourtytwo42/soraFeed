@@ -25,6 +25,17 @@ app.prepare().then(() => {
   // Initialize WebSocket server after Next.js is ready
   wsServer.initialize(server);
 
+  // Memory monitoring - log memory usage every 5 minutes
+  setInterval(() => {
+    const memUsage = process.memoryUsage();
+    console.log('🧠 Memory Usage:', {
+      rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
+      heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
+      external: `${Math.round(memUsage.external / 1024 / 1024)}MB`
+    });
+  }, 5 * 60 * 1000); // Every 5 minutes
+
   server
     .once('error', (err) => {
       console.error(err);
