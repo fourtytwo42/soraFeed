@@ -84,15 +84,18 @@ export default function VMPlayer() {
         if (duration > 0) {
           setVideoProgress({ currentTime, duration });
           
-          // Send simple, consistent progress update
+          // Send block-aware progress update
           if (wsConnected && vmState.currentTimelineVideo) {
             const videoProgressPercent = (currentTime / duration) * 100;
             
             sendProgressUpdate({
               currentIndex: vmState.currentTimelineVideo.timeline_position,
               totalVideos: 4, // Keep it simple for now - will be updated by API data
-              playlistName: 'Current Playlist',
-              videoProgress: videoProgressPercent
+              playlistName: 'Current Block',
+              videoProgress: videoProgressPercent,
+              // Send additional context for better progress calculation
+              timelinePosition: vmState.currentTimelineVideo.timeline_position,
+              blockPosition: vmState.currentTimelineVideo.block_position
             });
           }
         }
