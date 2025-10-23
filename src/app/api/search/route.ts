@@ -128,9 +128,14 @@ export async function GET(request: NextRequest) {
           -- Add request-specific randomization using query parameters
           ((EXTRACT(EPOCH FROM NOW()) + $3)::bigint % 2147483647)::integer as request_seed
         FROM sora_posts p
-        WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}
-        -- Use multiple random orderings for better variety
-        ORDER BY rand_seed1, rand_seed2, time_seed
+        WHERE (
+          p.text ILIKE $1
+          OR LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M')
+        )${exclusionConditions}${formatConditions}
+        -- Prioritize word boundary matches, then randomize
+        ORDER BY 
+          CASE WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M') THEN 0 ELSE 1 END,
+          rand_seed1, rand_seed2, time_seed
         LIMIT ($2 * 4)  -- Get 4x more results to ensure variety after filtering
       )
       SELECT 
@@ -197,14 +202,19 @@ export async function GET(request: NextRequest) {
             COALESCE(ts_rank_cd(
               to_tsvector('english', COALESCE(p.text, '')),
               plainto_tsquery('english', $1)
-            ), 0) * 0.5 +
-            -- Exact phrase match gets highest score
+            ), 0) * 0.3 +
+            -- Word boundary matches get highest priority (whole word matches)
             CASE 
-              WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%') THEN 0.4
+              WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M') THEN 0.5
               ELSE 0
             END +
-            -- Fuzzy match score (0-1 scale, using similarity) - reduced weight
-            COALESCE(similarity(LOWER(COALESCE(p.text, '')), LOWER($1)), 0) * 0.1
+            -- Exact phrase match gets high score
+            CASE 
+              WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%') THEN 0.15
+              ELSE 0
+            END +
+            -- Fuzzy match score (0-1 scale, using similarity) - minimal weight
+            COALESCE(similarity(LOWER(COALESCE(p.text, '')), LOWER($1)), 0) * 0.05
           ) as text_relevance,
           -- Use view count as popularity score (normalized)
           CASE 
@@ -217,6 +227,9 @@ export async function GET(request: NextRequest) {
           (
             -- Full-text search match
             to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
+            OR
+            -- Word boundary match (whole word)
+            LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M')
             OR
             -- Partial match (case-insensitive)
             LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
