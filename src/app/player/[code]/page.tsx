@@ -70,12 +70,22 @@ export default function VMPlayer() {
       });
 
       if (response.status === 404) {
-        // Display not found - this is normal until admin adds it
-        console.log('🔍 Display not found in system yet, waiting for admin to add it');
+        // Display not found - could be waiting to be added or was deleted
+        const wasConnected = vmState.isConnected;
+        if (wasConnected) {
+          console.log('🗑️ Display was deleted from system, reverting to code display');
+        } else {
+          console.log('🔍 Display not found in system yet, waiting for admin to add it');
+        }
+        
         setVMState(prev => ({
           ...prev,
           error: null, // Clear any previous errors
-          isConnected: false
+          isConnected: false, // Not connected to the system
+          currentVideo: null, // Clear any current video
+          currentTimelineVideo: null, // Clear timeline
+          status: 'idle', // Reset status
+          displayName: '' // Clear display name
         }));
         return;
       }

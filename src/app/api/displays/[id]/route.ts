@@ -2,12 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DisplayManager } from '@/lib/display-manager';
 
 // GET /api/displays/[id] - Get specific display
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params;
+    const { id } = params;
     const display = DisplayManager.getDisplay(id);
     
     if (!display) {
@@ -27,45 +24,44 @@ export async function GET(
   }
 }
 
-// PUT /api/displays/[id] - Update display
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// DELETE /api/displays/[id] - Delete display and all associated data
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params;
-    const { name } = await request.json();
+    const { id } = params;
+    const deleted = DisplayManager.deleteDisplay(id);
     
-    const display = DisplayManager.getDisplay(id);
-    if (!display) {
+    if (!deleted) {
       return NextResponse.json(
         { error: 'Display not found' },
         { status: 404 }
       );
     }
-
-    if (name && typeof name === 'string') {
-      DisplayManager.updateDisplayName(id, name);
-    }
     
-    const updatedDisplay = DisplayManager.getDisplay(id);
-    return NextResponse.json(updatedDisplay);
+    return NextResponse.json({ 
+      success: true, 
+      message: `Display ${id} and all associated data deleted successfully` 
+    });
   } catch (error) {
-    console.error('Error updating display:', error);
+    console.error('Error deleting display:', error);
     return NextResponse.json(
-      { error: 'Failed to update display' },
+      { error: 'Failed to delete display' },
       { status: 500 }
     );
   }
 }
 
-// DELETE /api/displays/[id] - Delete display
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// PATCH /api/displays/[id] - Update display name
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params;
+    const { id } = params;
+    const { name } = await request.json();
+    
+    if (!name || typeof name !== 'string') {
+      return NextResponse.json(
+        { error: 'Display name is required' },
+        { status: 400 }
+      );
+    }
     
     const display = DisplayManager.getDisplay(id);
     if (!display) {
@@ -74,14 +70,17 @@ export async function DELETE(
         { status: 404 }
       );
     }
-
-    DisplayManager.deleteDisplay(id);
     
-    return NextResponse.json({ success: true });
+    DisplayManager.updateDisplayName(id, name);
+    
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Display name updated successfully' 
+    });
   } catch (error) {
-    console.error('Error deleting display:', error);
+    console.error('Error updating display:', error);
     return NextResponse.json(
-      { error: 'Failed to delete display' },
+      { error: 'Failed to update display' },
       { status: 500 }
     );
   }

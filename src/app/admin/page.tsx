@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List } from 'lucide-react';
+import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List, Trash2 } from 'lucide-react';
 import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
 import PlaylistBuilder from '@/components/admin/PlaylistBuilder';
 import TimelineProgressComponent from '@/components/admin/TimelineProgress';
@@ -27,6 +27,8 @@ export default function AdminDashboard() {
   const [newDisplayCode, setNewDisplayCode] = useState('');
   const [showPlaylistBuilder, setShowPlaylistBuilder] = useState(false);
   const [selectedDisplayForPlaylist, setSelectedDisplayForPlaylist] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [displayToDelete, setDisplayToDelete] = useState<DisplayWithProgress | null>(null);
 
   // Fetch displays and their status
   const fetchDisplays = async () => {
@@ -163,6 +165,32 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error('Error sending command:', err);
       setError(err instanceof Error ? err.message : 'Failed to send command');
+    }
+  };
+
+  // Delete display
+  const deleteDisplay = async () => {
+    if (!displayToDelete) return;
+    
+    try {
+      const response = await fetch(`/api/displays/${displayToDelete.id}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete display');
+      }
+      
+      setShowDeleteModal(false);
+      setDisplayToDelete(null);
+      setError(null);
+      fetchDisplays();
+      
+      console.log(`✅ Display ${displayToDelete.name} (${displayToDelete.id}) deleted successfully`);
+    } catch (err) {
+      console.error('Error deleting display:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete display');
     }
   };
 
@@ -348,12 +376,23 @@ export default function AdminDashboard() {
                       <Eye className="w-4 h-4 text-green-600" />
                     </button>
                     
-                    <button 
-                      className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                      title="Display Settings"
-                    >
-                      <Settings className="w-4 h-4 text-gray-600" />
-                    </button>
+                        <button 
+                          className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                          title="Display Settings"
+                        >
+                          <Settings className="w-4 h-4 text-gray-600" />
+                        </button>
+                        
+                        <button
+                          onClick={() => {
+                            setDisplayToDelete(display);
+                            setShowDeleteModal(true);
+                          }}
+                          className="p-2 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+                          title="Delete Display"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </button>
                   </div>
                 </div>
               </div>
@@ -400,67 +439,124 @@ export default function AdminDashboard() {
         </div>
       </footer>
 
-      {/* Create Display Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">Add Display</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Display Code
-                </label>
-                <input
-                  type="text"
-                  placeholder="Enter 6-digit code from VM (e.g., ABC123)"
-                  value={newDisplayCode}
-                  onChange={(e) => setNewDisplayCode(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-gray-900 bg-white"
-                  maxLength={6}
-                />
-                <div className="text-xs text-gray-500 mt-1">
-                  Get this code from the VM display screen
+          {/* Create Display Modal */}
+          {showCreateModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                <h3 className="text-lg font-semibold mb-4">Add Display</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Display Code
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Enter 6-digit code from VM (e.g., ABC123)"
+                      value={newDisplayCode}
+                      onChange={(e) => setNewDisplayCode(e.target.value.toUpperCase())}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-gray-900 bg-white"
+                      maxLength={6}
+                    />
+                    <div className="text-xs text-gray-500 mt-1">
+                      Get this code from the VM display screen
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Display Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Display name (e.g., Living Room TV)"
+                      value={newDisplayName}
+                      onChange={(e) => setNewDisplayName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+                      onKeyPress={(e) => e.key === 'Enter' && createDisplay()}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => {
+                      setShowCreateModal(false);
+                      setNewDisplayName('');
+                      setNewDisplayCode('');
+                      setError(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={createDisplay}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={!newDisplayName.trim() || !newDisplayCode.trim()}
+                  >
+                    Add Display
+                  </button>
                 </div>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Display Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="Display name (e.g., Living Room TV)"
-                  value={newDisplayName}
-                  onChange={(e) => setNewDisplayName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
-                  onKeyPress={(e) => e.key === 'Enter' && createDisplay()}
-                />
+            </div>
+          )}
+
+          {/* Delete Display Modal */}
+          {showDeleteModal && displayToDelete && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                    <Trash2 className="w-6 h-6 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Delete Display</h3>
+                    <p className="text-sm text-gray-500">This action cannot be undone</p>
+                  </div>
+                </div>
+                
+                <div className="mb-6">
+                  <p className="text-gray-700 mb-2">
+                    Are you sure you want to delete <strong>{displayToDelete.name}</strong>?
+                  </p>
+                  <p className="text-sm text-gray-500 mb-2">
+                    Code: <code className="bg-gray-100 px-2 py-1 rounded font-mono">{displayToDelete.id}</code>
+                  </p>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p className="text-sm text-yellow-800">
+                      <strong>This will permanently delete:</strong>
+                    </p>
+                    <ul className="text-sm text-yellow-700 mt-1 ml-4 list-disc">
+                      <li>The display configuration</li>
+                      <li>All associated playlists</li>
+                      <li>Video timeline and history</li>
+                    </ul>
+                    <p className="text-sm text-yellow-800 mt-2">
+                      The VM client will revert to showing its code and can be re-added later.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowDeleteModal(false);
+                      setDisplayToDelete(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={deleteDisplay}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    Delete Display
+                  </button>
+                </div>
               </div>
             </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setNewDisplayName('');
-                  setNewDisplayCode('');
-                  setError(null);
-                }}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createDisplay}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                disabled={!newDisplayName.trim() || !newDisplayCode.trim()}
-              >
-                Add Display
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
     </div>
   );
 }

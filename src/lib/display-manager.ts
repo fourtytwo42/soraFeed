@@ -140,10 +140,35 @@ export class DisplayManager {
     return commands;
   }
 
-  // Delete display
-  static deleteDisplay(id: string): void {
-    const stmt = queueDb.prepare('DELETE FROM displays WHERE id = ?');
-    stmt.run(id);
+  // Delete display and all associated data
+  static deleteDisplay(id: string): boolean {
+    const display = this.getDisplay(id);
+    if (!display) return false;
+
+    const transaction = queueDb.transaction(() => {
+      // Delete in order due to foreign key constraints
+      // 1. Delete video history
+      queueDb.prepare('DELETE FROM video_history WHERE display_id = ?').run(id);
+      
+      // 2. Delete timeline videos
+      queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(id);
+      
+      // 3. Delete playlist blocks (via playlist cascade)
+      queueDb.prepare(`
+        DELETE FROM playlist_blocks 
+        WHERE playlist_id IN (SELECT id FROM playlists WHERE display_id = ?)
+      `).run(id);
+      
+      // 4. Delete playlists
+      queueDb.prepare('DELETE FROM playlists WHERE display_id = ?').run(id);
+      
+      // 5. Finally delete the display
+      queueDb.prepare('DELETE FROM displays WHERE id = ?').run(id);
+    });
+
+    transaction();
+    console.log(`🗑️ Display ${id} (${display.name}) and all associated data deleted`);
+    return true;
   }
 
   // Update display name
