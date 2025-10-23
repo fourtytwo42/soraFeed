@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       return ` AND ${conditions}`;
     };
 
-    const exclusionConditions = buildExclusionConditions(excludeTerms, fast);
+    const exclusionConditions = buildExclusionConditions(excludeTerms, false); // Both queries now use same parameter structure
 
     // Build format filtering conditions
     const buildFormatConditions = (format: string) => {
@@ -104,56 +104,20 @@ export async function GET(request: NextRequest) {
 
     // Choose search strategy based on fast parameter
     const searchQuery = fast ? `
-      -- Fast random search: sample from matching posts with better randomization
-      WITH matching_posts AS (
-        SELECT 
-          p.id,
-          p.text,
-          p.posted_at,
-          p.permalink,
-          p.video_url,
-          p.video_url_md,
-          p.thumbnail_url,
-          p.gif_url,
-          p.width,
-          p.height,
-          p.generation_id,
-          p.task_id,
-          p.creator_id,
-          -- Multiple random seeds for better distribution
-          RANDOM() as rand_seed1,
-          RANDOM() as rand_seed2,
-          -- Add timestamp-based randomization to ensure different results each call
-          ((EXTRACT(EPOCH FROM NOW()) * RANDOM())::bigint % 1000000)::integer as time_seed,
-          -- Add request-specific randomization using query parameters
-          ((EXTRACT(EPOCH FROM NOW()) + $3)::bigint % 2147483647)::integer as request_seed
-        FROM sora_posts p
-        WHERE (
-          p.text ILIKE $1
-          OR (LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M')
-              AND LENGTH(REPLACE($1, '%', '')) - LENGTH(REPLACE(REPLACE($1, '%', ''), ' ', '')) = 0)
-        )${exclusionConditions}${formatConditions}
-        -- Prioritize exact phrase matches, then word boundary matches, then randomize
-        ORDER BY 
-          CASE WHEN LOWER(COALESCE(p.text, '')) LIKE LOWER($1) THEN 0
-               WHEN LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M') THEN 1 
-               ELSE 2 END,
-          rand_seed1, rand_seed2, time_seed
-        LIMIT ($2 * 4)  -- Get 4x more results to ensure variety after filtering
-      )
+      -- Fast random search: simple random sample from matching posts
       SELECT 
-        mp.id,
-        mp.text,
-        mp.posted_at,
-        mp.permalink,
-        mp.video_url,
-        mp.video_url_md,
-        mp.thumbnail_url,
-        mp.gif_url,
-        mp.width,
-        mp.height,
-        mp.generation_id,
-        mp.task_id,
+        p.id,
+        p.text,
+        p.posted_at,
+        p.permalink,
+        p.video_url,
+        p.video_url_md,
+        p.thumbnail_url,
+        p.gif_url,
+        p.width,
+        p.height,
+        p.generation_id,
+        p.task_id,
         c.id as creator_id,
         c.username,
         c.display_name,
@@ -165,10 +129,11 @@ export async function GET(request: NextRequest) {
         c.verified,
         1.0 as text_relevance,
         0 as remix_score
-      FROM matching_posts mp
-      JOIN creators c ON mp.creator_id = c.id
-      -- Final randomization using both seeds
-      ORDER BY (((mp.rand_seed1 + mp.rand_seed2) * 1000)::bigint + mp.time_seed) % 1000000
+      FROM sora_posts p
+      JOIN creators c ON p.creator_id = c.id
+      WHERE LOWER(COALESCE(p.text, '')) LIKE LOWER($1)${exclusionConditions}${formatConditions}
+      -- Pure random selection - like rolling dice on all matching videos
+      ORDER BY RANDOM()
       LIMIT $2
     ` : `
       -- Advanced search query with multiple matching strategies using normalized schema:
@@ -262,11 +227,8 @@ export async function GET(request: NextRequest) {
     // Format query parameter based on search type
     const queryParam = fast ? `%${includeQuery}%` : includeQuery;
     
-    // Build parameters array including exclude terms and timestamp for randomization
-    const timestamp = Date.now();
-    const queryParams = fast ? 
-      [queryParam, limit, timestamp, ...excludeTerms] : 
-      [queryParam, limit, ...excludeTerms];
+    // Build parameters array including exclude terms
+    const queryParams = [queryParam, limit, ...excludeTerms];
     
     // Quick sanity check - count total posts in database
     if (fast) {
@@ -275,10 +237,8 @@ export async function GET(request: NextRequest) {
       console.log(`📊 Database has ${totalPosts} total posts`);
       
       // Also check how many match our search (including exclusions)
-      const matchCountQuery = `SELECT COUNT(*) as matches FROM sora_posts p WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}`;
-      const matchCountParams = fast ? 
-        [queryParams[0], ...queryParams.slice(3)] : // Skip limit and timestamp for fast queries
-        queryParams.slice(0, 1 + excludeTerms.length);
+      const matchCountQuery = `SELECT COUNT(*) as matches FROM sora_posts p WHERE LOWER(COALESCE(p.text, '')) LIKE LOWER($1)${exclusionConditions}${formatConditions}`;
+      const matchCountParams = queryParams.slice(0, 1 + excludeTerms.length);
       const matchCountResult = await client.query(matchCountQuery, matchCountParams);
       const matchCount = matchCountResult.rows[0]?.matches || 0;
       console.log(`🎯 Found ${matchCount} posts matching "${query}" (with exclusions)`);
