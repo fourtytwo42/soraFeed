@@ -17,7 +17,12 @@ export async function POST(
       );
     }
 
+    console.log(`🎵 Activating playlist ${id} for display ${playlist.display_id}`);
     PlaylistManager.setActivePlaylist(playlist.display_id, id);
+    
+    // Verify activation worked
+    const activePlaylist = PlaylistManager.getActivePlaylist(playlist.display_id);
+    console.log(`✅ Active playlist after activation:`, activePlaylist?.id);
     
     return NextResponse.json({ success: true });
   } catch (error) {

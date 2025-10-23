@@ -70,16 +70,28 @@ export default function AdminDashboard() {
         return;
       }
 
-      // Fetch each owned display individually
+      // Fetch each owned display individually with progress
       const displayPromises = ownedCodes.map(async (code) => {
         try {
-          const response = await fetch(`/api/displays/${code}`);
-          if (response.ok) {
-            const display = await response.json();
+          const [displayResponse, timelineResponse] = await Promise.all([
+            fetch(`/api/displays/${code}`),
+            fetch(`/api/timeline/${code}`)
+          ]);
+          
+          if (displayResponse.ok) {
+            const display = await displayResponse.json();
             // Check if online based on last_ping
             const isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
-            return { ...display, isOnline };
-          } else if (response.status === 404) {
+            
+            // Get timeline progress if available
+            let progress = null;
+            if (timelineResponse.ok) {
+              const timelineData = await timelineResponse.json();
+              progress = timelineData.progress;
+            }
+            
+            return { ...display, isOnline, progress };
+          } else if (displayResponse.status === 404) {
             // Display was deleted, remove from owned list
             removeOwnedDisplayCode(code);
             return null;

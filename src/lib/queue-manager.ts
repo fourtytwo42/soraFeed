@@ -274,7 +274,9 @@ export class QueueManager {
 
   // Get timeline progress for display
   static getTimelineProgress(displayId: string) {
+    console.log(`🔍 Getting active playlist for display ${displayId}`);
     const playlist = PlaylistManager.getActivePlaylist(displayId);
+    console.log(`🔍 Active playlist found:`, playlist ? playlist.id : 'None');
     if (!playlist) return null;
 
     const blocks = PlaylistManager.getPlaylistBlocks(playlist.id);

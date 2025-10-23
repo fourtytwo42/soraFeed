@@ -18,7 +18,9 @@ export async function GET(
       );
     }
 
+    console.log(`📊 Getting timeline progress for display ${displayId}`);
     const progress = QueueManager.getTimelineProgress(displayId);
+    console.log(`📊 Timeline progress result:`, progress ? 'Found' : 'None');
     const queuedVideos = QueueManager.getQueuedVideos(displayId, 10);
     
     return NextResponse.json({
