@@ -114,28 +114,22 @@ export default function AdminDashboard() {
               isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
             }
             
-            // Get timeline progress
+            // Get timeline progress - prioritize API data for consistency
             let progress = null;
-            if (wsStatus?.playlistProgress) {
-              // Use WebSocket progress data
-              progress = {
-                currentBlock: {
-                  name: wsStatus.playlistProgress.playlistName,
-                  progress: (wsStatus.playlistProgress.currentIndex / wsStatus.playlistProgress.totalVideos) * 100,
-                  currentVideo: wsStatus.playlistProgress.currentIndex + 1,
-                  totalVideos: wsStatus.playlistProgress.totalVideos
-                },
-                blocks: [],
-                overallProgress: {
-                  currentPosition: wsStatus.playlistProgress.currentIndex,
-                  totalInCurrentLoop: wsStatus.playlistProgress.totalVideos,
-                  loopCount: 0
-                }
-              };
-            } else if (timelineResponse.ok) {
-              // Fallback to API progress
+            if (timelineResponse.ok) {
+              // Use API progress data as primary source
               const timelineData = await timelineResponse.json();
               progress = timelineData.progress;
+              
+              // Enhance with WebSocket video progress if available
+              if (wsStatus?.playlistProgress?.videoProgress && progress) {
+                // Add real-time video progress to the current block
+                const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
+                const enhancedBlockProgress = progress.currentBlock.progress + 
+                  (videoProgressFraction * (100 / progress.currentBlock.totalVideos));
+                
+                progress.currentBlock.progress = Math.min(enhancedBlockProgress, 100);
+              }
             }
             
             return { ...display, isOnline, progress };
@@ -376,20 +370,19 @@ export default function AdminDashboard() {
               updatedDisplay.status = 'playing';
             }
             
-            // Update progress from WebSocket data
-            if (wsStatus.playlistProgress) {
+            // Update progress with WebSocket video progress only (keep API structure)
+            if (wsStatus.playlistProgress?.videoProgress && display.progress) {
+              // Only update the real-time video progress within the current block
+              const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
+              const baseBlockProgress = Math.floor(display.progress.currentBlock.progress);
+              const enhancedBlockProgress = baseBlockProgress + 
+                (videoProgressFraction * (100 / display.progress.currentBlock.totalVideos));
+              
               updatedDisplay.progress = {
+                ...display.progress,
                 currentBlock: {
-                  name: wsStatus.playlistProgress.playlistName,
-                  progress: (wsStatus.playlistProgress.currentIndex / wsStatus.playlistProgress.totalVideos) * 100,
-                  currentVideo: wsStatus.playlistProgress.currentIndex + 1,
-                  totalVideos: wsStatus.playlistProgress.totalVideos
-                },
-                blocks: display.progress?.blocks || [],
-                overallProgress: {
-                  currentPosition: wsStatus.playlistProgress.currentIndex,
-                  totalInCurrentLoop: wsStatus.playlistProgress.totalVideos,
-                  loopCount: display.progress?.overallProgress?.loopCount || 0
+                  ...display.progress.currentBlock,
+                  progress: Math.min(enhancedBlockProgress, 100)
                 }
               };
             }

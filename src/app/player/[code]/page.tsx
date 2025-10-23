@@ -84,21 +84,15 @@ export default function VMPlayer() {
         if (duration > 0) {
           setVideoProgress({ currentTime, duration });
           
-          // Send enhanced progress update with video-level progress
+          // Send simple, consistent progress update
           if (wsConnected && vmState.currentTimelineVideo) {
             const videoProgressPercent = (currentTime / duration) * 100;
             
-            // Calculate overall progress including current video progress
-            const baseProgress = vmState.currentTimelineVideo.timeline_position;
-            const videoFraction = videoProgressPercent / 100;
-            const enhancedPosition = baseProgress + videoFraction;
-            
             sendProgressUpdate({
-              currentIndex: Math.floor(enhancedPosition),
-              totalVideos: vmState.currentTimelineVideo.timeline_position + 10, // Approximate total
+              currentIndex: vmState.currentTimelineVideo.timeline_position,
+              totalVideos: 4, // Keep it simple for now - will be updated by API data
               playlistName: 'Current Playlist',
-              videoProgress: videoProgressPercent,
-              enhancedPosition: enhancedPosition
+              videoProgress: videoProgressPercent
             });
           }
         }
@@ -192,14 +186,8 @@ export default function VMPlayer() {
             }
           }
 
-          // Send progress update if we have timeline data
-          if (wsConnected && data.progress) {
-            sendProgressUpdate({
-              currentIndex: data.progress.overallProgress?.currentPosition || 0,
-              totalVideos: data.progress.overallProgress?.totalInCurrentLoop || 0,
-              playlistName: data.progress.currentBlock?.name || 'Unknown Playlist'
-            });
-          }
+          // Note: Progress updates are now handled by real-time video tracking
+          // to avoid conflicting data sources
 
     } catch (error) {
       console.error('❌ Poll error:', error);
