@@ -62,6 +62,50 @@ export default function VMPlayer() {
   // Initialize WebSocket connection only when code is available
   const { isConnected: wsConnected, sendProgressUpdate, sendVideoChange } = useVMWebSocket(code || '');
 
+  // Video progress tracking functions (defined early to avoid hoisting issues)
+  const stopVideoProgressTracking = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
+
+  const startVideoProgressTracking = useCallback(() => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+
+    progressIntervalRef.current = setInterval(() => {
+      const videoElement = document.querySelector('video');
+      if (videoElement && !videoElement.paused && vmState.currentTimelineVideo) {
+        const currentTime = videoElement.currentTime;
+        const duration = videoElement.duration;
+        
+        if (duration > 0) {
+          setVideoProgress({ currentTime, duration });
+          
+          // Send enhanced progress update with video-level progress
+          if (wsConnected && vmState.currentTimelineVideo) {
+            const videoProgressPercent = (currentTime / duration) * 100;
+            
+            // Calculate overall progress including current video progress
+            const baseProgress = vmState.currentTimelineVideo.timeline_position;
+            const videoFraction = videoProgressPercent / 100;
+            const enhancedPosition = baseProgress + videoFraction;
+            
+            sendProgressUpdate({
+              currentIndex: Math.floor(enhancedPosition),
+              totalVideos: vmState.currentTimelineVideo.timeline_position + 10, // Approximate total
+              playlistName: 'Current Playlist',
+              videoProgress: videoProgressPercent,
+              enhancedPosition: enhancedPosition
+            });
+          }
+        }
+      }
+    }, 1000); // Update every second
+  }, [wsConnected, vmState.currentTimelineVideo, sendProgressUpdate]);
+
   // Polling function
   const pollServer = useCallback(async () => {
     if (!code) return;
@@ -168,14 +212,6 @@ export default function VMPlayer() {
       }
     }
   }, [code, vmState.status, vmState.currentTimelineVideo, vmState.position]);
-
-  // Stop video progress tracking
-  const stopVideoProgressTracking = useCallback(() => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-  }, []);
 
   // Handle video end
   const handleVideoEnd = useCallback(async () => {
@@ -296,43 +332,6 @@ export default function VMPlayer() {
     // Start tracking video progress for smooth updates
     startVideoProgressTracking();
   }, [needsUserInteraction, startVideoProgressTracking]);
-
-  // Track video progress for smooth progress updates
-  const startVideoProgressTracking = useCallback(() => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-    }
-
-    progressIntervalRef.current = setInterval(() => {
-      const videoElement = document.querySelector('video');
-      if (videoElement && !videoElement.paused && vmState.currentTimelineVideo) {
-        const currentTime = videoElement.currentTime;
-        const duration = videoElement.duration;
-        
-        if (duration > 0) {
-          setVideoProgress({ currentTime, duration });
-          
-          // Send enhanced progress update with video-level progress
-          if (wsConnected && vmState.currentTimelineVideo) {
-            const videoProgressPercent = (currentTime / duration) * 100;
-            
-            // Calculate overall progress including current video progress
-            const baseProgress = vmState.currentTimelineVideo.timeline_position;
-            const videoFraction = videoProgressPercent / 100;
-            const enhancedPosition = baseProgress + videoFraction;
-            
-            sendProgressUpdate({
-              currentIndex: Math.floor(enhancedPosition),
-              totalVideos: vmState.currentTimelineVideo.timeline_position + 10, // Approximate total
-              playlistName: 'Current Playlist',
-              videoProgress: videoProgressPercent,
-              enhancedPosition: enhancedPosition
-            });
-          }
-        }
-      }
-    }, 1000); // Update every second
-  }, [wsConnected, vmState.currentTimelineVideo, sendProgressUpdate]);
 
   // Initialize code and display
   useEffect(() => {
