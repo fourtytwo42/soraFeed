@@ -167,39 +167,6 @@ export default function VMPlayer() {
     }
   }, [code, vmState.status, vmState.currentTimelineVideo, vmState.position]);
 
-  // Process commands from admin
-  const processCommands = useCallback((commands: DisplayCommand[]) => {
-    commands.forEach(command => {
-      console.log('📡 Processing command:', command.type);
-      
-      switch (command.type) {
-        case 'play':
-          setVMState(prev => ({ ...prev, isPlaying: true, status: 'playing' }));
-          break;
-        case 'pause':
-          setVMState(prev => ({ ...prev, isPlaying: false, status: 'paused' }));
-          break;
-        case 'mute':
-          setVMState(prev => ({ ...prev, isMuted: true }));
-          break;
-        case 'unmute':
-          setVMState(prev => ({ ...prev, isMuted: false }));
-          break;
-        case 'next':
-          console.log('⏭️ Next video command received');
-          handleVideoEnd();
-          break;
-        case 'seek':
-          if (command.payload?.position !== undefined) {
-            setVMState(prev => ({ ...prev, position: command.payload!.position! }));
-          }
-          break;
-        default:
-          console.warn('Unknown command:', command.type);
-      }
-    });
-  }, [handleVideoEnd]);
-
   // Handle video end
   const handleVideoEnd = useCallback(async () => {
     console.log('🎬 Video ended, marking as played');
@@ -262,6 +229,39 @@ export default function VMPlayer() {
       });
     }
   }, []);
+
+  // Process commands from admin
+  const processCommands = useCallback((commands: DisplayCommand[]) => {
+    commands.forEach(command => {
+      console.log('📡 Processing command:', command.type);
+      
+      switch (command.type) {
+        case 'play':
+          setVMState(prev => ({ ...prev, isPlaying: true, status: 'playing' }));
+          break;
+        case 'pause':
+          setVMState(prev => ({ ...prev, isPlaying: false, status: 'paused' }));
+          break;
+        case 'mute':
+          setVMState(prev => ({ ...prev, isMuted: true }));
+          break;
+        case 'unmute':
+          setVMState(prev => ({ ...prev, isMuted: false }));
+          break;
+        case 'next':
+          console.log('⏭️ Next video command received');
+          handleVideoEnd();
+          break;
+        case 'seek':
+          if (command.payload?.position !== undefined) {
+            setVMState(prev => ({ ...prev, position: command.payload!.position! }));
+          }
+          break;
+        default:
+          console.warn('Unknown command:', command.type);
+      }
+    });
+  }, [handleVideoEnd]);
 
   // Handle video ready
   const handleVideoReady = useCallback(() => {
