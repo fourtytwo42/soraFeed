@@ -202,6 +202,22 @@ export default function VMPlayer() {
     }));
   }, [vmState.currentTimelineVideo]);
 
+  // Handle autoplay failure
+  const handleAutoplayBlocked = useCallback(() => {
+    console.log('🚫 Autoplay blocked, requiring user interaction');
+    setNeedsUserInteraction(true);
+  }, []);
+
+  // Handle user interaction to start playback
+  const handleUserInteraction = useCallback(() => {
+    console.log('👆 User interaction detected, enabling autoplay');
+    setNeedsUserInteraction(false);
+    setVMState(prev => ({ 
+      ...prev, 
+      isPlaying: true 
+    }));
+  }, []);
+
   // Handle video ready
   const handleVideoReady = useCallback(() => {
     console.log('✅ Video ready, attempting to start playback');
@@ -220,22 +236,6 @@ export default function VMPlayer() {
       error: null 
     }));
   }, [needsUserInteraction, handleUserInteraction]);
-
-  // Handle autoplay failure
-  const handleAutoplayBlocked = useCallback(() => {
-    console.log('🚫 Autoplay blocked, requiring user interaction');
-    setNeedsUserInteraction(true);
-  }, []);
-
-  // Handle user interaction to start playback
-  const handleUserInteraction = useCallback(() => {
-    console.log('👆 User interaction detected, enabling autoplay');
-    setNeedsUserInteraction(false);
-    setVMState(prev => ({ 
-      ...prev, 
-      isPlaying: true 
-    }));
-  }, []);
 
   // Preemptive auto-interaction on page load
   useEffect(() => {
