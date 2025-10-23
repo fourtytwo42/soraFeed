@@ -10,6 +10,7 @@ interface SimpleVideoPlayerProps {
   isMuted: boolean;
   onVideoEnd: () => void;
   onVideoReady: () => void;
+  onAutoplayBlocked?: () => void;
 }
 
 export default function SimpleVideoPlayer({ 
@@ -17,7 +18,8 @@ export default function SimpleVideoPlayer({
   isPlaying, 
   isMuted, 
   onVideoEnd, 
-  onVideoReady 
+  onVideoReady,
+  onAutoplayBlocked
 }: SimpleVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,12 +37,17 @@ export default function SimpleVideoPlayer({
     if (isPlaying) {
       videoElement.play().catch(err => {
         console.error('Failed to play video:', err);
-        setError('Failed to play video');
+        if (err.name === 'NotAllowedError') {
+          console.log('🚫 Autoplay blocked by browser');
+          onAutoplayBlocked?.();
+        } else {
+          setError('Failed to play video');
+        }
       });
     } else {
       videoElement.pause();
     }
-  }, [isPlaying, video]);
+  }, [isPlaying, video, onAutoplayBlocked]);
 
   // Mute control effect
   useEffect(() => {

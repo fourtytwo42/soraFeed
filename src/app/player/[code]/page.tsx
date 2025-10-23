@@ -49,6 +49,7 @@ export default function VMPlayer() {
     isConnected: false,
     hasActivePlaylist: false
   });
+  const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoPreloadRef = useRef<HTMLVideoElement[]>([]);
@@ -202,12 +203,28 @@ export default function VMPlayer() {
 
   // Handle video ready
   const handleVideoReady = useCallback(() => {
-    console.log('✅ Video ready, starting playback');
-    setVMState(prev => ({
-      ...prev,
-      status: 'playing',
+    console.log('✅ Video ready, attempting to start playback');
+    setVMState(prev => ({ 
+      ...prev, 
+      status: 'playing', 
       isPlaying: true,
-      error: null
+      error: null 
+    }));
+  }, []);
+
+  // Handle autoplay failure
+  const handleAutoplayBlocked = useCallback(() => {
+    console.log('🚫 Autoplay blocked, requiring user interaction');
+    setNeedsUserInteraction(true);
+  }, []);
+
+  // Handle user interaction to start playback
+  const handleUserInteraction = useCallback(() => {
+    console.log('👆 User interaction detected, enabling autoplay');
+    setNeedsUserInteraction(false);
+    setVMState(prev => ({ 
+      ...prev, 
+      isPlaying: true 
     }));
   }, []);
 
@@ -311,13 +328,30 @@ export default function VMPlayer() {
   return (
     <div className="w-full h-screen overflow-hidden">
       {vmState.currentVideo ? (
-        <SimpleVideoPlayer
-          video={vmState.currentVideo}
-          isPlaying={vmState.isPlaying}
-          isMuted={vmState.isMuted}
-          onVideoEnd={handleVideoEnd}
-          onVideoReady={handleVideoReady}
-        />
+        <div className="relative w-full h-full">
+          <SimpleVideoPlayer
+            video={vmState.currentVideo}
+            isPlaying={vmState.isPlaying}
+            isMuted={vmState.isMuted}
+            onVideoEnd={handleVideoEnd}
+            onVideoReady={handleVideoReady}
+            onAutoplayBlocked={handleAutoplayBlocked}
+          />
+          {needsUserInteraction && (
+            <div 
+              className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center cursor-pointer z-50"
+              onClick={handleUserInteraction}
+            >
+              <div className="text-center text-white">
+                <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                  <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
+                </div>
+                <div className="text-xl font-semibold mb-2">Tap to Play</div>
+                <div className="text-sm opacity-75">Browser requires interaction to start video</div>
+              </div>
+            </div>
+          )}
+        </div>
       ) : vmState.isConnected ? (
         <ConnectedDisplay 
           code={code} 
