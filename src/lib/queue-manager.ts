@@ -107,12 +107,13 @@ export class QueueManager {
     }
   }
 
-  // Get videos already played for a block across all loops
-  static getPlayedVideosForBlock(blockId: string): string[] {
+  // Get videos already played for a block in the current loop only
+  static getPlayedVideosForBlock(blockId: string, loopIteration: number): string[] {
     const stmt = queueDb.prepare(`
-      SELECT DISTINCT video_id FROM video_history WHERE block_id = ?
+      SELECT DISTINCT video_id FROM video_history 
+      WHERE block_id = ? AND loop_iteration = ?
     `);
-    const rows = stmt.all(blockId) as any[];
+    const rows = stmt.all(blockId, loopIteration) as any[];
     return rows.map(row => row.video_id);
   }
 
@@ -186,9 +187,9 @@ export class QueueManager {
     for (const block of blocks) {
       console.log(`📦 Processing block: "${block.search_term}" (${block.video_count} videos)`);
       
-      // Get videos already played for this block
-      const playedVideos = this.getPlayedVideosForBlock(block.id);
-      console.log(`🚫 Excluding ${playedVideos.length} already played videos`);
+      // Get videos already played for this block in the current loop
+      const playedVideos = this.getPlayedVideosForBlock(block.id, loopIteration);
+      console.log(`🚫 Excluding ${playedVideos.length} already played videos from current loop ${loopIteration}`);
 
       // Search for new videos
       const videos = await this.searchVideos(
@@ -362,6 +363,29 @@ export class QueueManager {
 
     // Populate new timeline with next loop iteration
     await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count + 1);
+
+    // Check if we actually got any videos in the new loop
+    const newQueuedCount = (queuedStmt.get(displayId) as any).count;
+    if (newQueuedCount === 0) {
+      console.log(`⚠️ No videos found for new loop ${playlist.loop_count + 1}, resetting video history for fresh start`);
+      
+      // Clear video history for this display to allow videos to be replayed
+      const clearHistoryStmt = queueDb.prepare(`
+        DELETE FROM video_history WHERE display_id = ?
+      `);
+      clearHistoryStmt.run(displayId);
+      
+      // Try populating again with clean history
+      await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count + 1);
+      
+      const finalQueuedCount = (queuedStmt.get(displayId) as any).count;
+      if (finalQueuedCount === 0) {
+        console.log(`❌ Still no videos found after clearing history - playlist may have no matching videos`);
+        return false;
+      }
+      
+      console.log(`✅ Found ${finalQueuedCount} videos after clearing history`);
+    }
 
     return true;
   }
