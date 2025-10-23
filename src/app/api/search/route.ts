@@ -131,7 +131,13 @@ export async function GET(request: NextRequest) {
         0 as remix_score
       FROM sora_posts p
       JOIN creators c ON p.creator_id = c.id
-      WHERE LOWER(COALESCE(p.text, '')) LIKE LOWER($1)${exclusionConditions}${formatConditions}
+      WHERE (
+        -- Exact phrase match for multi-word searches
+        LOWER(COALESCE(p.text, '')) LIKE LOWER($1)
+        OR
+        -- Word boundary match for better precision
+        LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M')
+      )${exclusionConditions}${formatConditions}
       -- Pure random selection - like rolling dice on all matching videos
       ORDER BY RANDOM()
       LIMIT $2
@@ -237,7 +243,10 @@ export async function GET(request: NextRequest) {
       console.log(`📊 Database has ${totalPosts} total posts`);
       
       // Also check how many match our search (including exclusions)
-      const matchCountQuery = `SELECT COUNT(*) as matches FROM sora_posts p WHERE LOWER(COALESCE(p.text, '')) LIKE LOWER($1)${exclusionConditions}${formatConditions}`;
+      const matchCountQuery = `SELECT COUNT(*) as matches FROM sora_posts p WHERE (
+        LOWER(COALESCE(p.text, '')) LIKE LOWER($1)
+        OR LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || REPLACE($1, '%', '') || '\\M')
+      )${exclusionConditions}${formatConditions}`;
       const matchCountParams = queryParams.slice(0, 1 + excludeTerms.length);
       const matchCountResult = await client.query(matchCountQuery, matchCountParams);
       const matchCount = matchCountResult.rows[0]?.matches || 0;
