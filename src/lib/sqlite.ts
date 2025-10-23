@@ -8,17 +8,30 @@ export const queueDb = new Database(dbPath);
 // Enable foreign keys
 queueDb.pragma('foreign_keys = ON');
 
-// Track if database has been initialized
-let isInitialized = false;
+// Track if database has been initialized using a more persistent method
+const INIT_FLAG_KEY = '__sorafeed_db_initialized__';
 
 // Initialize database tables
 export function initQueueDatabase() {
-  if (isInitialized) {
+  // Check if already initialized using a global flag
+  if ((global as any)[INIT_FLAG_KEY]) {
+    return;
+  }
+  
+  // Check if tables already exist to avoid unnecessary work
+  const tablesExist = queueDb.prepare(`
+    SELECT name FROM sqlite_master 
+    WHERE type='table' AND name IN ('displays', 'playlists', 'playlist_blocks', 'timeline_videos', 'video_history')
+  `).all();
+  
+  if (tablesExist.length === 5) {
+    // All tables exist, just set the flag and return
+    (global as any)[INIT_FLAG_KEY] = true;
     return;
   }
   
   console.log('🗄️ Initializing queue database...');
-  isInitialized = true;
+  (global as any)[INIT_FLAG_KEY] = true;
 
   // 1. displays table
   queueDb.exec(`
@@ -116,12 +129,13 @@ export function initQueueDatabase() {
   `);
 
   // Migration: Add format column if it doesn't exist
-  try {
+  const columnExists = queueDb.prepare(`
+    SELECT COUNT(*) as count FROM pragma_table_info('playlist_blocks') WHERE name = 'format'
+  `).get() as { count: number };
+  
+  if (columnExists.count === 0) {
     queueDb.exec(`ALTER TABLE playlist_blocks ADD COLUMN format TEXT DEFAULT 'mixed'`);
     console.log('✅ Added format column to playlist_blocks table');
-  } catch (error) {
-    // Column already exists, ignore error
-    console.log('📝 Format column already exists in playlist_blocks table');
   }
 
   console.log('✅ Queue database initialized successfully');
@@ -151,5 +165,11 @@ export function generateUniqueDisplayCode(): string {
   return code;
 }
 
-// Initialize database on import
-initQueueDatabase();
+// Ensure database is initialized before use
+export function ensureInitialized() {
+  initQueueDatabase();
+}
+
+// Initialize database on first use instead of import
+// This prevents repeated initialization in development hot reload
+ensureInitialized();
