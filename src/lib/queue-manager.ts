@@ -18,8 +18,9 @@ export class QueueManager {
     let query: string;
     let params: any[];
 
+    // Use PostgreSQL parameter placeholders ($1, $2, etc.)
     const excludeClause = excludeVideoIds.length > 0 
-      ? `AND p.id NOT IN (${excludeVideoIds.map(() => '?').join(', ')})`
+      ? `AND p.id NOT IN (${excludeVideoIds.map((_, i) => `$${i + 2}`).join(', ')})`
       : '';
 
     if (mode === 'newest') {
@@ -33,9 +34,9 @@ export class QueueManager {
           c.follower_count, c.following_count, c.post_count, c.verified
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
-        WHERE p.text ILIKE ? ${excludeClause}
+        WHERE p.text ILIKE $1 ${excludeClause}
         ORDER BY p.posted_at DESC
-        LIMIT ?
+        LIMIT $${excludeVideoIds.length + 2}
       `;
       params = [`%${searchTerm}%`, ...excludeVideoIds, count];
     } else {
@@ -49,9 +50,9 @@ export class QueueManager {
           c.follower_count, c.following_count, c.post_count, c.verified
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
-        WHERE p.text ILIKE ? ${excludeClause}
+        WHERE p.text ILIKE $1 ${excludeClause}
         ORDER BY RANDOM()
-        LIMIT ?
+        LIMIT $${excludeVideoIds.length + 2}
       `;
       params = [`%${searchTerm}%`, ...excludeVideoIds, count];
     }
@@ -112,25 +113,26 @@ export class QueueManager {
     const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
     let timelinePosition = 0;
 
-    const transaction = queueDb.transaction(async () => {
-      for (const block of blocks) {
-        console.log(`📦 Processing block: "${block.search_term}" (${block.video_count} videos)`);
-        
-        // Get videos already played for this block
-        const playedVideos = this.getPlayedVideosForBlock(block.id);
-        console.log(`🚫 Excluding ${playedVideos.length} already played videos`);
+    // Process each block sequentially (can't use async inside SQLite transaction)
+    for (const block of blocks) {
+      console.log(`📦 Processing block: "${block.search_term}" (${block.video_count} videos)`);
+      
+      // Get videos already played for this block
+      const playedVideos = this.getPlayedVideosForBlock(block.id);
+      console.log(`🚫 Excluding ${playedVideos.length} already played videos`);
 
-        // Search for new videos
-        const videos = await this.searchVideos(
-          block.search_term,
-          block.video_count,
-          block.fetch_mode,
-          playedVideos
-        );
+      // Search for new videos
+      const videos = await this.searchVideos(
+        block.search_term,
+        block.video_count,
+        block.fetch_mode,
+        playedVideos
+      );
 
-        console.log(`✅ Found ${videos.length} new videos for "${block.search_term}"`);
+      console.log(`✅ Found ${videos.length} new videos for "${block.search_term}"`);
 
-        // Add videos to timeline
+      // Add videos to timeline using transaction
+      const transaction = queueDb.transaction(() => {
         const stmt = queueDb.prepare(`
           INSERT INTO timeline_videos (
             id, display_id, playlist_id, block_id, video_id,
@@ -154,10 +156,11 @@ export class QueueManager {
           );
           timelinePosition++;
         });
-      }
-    });
+      });
 
-    await transaction();
+      transaction();
+    }
+
     console.log(`✅ Timeline populated with ${timelinePosition} videos`);
   }
 
