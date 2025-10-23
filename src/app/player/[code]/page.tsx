@@ -121,6 +121,7 @@ export default function VMPlayer() {
           // Load next video if provided
           if (data.nextVideo && (!vmState.currentTimelineVideo || data.nextVideo.id !== vmState.currentTimelineVideo.id)) {
             console.log('🎬 Loading new video:', data.nextVideo.video_id);
+            console.log('🎬 Video data:', data.nextVideo.video_data);
             
             const videoData = data.nextVideo.video_data;
             
@@ -129,6 +130,7 @@ export default function VMPlayer() {
               currentVideo: videoData,
               currentTimelineVideo: data.nextVideo,
               status: 'playing',
+              isPlaying: true, // Actually start playing the video
               hasActivePlaylist: true // Mark that we have an active playlist
             }));
 

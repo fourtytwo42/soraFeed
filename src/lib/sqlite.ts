@@ -8,9 +8,17 @@ export const queueDb = new Database(dbPath);
 // Enable foreign keys
 queueDb.pragma('foreign_keys = ON');
 
+// Track if database has been initialized
+let isInitialized = false;
+
 // Initialize database tables
 export function initQueueDatabase() {
+  if (isInitialized) {
+    return;
+  }
+  
   console.log('🗄️ Initializing queue database...');
+  isInitialized = true;
 
   // 1. displays table
   queueDb.exec(`

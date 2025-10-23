@@ -31,6 +31,8 @@ export default function SimpleVideoPlayer({
     const videoElement = videoRef.current;
     if (!videoElement || !video) return;
 
+    console.log('🎮 Video control - isPlaying:', isPlaying, 'paused:', videoElement.paused);
+
     if (isPlaying && !videoElement.paused) return;
     if (!isPlaying && videoElement.paused) return;
 

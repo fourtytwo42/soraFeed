@@ -34,8 +34,10 @@ export default function AdminDashboard() {
   const [displayToDelete, setDisplayToDelete] = useState<DisplayWithProgress | null>(null);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
 
-  // Generate a unique admin ID for this session
+  // Generate a unique admin ID for this session (client-side only)
   const adminId = useMemo(() => {
+    if (typeof window === 'undefined') return ''; // SSR guard
+    
     const stored = localStorage.getItem('sorafeed-admin-id');
     if (stored) return stored;
     
