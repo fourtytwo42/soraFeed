@@ -43,22 +43,30 @@ export default function CustomFeedTimeline({
 
   // Calculate timeline segments from feed blocks using actual positions
   const timelineSegments = useMemo(() => {
-    if (!feed || !feed.blocks.length) return [];
+    if (!feed || !feed.blocks.length || !blockPositions.length) return [];
 
     const segments: TimelineSegment[] = [];
 
     feed.blocks.forEach((block, index) => {
-      const startVideoIndex = blockPositions[index] || 0;
-      const nextBlockStart = blockPositions[index + 1] || totalVideos;
-      const actualVideoCount = nextBlockStart - startVideoIndex;
+      // Only create segments for blocks that have been loaded (exist in blockPositions)
+      if (index < blockPositions.length) {
+        const startVideoIndex = blockPositions[index];
+        const nextBlockStart = index + 1 < blockPositions.length 
+          ? blockPositions[index + 1] 
+          : totalVideos;
+        const actualVideoCount = Math.max(0, nextBlockStart - startVideoIndex);
 
-      segments.push({
-        blockIndex: index,
-        searchQuery: block.searchQuery,
-        startVideoIndex: startVideoIndex,
-        videoCount: actualVideoCount,
-        color: generateColor(block.searchQuery)
-      });
+        // Only add segment if it has videos
+        if (actualVideoCount > 0) {
+          segments.push({
+            blockIndex: index,
+            searchQuery: block.searchQuery,
+            startVideoIndex: startVideoIndex,
+            videoCount: actualVideoCount,
+            color: generateColor(block.searchQuery)
+          });
+        }
+      }
     });
 
     return segments;
@@ -84,12 +92,15 @@ export default function CustomFeedTimeline({
     console.log('🎯 Timeline Debug:', {
       currentVideoIndex,
       totalVideos,
+      blockPositions,
       segments: segments.map(s => ({
         blockIndex: s.blockIndex,
         searchQuery: s.searchQuery,
         startVideoIndex: s.startVideoIndex,
         videoCount: s.videoCount,
-        range: `${s.startVideoIndex}-${s.startVideoIndex + s.videoCount - 1}`
+        range: `${s.startVideoIndex}-${s.startVideoIndex + s.videoCount - 1}`,
+        widthPercent: totalVideos > 0 ? (s.videoCount / totalVideos) * 100 : 0,
+        leftPercent: totalVideos > 0 ? (s.startVideoIndex / totalVideos) * 100 : 0
       })),
       activeSegment: activeSegment ? {
         blockIndex: activeSegment.blockIndex,
