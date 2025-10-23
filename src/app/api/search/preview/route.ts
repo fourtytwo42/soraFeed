@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const searchTerm = searchParams.get('term');
     const count = parseInt(searchParams.get('count') || '5');
     const mode = searchParams.get('mode') as 'newest' | 'random' || 'newest';
+    const format = searchParams.get('format') as 'mixed' | 'wide' | 'tall' || 'mixed';
     
     if (!searchTerm) {
       return NextResponse.json(
@@ -16,11 +17,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const videos = await QueueManager.searchVideos(searchTerm, count, mode);
+    const videos = await QueueManager.searchVideos(searchTerm, count, mode, format);
     
     return NextResponse.json({
       searchTerm,
       mode,
+      format,
       count: videos.length,
       videos
     });

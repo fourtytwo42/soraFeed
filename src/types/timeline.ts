@@ -30,6 +30,7 @@ export interface PlaylistBlock {
   search_term: string;
   video_count: number;
   fetch_mode: 'newest' | 'random';
+  format: 'mixed' | 'wide' | 'tall';
   block_order: number;
   created_at: string;
   times_played: number;
@@ -94,4 +95,5 @@ export interface BlockDefinition {
   searchTerm: string;
   videoCount: number;
   fetchMode: 'newest' | 'random';
+  format: 'mixed' | 'wide' | 'tall';
 }

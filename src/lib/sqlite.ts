@@ -53,6 +53,7 @@ export function initQueueDatabase() {
       search_term TEXT NOT NULL,
       video_count INTEGER NOT NULL,
       fetch_mode TEXT DEFAULT 'newest',
+      format TEXT DEFAULT 'mixed',
       block_order INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       times_played INTEGER DEFAULT 0,

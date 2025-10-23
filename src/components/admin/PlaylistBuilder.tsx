@@ -30,7 +30,7 @@ function SortableBlock({ block, onUpdate, onDelete, onPreview }: {
   block: BlockWithId;
   onUpdate: (id: string, updates: Partial<BlockDefinition>) => void;
   onDelete: (id: string) => void;
-  onPreview: (searchTerm: string) => void;
+  onPreview: (searchTerm: string, format: 'mixed' | 'wide' | 'tall') => void;
 }) {
   const {
     attributes,
@@ -97,9 +97,20 @@ function SortableBlock({ block, onUpdate, onDelete, onPreview }: {
           <option value="random">Random</option>
         </select>
 
+        {/* Format selector */}
+        <select
+          value={block.format}
+          onChange={(e) => onUpdate(block.id, { format: e.target.value as 'mixed' | 'wide' | 'tall' })}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
+        >
+          <option value="mixed">Mixed</option>
+          <option value="wide">Wide</option>
+          <option value="tall">Tall</option>
+        </select>
+
         {/* Preview button */}
         <button
-          onClick={() => onPreview(block.searchTerm)}
+          onClick={() => onPreview(block.searchTerm, block.format)}
           disabled={!block.searchTerm.trim()}
           className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:text-gray-400 disabled:cursor-not-allowed"
           title="Preview videos"
@@ -124,7 +135,7 @@ export default function PlaylistBuilder({ onSave, onCancel, initialName = '', in
   const [blocks, setBlocks] = useState<BlockWithId[]>(() => 
     initialBlocks.length > 0 
       ? initialBlocks.map((block, index) => ({ ...block, id: `block-${index}` }))
-      : [{ id: 'block-0', searchTerm: '', videoCount: 5, fetchMode: 'newest' as const }]
+      : [{ id: 'block-0', searchTerm: '', videoCount: 5, fetchMode: 'newest' as const, format: 'mixed' as const }]
   );
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
 
@@ -140,7 +151,8 @@ export default function PlaylistBuilder({ onSave, onCancel, initialName = '', in
       id: `block-${Date.now()}`,
       searchTerm: '',
       videoCount: 5,
-      fetchMode: 'newest'
+      fetchMode: 'newest',
+      format: 'mixed'
     };
     setBlocks([...blocks, newBlock]);
   };
@@ -170,13 +182,13 @@ export default function PlaylistBuilder({ onSave, onCancel, initialName = '', in
     }
   };
 
-  const previewVideos = async (searchTerm: string) => {
+  const previewVideos = async (searchTerm: string, format: 'mixed' | 'wide' | 'tall' = 'mixed') => {
     if (!searchTerm.trim()) return;
 
     setPreviewData({ searchTerm, videos: [], loading: true });
 
     try {
-      const response = await fetch(`/api/search/preview?term=${encodeURIComponent(searchTerm)}&count=5&mode=newest`);
+      const response = await fetch(`/api/search/preview?term=${encodeURIComponent(searchTerm)}&count=5&mode=newest&format=${format}`);
       if (!response.ok) throw new Error('Failed to fetch preview');
       
       const data = await response.json();

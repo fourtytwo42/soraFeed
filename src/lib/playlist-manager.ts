@@ -19,13 +19,13 @@ export class PlaylistManager {
 
       // Create blocks
       const blockStmt = queueDb.prepare(`
-        INSERT INTO playlist_blocks (id, playlist_id, search_term, video_count, fetch_mode, block_order)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO playlist_blocks (id, playlist_id, search_term, video_count, fetch_mode, format, block_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
 
       blocks.forEach((block, index) => {
         const blockId = uuidv4();
-        blockStmt.run(blockId, playlistId, block.searchTerm, block.videoCount, block.fetchMode, index);
+        blockStmt.run(blockId, playlistId, block.searchTerm, block.videoCount, block.fetchMode, block.format, index);
       });
     });
 
@@ -86,6 +86,7 @@ export class PlaylistManager {
       search_term: row.search_term,
       video_count: row.video_count,
       fetch_mode: row.fetch_mode,
+      format: row.format || 'mixed',
       block_order: row.block_order,
       created_at: row.created_at,
       times_played: row.times_played,

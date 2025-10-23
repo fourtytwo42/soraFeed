@@ -11,12 +11,22 @@ export class QueueManager {
     searchTerm: string, 
     count: number, 
     mode: 'newest' | 'random',
+    format: 'mixed' | 'wide' | 'tall' = 'mixed',
     excludeVideoIds: string[] = []
   ): Promise<SoraFeedItem[]> {
     const client = await getClient();
     
     let query: string;
     let params: any[];
+
+    // Build format filtering conditions
+    let formatClause = '';
+    if (format === 'wide') {
+      formatClause = ' AND p.width > p.height';
+    } else if (format === 'tall') {
+      formatClause = ' AND p.height > p.width';
+    }
+    // 'mixed' means no additional filtering
 
     // Use PostgreSQL parameter placeholders ($1, $2, etc.)
     const excludeClause = excludeVideoIds.length > 0 
@@ -34,7 +44,7 @@ export class QueueManager {
           c.follower_count, c.following_count, c.post_count, c.verified
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
-        WHERE p.text ILIKE $1 ${excludeClause}
+        WHERE p.text ILIKE $1 ${formatClause} ${excludeClause}
         ORDER BY p.posted_at DESC
         LIMIT $${excludeVideoIds.length + 2}
       `;
@@ -50,7 +60,7 @@ export class QueueManager {
           c.follower_count, c.following_count, c.post_count, c.verified
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
-        WHERE p.text ILIKE $1 ${excludeClause}
+        WHERE p.text ILIKE $1 ${formatClause} ${excludeClause}
         ORDER BY RANDOM()
         LIMIT $${excludeVideoIds.length + 2}
       `;
@@ -126,6 +136,7 @@ export class QueueManager {
         block.search_term,
         block.video_count,
         block.fetch_mode,
+        block.format,
         playedVideos
       );
 

@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (block.format && !['mixed', 'wide', 'tall'].includes(block.format)) {
+        return NextResponse.json(
+          { error: 'Invalid format for block' },
+          { status: 400 }
+        );
+      }
     }
 
     const playlist = PlaylistManager.createPlaylist(displayId, name, blocks as BlockDefinition[]);
