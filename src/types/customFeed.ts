@@ -1,7 +1,7 @@
 export interface CustomFeedBlock {
   id: string;
   searchQuery: string;
-  durationSeconds: number; // Changed from minutes to seconds for finer control
+  videoCount: number; // Number of videos to play in this block
   order: number;
 }
 
@@ -16,11 +16,11 @@ export interface CustomFeed {
 
 export interface CustomFeedPlaybackState {
   currentBlockIndex: number;
-  blockStartTime: number;
+  blockStartVideoIndex: number; // Video index where current block started
   currentSearchQuery: string;
-  blockElapsedTime: number; // Track elapsed time in current block
-  currentVideoStartTime: number; // When current video started
-  currentVideoDuration: number; // Duration of current video
+  blockElapsedVideos: number; // Number of videos played in current block
+  currentVideoIndex: number; // Current video index in the overall queue
+  totalVideosInBlock: number; // Total videos in current block
 }
 
 export interface BlockQueue {
@@ -29,5 +29,20 @@ export interface BlockQueue {
   videos: unknown[]; // SoraFeedItem[] but avoiding circular import
   isLoading: boolean;
   loadedAt: number;
+}
+
+export interface VideoQueue {
+  videos: unknown[]; // SoraFeedItem[] - main video queue
+  currentIndex: number; // Current position in queue
+  isLoading: boolean; // Whether we're currently loading more videos
+  lastBlockIndex: number; // Last block index that was added to queue
+  blockPositions: number[]; // Starting position of each block in the queue
+}
+
+export interface CustomFeedTimelineState {
+  totalVideos: number; // Total number of videos in timeline
+  currentVideoIndex: number; // Current video index (0-based)
+  currentBlockIndex: number; // Current block index
+  videoProgress: number; // Progress within current video (0-1)
 }
 

@@ -15,7 +15,7 @@ interface VerticalCarouselProps {
   onRemoveFromFavorites?: (postId: string) => void;
   isInFavorites?: (postId: string) => boolean;
   onControlsChange?: (showing: boolean) => void;
-  onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
+  onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended' | 'timeupdate', videoDuration?: number, currentTime?: number, videoIndex?: number) => void;
   formatFilter?: 'both' | 'tall' | 'wide';
   onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
 }
@@ -263,7 +263,9 @@ export default function VerticalCarousel({
               onRemoveFromFavorites={onRemoveFromFavorites}
               isInFavorites={isInFavorites}
               onControlsChange={onControlsChange}
-              onCustomFeedVideoEvent={onCustomFeedVideoEvent}
+              onCustomFeedVideoEvent={onCustomFeedVideoEvent ? (eventType, videoDuration, currentTime) => {
+                onCustomFeedVideoEvent(eventType, videoDuration, currentTime, index);
+              } : undefined}
               formatFilter={formatFilter}
               onFormatFilterChange={onFormatFilterChange}
               nextItem={index < items.length - 1 ? items[index + 1] : undefined}

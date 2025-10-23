@@ -252,6 +252,14 @@ export async function GET(request: NextRequest) {
     const result = await client.query(searchQuery, queryParams);
     const queryTime = Date.now() - queryStart;
     
+    // Debug: Log some sample results to understand what's being returned
+    if (result.rows.length > 0) {
+      console.log(`🔍 Sample search results for "${query}":`);
+      result.rows.slice(0, 3).forEach((row, index) => {
+        console.log(`   ${index + 1}. "${row.text}" (ID: ${row.id})`);
+      });
+    }
+    
     console.log(`⚡ ${fast ? 'Fast' : 'Full'} search completed in ${queryTime}ms`);
     if (queryTime > 1000) {
       console.warn(`🐌 Slow query detected: ${queryTime}ms for "${query}"`);

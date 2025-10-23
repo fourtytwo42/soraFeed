@@ -16,7 +16,7 @@ interface VideoCarouselProps {
   isInFavorites?: (postId: string) => boolean;
   onControlsChange?: (showing: boolean) => void;
   onNext?: () => void;
-  onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
+  onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended' | 'timeupdate', videoDuration?: number, currentTime?: number, videoIndex?: number) => void;
   formatFilter?: 'both' | 'tall' | 'wide';
   onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
   nextItem?: SoraFeedItem; // For preloading the next video
@@ -755,6 +755,13 @@ export default function VideoCarousel({
                   if (onCustomFeedVideoEvent) {
                     const video = e.currentTarget;
                     onCustomFeedVideoEvent('loadedmetadata', video.duration);
+                  }
+                }}
+                onTimeUpdate={(e) => {
+                  // Call custom feed event handler for timeline updates
+                  if (onCustomFeedVideoEvent && isActive) {
+                    const video = e.currentTarget;
+                    onCustomFeedVideoEvent('timeupdate', video.duration, video.currentTime);
                   }
                 }}
                 onError={(e) => {

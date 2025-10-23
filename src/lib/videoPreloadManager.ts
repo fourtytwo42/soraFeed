@@ -9,7 +9,7 @@ interface PreloadRequest {
 
 class VideoPreloadManager {
   private activePreloads: Map<string, PreloadRequest> = new Map();
-  private readonly MAX_CONCURRENT_PRELOADS = 2; // Conservative limit
+  private readonly MAX_CONCURRENT_PRELOADS = 3; // Allow 3 videos to preload at once
   private readonly PRELOAD_TIMEOUT = 30000; // 30 seconds timeout
 
   /**

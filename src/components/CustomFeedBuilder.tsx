@@ -17,8 +17,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
   const [blocks, setBlocks] = useState<CustomFeedBlock[]>([]);
   const [availableBlocks, setAvailableBlocks] = useState<CustomFeedBlock[]>([]);
   const [newBlockSearch, setNewBlockSearch] = useState('');
-  const [newBlockDuration, setNewBlockDuration] = useState(60); // Default 60 seconds (1 minute)
-  const [durationUnit, setDurationUnit] = useState<'seconds' | 'minutes' | 'hours'>('seconds');
+  const [newBlockVideoCount, setNewBlockVideoCount] = useState(5); // Default 5 videos per block
   const [draggedBlock, setDraggedBlock] = useState<CustomFeedBlock | null>(null);
   const [draggedFromTimeline, setDraggedFromTimeline] = useState(false);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -65,28 +64,20 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
   const createBlock = useCallback(() => {
     if (!newBlockSearch.trim()) return;
 
-    // Convert duration to seconds and validate minimum
-    let durationInSeconds = newBlockDuration;
-    if (durationUnit === 'minutes') {
-      durationInSeconds = newBlockDuration * 60;
-    } else if (durationUnit === 'hours') {
-      durationInSeconds = newBlockDuration * 3600;
-    }
-
-    // Ensure minimum 15 seconds and round to nearest 15 seconds
-    durationInSeconds = Math.max(15, Math.round(durationInSeconds / 15) * 15);
+    // Validate video count
+    const videoCount = Math.max(1, Math.min(50, newBlockVideoCount)); // Min 1, max 50 videos
 
     const block: CustomFeedBlock = {
       id: generateId(),
       searchQuery: newBlockSearch.trim(),
-      durationSeconds: durationInSeconds,
+      videoCount: videoCount,
       order: availableBlocks.length,
     };
 
     setAvailableBlocks(prev => [...prev, block]);
     setNewBlockSearch('');
-    setNewBlockDuration(60); // Reset to 60 seconds
-  }, [newBlockSearch, newBlockDuration, durationUnit, availableBlocks.length, generateId]);
+    setNewBlockVideoCount(5); // Reset to 5 videos
+  }, [newBlockSearch, newBlockVideoCount, availableBlocks.length, generateId]);
 
   const duplicateBlock = useCallback((block: CustomFeedBlock, fromTimeline: boolean) => {
     const newBlock: CustomFeedBlock = {
@@ -232,8 +223,12 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
     onClose();
   }, [feedName, blocks, loop, editingFeed, onSave, onClose]);
 
-  const getTotalDuration = () => {
-    return blocks.reduce((sum, block) => sum + block.durationSeconds, 0);
+  const getTotalVideos = () => {
+    return blocks.reduce((sum, block) => sum + block.videoCount, 0);
+  };
+
+  const formatVideoCount = (count: number) => {
+    return `${count} video${count !== 1 ? 's' : ''}`;
   };
 
   const formatDuration = (seconds: number) => {
@@ -324,50 +319,20 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
                 className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:border-white/30 transition-colors"
               />
               <div className="flex items-center gap-2">
-                <Clock size={18} className="text-white/60" />
+                <span className="text-white/60 text-sm">#</span>
                 <input
                   type="number"
-                  min={durationUnit === 'seconds' ? "15" : "1"}
-                  max={durationUnit === 'seconds' ? "86400" : durationUnit === 'minutes' ? "1440" : "24"}
-                  step={durationUnit === 'seconds' ? "15" : "1"}
-                  value={newBlockDuration}
+                  min="1"
+                  max="50"
+                  step="1"
+                  value={newBlockVideoCount}
                   onChange={(e) => {
-                    const value = parseInt(e.target.value) || (durationUnit === 'seconds' ? 15 : 1);
-                    const min = durationUnit === 'seconds' ? 15 : 1;
-                    setNewBlockDuration(Math.max(min, value));
+                    const value = parseInt(e.target.value) || 1;
+                    setNewBlockVideoCount(Math.max(1, Math.min(50, value)));
                   }}
                   className="w-20 px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-center focus:outline-none focus:border-white/30 transition-colors"
                 />
-                <select
-                  value={durationUnit}
-                  onChange={(e) => {
-                    const newUnit = e.target.value as 'seconds' | 'minutes' | 'hours';
-                    setDurationUnit(newUnit);
-                    // Convert current value to new unit
-                    if (newUnit === 'minutes' && durationUnit === 'seconds') {
-                      setNewBlockDuration(Math.max(1, Math.round(newBlockDuration / 60)));
-                    } else if (newUnit === 'seconds' && durationUnit === 'minutes') {
-                      setNewBlockDuration(Math.max(15, newBlockDuration * 60));
-                    } else if (newUnit === 'hours' && durationUnit === 'seconds') {
-                      setNewBlockDuration(Math.max(1, Math.round(newBlockDuration / 3600)));
-                    } else if (newUnit === 'seconds' && durationUnit === 'hours') {
-                      setNewBlockDuration(Math.max(15, newBlockDuration * 3600));
-                    } else if (newUnit === 'hours' && durationUnit === 'minutes') {
-                      setNewBlockDuration(Math.max(1, Math.round(newBlockDuration / 60)));
-                    } else if (newUnit === 'minutes' && durationUnit === 'hours') {
-                      setNewBlockDuration(Math.max(1, newBlockDuration * 60));
-                    }
-                  }}
-                  className="px-2 py-2 bg-white/5 border border-white/10 rounded-xl text-white text-sm focus:outline-none focus:border-white/30 transition-colors"
-                  style={{ 
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    color: 'white'
-                  }}
-                >
-                  <option value="seconds" style={{ backgroundColor: '#1f2937', color: 'white' }}>sec</option>
-                  <option value="minutes" style={{ backgroundColor: '#1f2937', color: 'white' }}>min</option>
-                  <option value="hours" style={{ backgroundColor: '#1f2937', color: 'white' }}>hr</option>
-                </select>
+                <span className="text-white/60 text-sm">videos</span>
                 <button
                   onClick={createBlock}
                   className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
@@ -417,7 +382,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
                     </div>
                     <div className="flex items-center gap-1 text-xs text-white/50">
                       <Clock size={12} />
-                      {formatDuration(block.durationSeconds)}
+                      {formatVideoCount(block.videoCount)}
                     </div>
                   </div>
                 ))}
@@ -433,7 +398,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
               </h3>
               {blocks.length > 0 && (
                 <div className="text-sm text-white/60">
-                  Total: {formatDuration(getTotalDuration())}
+                  Total: {formatVideoCount(getTotalVideos())}
                 </div>
               )}
             </div>
@@ -489,7 +454,7 @@ export default function CustomFeedBuilder({ isOpen, onClose, onSave, editingFeed
                             </div>
                             <div className="flex items-center gap-1 text-xs text-white/50">
                               <Clock size={12} />
-                              {formatDuration(block.durationSeconds)}
+                              {formatVideoCount(block.videoCount)}
                             </div>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
