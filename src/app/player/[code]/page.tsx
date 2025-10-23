@@ -7,6 +7,7 @@ import { TimelineVideo, DisplayCommand } from '@/types/timeline';
 import SimpleVideoPlayer from '@/components/player/SimpleVideoPlayer';
 import CodeDisplay from '@/components/player/CodeDisplay';
 import ConnectedDisplay from '@/components/player/ConnectedDisplay';
+import LoadingDisplay from '@/components/player/LoadingDisplay';
 
 interface VMState {
   status: 'idle' | 'playing' | 'paused' | 'loading';
@@ -18,6 +19,7 @@ interface VMState {
   displayName: string;
   error: string | null;
   isConnected: boolean;
+  hasActivePlaylist: boolean; // Track if playlist is active
 }
 
 // Generate a random 6-digit alphanumeric code
@@ -45,7 +47,8 @@ export default function VMPlayer() {
     position: 0,
     displayName: '',
     error: null,
-    isConnected: false
+    isConnected: false,
+    hasActivePlaylist: false
   });
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,7 +88,8 @@ export default function VMPlayer() {
           currentVideo: null, // Clear any current video
           currentTimelineVideo: null, // Clear timeline
           status: 'idle', // Reset status
-          displayName: '' // Clear display name
+          displayName: '', // Clear display name
+          hasActivePlaylist: false // Clear playlist state
         }));
         return;
       }
@@ -109,16 +113,17 @@ export default function VMPlayer() {
         processCommands(data.commands);
       }
 
-      // Load next video if provided
-      if (data.nextVideo && (!vmState.currentTimelineVideo || data.nextVideo.id !== vmState.currentTimelineVideo.id)) {
-        console.log('🎬 Loading new video:', data.nextVideo.video_id);
-        setVMState(prev => ({
-          ...prev,
-          currentVideo: data.nextVideo.video_data,
-          currentTimelineVideo: data.nextVideo,
-          status: 'loading'
-        }));
-      }
+          // Load next video if provided
+          if (data.nextVideo && (!vmState.currentTimelineVideo || data.nextVideo.id !== vmState.currentTimelineVideo.id)) {
+            console.log('🎬 Loading new video:', data.nextVideo.video_id);
+            setVMState(prev => ({
+              ...prev,
+              currentVideo: data.nextVideo.video_data,
+              currentTimelineVideo: data.nextVideo,
+              status: 'loading',
+              hasActivePlaylist: true // Mark that we have an active playlist
+            }));
+          }
 
     } catch (error) {
       console.error('❌ Poll error:', error);
@@ -185,14 +190,15 @@ export default function VMPlayer() {
       }
     }
 
-    // Reset state and wait for next video
+    // Set to loading state while waiting for next video, but keep playlist active
     setVMState(prev => ({
       ...prev,
-      status: 'idle',
+      status: 'loading',
       currentVideo: null,
       currentTimelineVideo: null,
       isPlaying: false,
       position: 0
+      // Keep hasActivePlaylist true so we don't show connected screen
     }));
   }, [vmState.currentTimelineVideo]);
 
@@ -313,6 +319,11 @@ export default function VMPlayer() {
           isMuted={vmState.isMuted}
           onVideoEnd={handleVideoEnd}
           onVideoReady={handleVideoReady}
+        />
+      ) : vmState.hasActivePlaylist ? (
+        <LoadingDisplay 
+          code={code} 
+          displayName={vmState.displayName}
         />
       ) : vmState.isConnected ? (
         <ConnectedDisplay 
