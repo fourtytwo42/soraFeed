@@ -54,6 +54,7 @@ export default function VMPlayer() {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoPreloadRef = useRef<HTMLVideoElement[]>([]);
   const codeInitialized = useRef(false);
+  const autoInteractionTriggered = useRef(false);
 
   // Polling function
   const pollServer = useCallback(async () => {
@@ -204,13 +205,21 @@ export default function VMPlayer() {
   // Handle video ready
   const handleVideoReady = useCallback(() => {
     console.log('✅ Video ready, attempting to start playback');
+    
+    // Auto-simulate user interaction for kiosk mode
+    if (needsUserInteraction) {
+      console.log('🤖 Auto-simulating user interaction for kiosk mode');
+      handleUserInteraction();
+      return;
+    }
+    
     setVMState(prev => ({ 
       ...prev, 
       status: 'playing', 
       isPlaying: true,
       error: null 
     }));
-  }, []);
+  }, [needsUserInteraction, handleUserInteraction]);
 
   // Handle autoplay failure
   const handleAutoplayBlocked = useCallback(() => {
@@ -226,6 +235,32 @@ export default function VMPlayer() {
       ...prev, 
       isPlaying: true 
     }));
+  }, []);
+
+  // Preemptive auto-interaction on page load
+  useEffect(() => {
+    // Trigger interaction events immediately on page load for kiosk mode
+    const triggerPreemptiveInteraction = () => {
+      console.log('🤖 Triggering preemptive auto-interaction for kiosk mode');
+      
+      // Create and dispatch various interaction events
+      const events = [
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+        new TouchEvent('touchstart', { bubbles: true, cancelable: true }),
+        new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter' })
+      ];
+      
+      events.forEach(event => {
+        document.body.dispatchEvent(event);
+      });
+      
+      // Also try on document
+      document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    };
+    
+    // Trigger immediately and after a short delay
+    triggerPreemptiveInteraction();
+    setTimeout(triggerPreemptiveInteraction, 500);
   }, []);
 
   // Initialize code and display
@@ -302,6 +337,35 @@ export default function VMPlayer() {
       }
     };
   }, [code, pollServer]);
+
+  // Auto-interaction for kiosk mode - triggers when first video loads
+  useEffect(() => {
+    if (vmState.currentVideo && !autoInteractionTriggered.current) {
+      autoInteractionTriggered.current = true;
+      
+      // Small delay to ensure video element is ready
+      setTimeout(() => {
+        console.log('🤖 Triggering auto-interaction for kiosk mode');
+        
+        // Simulate multiple interaction types to ensure autoplay is enabled
+        const interactionEvents = ['click', 'touchstart', 'keydown'];
+        
+        interactionEvents.forEach(eventType => {
+          const event = new Event(eventType, { bubbles: true });
+          document.body.dispatchEvent(event);
+        });
+        
+        // Also try direct video interaction
+        const videoElement = document.querySelector('video');
+        if (videoElement) {
+          const clickEvent = new MouseEvent('click', { bubbles: true });
+          videoElement.dispatchEvent(clickEvent);
+        }
+        
+        console.log('🤖 Auto-interaction events dispatched');
+      }, 100);
+    }
+  }, [vmState.currentVideo]);
 
   // Cleanup on unmount
   useEffect(() => {
