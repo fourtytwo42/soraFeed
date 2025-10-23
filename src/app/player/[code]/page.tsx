@@ -6,6 +6,7 @@ import { SoraFeedItem } from '@/types/sora';
 import { TimelineVideo, DisplayCommand } from '@/types/timeline';
 import SimpleVideoPlayer from '@/components/player/SimpleVideoPlayer';
 import CodeDisplay from '@/components/player/CodeDisplay';
+import ConnectedDisplay from '@/components/player/ConnectedDisplay';
 
 interface VMState {
   status: 'idle' | 'playing' | 'paused' | 'loading';
@@ -16,6 +17,7 @@ interface VMState {
   position: number;
   displayName: string;
   error: string | null;
+  isConnected: boolean;
 }
 
 // Generate a random 6-digit alphanumeric code
@@ -42,7 +44,8 @@ export default function VMPlayer() {
     isMuted: false,
     position: 0,
     displayName: '',
-    error: null
+    error: null,
+    isConnected: false
   });
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -71,7 +74,8 @@ export default function VMPlayer() {
         console.log('🔍 Display not found in system yet, waiting for admin to add it');
         setVMState(prev => ({
           ...prev,
-          error: null // Clear any previous errors
+          error: null, // Clear any previous errors
+          isConnected: false
         }));
         return;
       }
@@ -82,10 +86,12 @@ export default function VMPlayer() {
 
       const data = await response.json();
       
-      // Clear any previous errors since polling is working
+      // Successfully connected to the system!
       setVMState(prev => ({
         ...prev,
-        error: null
+        error: null,
+        isConnected: true,
+        displayName: data.displayName || prev.displayName
       }));
       
       // Process commands
@@ -297,6 +303,11 @@ export default function VMPlayer() {
           isMuted={vmState.isMuted}
           onVideoEnd={handleVideoEnd}
           onVideoReady={handleVideoReady}
+        />
+      ) : vmState.isConnected ? (
+        <ConnectedDisplay 
+          code={code} 
+          displayName={vmState.displayName}
         />
       ) : (
         <CodeDisplay 

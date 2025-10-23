@@ -56,6 +56,7 @@ export async function POST(
     return NextResponse.json({
       commands,
       nextVideo,
+      displayName: display.name,
       status: 'ok'
     });
   } catch (error) {
