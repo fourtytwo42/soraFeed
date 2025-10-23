@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
           RANDOM() as rand_seed1,
           RANDOM() as rand_seed2,
           -- Add timestamp-based randomization to ensure different results each call
-          (EXTRACT(EPOCH FROM NOW()) * RANDOM())::integer % 1000000 as time_seed
+          ((EXTRACT(EPOCH FROM NOW()) * RANDOM())::bigint % 1000000)::integer as time_seed
         FROM sora_posts p
         WHERE p.text ILIKE $1${exclusionConditions}${formatConditions}
         -- Use multiple random orderings for better variety
@@ -156,7 +156,7 @@ export async function GET(request: NextRequest) {
       FROM matching_posts mp
       JOIN creators c ON mp.creator_id = c.id
       -- Final randomization using both seeds
-      ORDER BY ((mp.rand_seed1 + mp.rand_seed2) * 1000 + mp.time_seed) % 1000000
+      ORDER BY (((mp.rand_seed1 + mp.rand_seed2) * 1000)::bigint + mp.time_seed) % 1000000
       LIMIT $2
     ` : `
       -- Advanced search query with multiple matching strategies using normalized schema:

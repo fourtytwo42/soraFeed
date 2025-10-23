@@ -266,6 +266,7 @@ export default function VerticalCarousel({
               onCustomFeedVideoEvent={onCustomFeedVideoEvent}
               formatFilter={formatFilter}
               onFormatFilterChange={onFormatFilterChange}
+              nextItem={index < items.length - 1 ? items[index + 1] : undefined}
               onNext={() => {
                 console.log('🎬 VideoCarousel requested next video via onNext');
                 if (emblaApi && currentIndex < items.length - 1) {

@@ -276,19 +276,19 @@ export default function FeedLoader() {
     setIsBuilderOpen(true);
   }, []);
 
-  // Prefetch videos for a specific block with TRUE RANDOMIZATION
-  const prefetchBlockVideos = useCallback(async (blockIndex: number, searchQuery: string, retryCount = 0): Promise<SoraFeedItem[]> => {
+  // Simple video fetching for pre-compilation
+  const fetchVideosForBlock = useCallback(async (searchQuery: string): Promise<SoraFeedItem[]> => {
     try {
-      console.log(`🔄 Prefetching block ${blockIndex}: "${searchQuery}" (attempt ${retryCount + 1})`);
+      console.log(`📦 Fetching videos for: "${searchQuery}" with TRUE RANDOMIZATION`);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // Increased timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // Increased timeout for larger requests
       
       // Add timestamp to ensure different results each time
       const timestamp = Date.now();
       
       // FETCH MORE RESULTS FOR TRUE RANDOMIZATION: Get 100 results and pick 3 randomly
-      const fetchLimit = 100; // Get many more results
+      const fetchLimit = 100;
       const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=${fetchLimit}&fast=true&t=${timestamp}&format=${formatFilter}`, {
         signal: controller.signal
       });
@@ -329,16 +329,9 @@ export default function FeedLoader() {
         console.log(`🎲 Randomly selected ${videos.length} unique videos from ${allVideos.length} results for "${searchQuery}" (${attempts} attempts)`);
       }
       
-      // If no results and this is the first attempt, retry after a short delay
-      if (videos.length === 0 && retryCount === 0) {
-        console.log(`🔄 No results for "${searchQuery}" on first attempt, retrying in 1s...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return await prefetchBlockVideos(blockIndex, searchQuery, retryCount + 1);
-      }
-      
-      // If still no results after retry, try a broader search with randomization
-      if (videos.length === 0 && retryCount === 1) {
-        console.log(`🔄 Still no results for "${searchQuery}", trying broader search...`);
+      // If no results, try a broader search
+      if (videos.length === 0) {
+        console.log(`🔄 Still no results for "${searchQuery}", trying broader search with randomization...`);
         const broaderQuery = searchQuery.split(' ')[0]; // Use just the first word
         if (broaderQuery !== searchQuery) {
           const broaderResponse = await fetch(`/api/search?q=${encodeURIComponent(broaderQuery)}&limit=${fetchLimit}&fast=true&t=${timestamp + 1}&format=${formatFilter}`, {
@@ -376,15 +369,20 @@ export default function FeedLoader() {
         }
       }
       
-      // Use video tracker to filter out seen videos
-      const unseenVideos: SoraFeedItem[] = videoTracker.filterUnseen(videos);
+      // Filter out videos we've already seen to maintain variety
+      const unseenVideos = videos.filter((video: SoraFeedItem) => !videoTracker.hasSeen(video.post.id));
       const unseenCount = unseenVideos.length;
       const totalCount = videos.length;
       
+      console.log(`📊 Video breakdown: ${unseenCount} unseen, ${totalCount - unseenCount} already seen`);
+      
+      // Use unseen videos first, fallback to first 3 if all seen
+      let videosToUse: SoraFeedItem[] = unseenVideos.length > 0 ? unseenVideos : videos.slice(0, 3);
+      
       console.log(`📊 Video analysis for "${searchQuery}": ${totalCount} total, ${unseenCount} unseen, ${totalCount - unseenCount} already seen`);
       
-      // If we have less than 3 unseen videos, we need to fetch more with randomization
-      if (unseenCount < 3 && videos.length > 0) {
+      // If we have less than 3 videos to use, we need to fetch more
+      if (videosToUse.length < 3 && videos.length > 0) {
         console.log(`⚠️ Low unseen video count (${unseenCount}), fetching more with randomization...`);
         try {
           // Try to get more videos with randomization
@@ -416,10 +414,10 @@ export default function FeedLoader() {
               }
               
               const moreVideos = Array.from(selectedIndices).map(index => allMoreVideos[index]);
-              const moreUnseen: SoraFeedItem[] = videoTracker.filterUnseen(moreVideos);
+              const moreUnseen = moreVideos.filter((video: SoraFeedItem) => !videoTracker.hasSeen(video.post.id));
               
-              // Add the new unseen videos
-              unseenVideos.push(...moreUnseen);
+              // Add the new unseen videos to our collection
+              videosToUse.push(...moreUnseen);
               console.log(`📈 Randomly selected ${moreVideos.length} from ${allMoreVideos.length} additional results, ${moreUnseen.length} were unseen`);
             }
           }
@@ -428,15 +426,8 @@ export default function FeedLoader() {
         }
       }
       
-      // Use unseen videos if we have enough, otherwise mix in some seen ones
-      let videosToUse: SoraFeedItem[];
-      if (unseenVideos.length >= 3) {
-        videosToUse = unseenVideos;
-      } else if (unseenVideos.length > 0) {
-        // Mix unseen with some seen videos, prioritizing unseen
-        const seenVideos = videos.filter((v: SoraFeedItem) => !videoTracker.hasSeen(v.post.id));
-        videosToUse = [...unseenVideos, ...seenVideos.slice(0, Math.max(0, 3 - unseenVideos.length))];
-      } else {
+      // Final check: if we still don't have enough videos, use all available
+      if (videosToUse.length === 0) {
         // All videos are seen, use them anyway but shuffle well
         videosToUse = videos;
         console.log(`🔄 All videos seen for "${searchQuery}", using anyway with good shuffle`);
@@ -452,7 +443,7 @@ export default function FeedLoader() {
       const videoIds = shuffled.map(video => video.post.id).filter(Boolean);
       videoTracker.markMultipleAsSeen(videoIds);
       
-      console.log(`✅ Prefetched ${shuffled.length} videos for block ${blockIndex} (${unseenCount} were unseen)`);
+      console.log(`✅ Fetched ${shuffled.length} videos for "${searchQuery}" (${unseenCount} were unseen)`);
       
       // Log video tracker stats periodically
       const stats = videoTracker.getStats();
@@ -462,378 +453,107 @@ export default function FeedLoader() {
       
       return shuffled;
     } catch (err) {
-      console.error(`❌ Failed to prefetch block ${blockIndex} for "${searchQuery}":`, err);
-      console.error(`❌ Error details:`, err instanceof Error ? err.message : err);
+      // Handle AbortError more gracefully
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.warn(`⏰ Request timeout for "${searchQuery}"`);
+        
+        // Retry with a smaller limit
+        console.log(`🔄 Retrying with smaller limit...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          const timestamp = Date.now();
+          const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=100&fast=true&t=${timestamp}&format=${formatFilter}`, {
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          const data = await response.json();
+          const videos = data.items || [];
+          console.log(`✅ Retry successful: ${videos.length} videos for "${searchQuery}"`);
+          return videos;
+        } catch (retryErr) {
+          console.warn(`⚠️ Retry also failed for "${searchQuery}":`, retryErr instanceof Error ? retryErr.message : retryErr);
+          return [];
+        }
+      } else {
+        console.error(`❌ Failed to fetch videos for "${searchQuery}":`, err);
+        console.error(`❌ Error details:`, err instanceof Error ? err.message : err);
+      }
       return [];
     }
   }, [formatFilter]);
 
-  // Add block to queue with prefetched videos
-  const queueBlock = useCallback(async (blockIndex: number, searchQuery: string) => {
-    // Don't queue if already exists and not expired
-    const existing = blockQueue.get(blockIndex);
-    if (existing && !existing.isLoading && (Date.now() - existing.loadedAt) < 300000) { // 5 min cache
-      return;
-    }
+  // Add block to queue with prefetched videos - function removed
 
-    // Mark as loading
-    setBlockQueue(prev => new Map(prev.set(blockIndex, {
-      blockIndex,
-      searchQuery,
-      videos: existing?.videos || [],
-      isLoading: true,
-      loadedAt: existing?.loadedAt || 0
-    })));
+  // Get videos from queue or load immediately - function removed
 
-    // Fetch videos
-    const videos = await prefetchBlockVideos(blockIndex, searchQuery);
+  // Removed loadCustomFeedBlock - now using simple pre-compiled queue
+
+
+  // Start prefetching next blocks during current block playback - function removed
+
+  // Execute the actual block transition logic - function removed
+
+  // Handle video end event for custom feed progression (no more timers!)
+  // Removed complex block transition logic - now using simple pre-compiled queue
+
+  const startCustomFeedPlayback = useCallback(async (feed: CustomFeed) => {
+    console.log(`🎵 Starting custom feed: "${feed.name}" (${feed.blocks.length} blocks)`);
     
-    // Update with results
-    setBlockQueue(prev => new Map(prev.set(blockIndex, {
-      blockIndex,
-      searchQuery,
-      videos,
-      isLoading: false,
-      loadedAt: Date.now()
-    })));
-
-    // ALSO PRELOAD THE ACTUAL VIDEO FILES for seamless playback
-    if (videos.length > 0) {
-      console.log(`🎬 Starting video file preload for block ${blockIndex} (${videos.length} videos)`);
-      videos.forEach((video, index) => {
-        if (video.post?.attachments?.[0]?.encodings?.source?.path) {
-          // Import videoPreloadManager dynamically to avoid circular imports
-          import('@/lib/videoPreloadManager').then(({ videoPreloadManager }) => {
-            videoPreloadManager.requestPreload({
-              videoUrl: video.post.attachments[0].encodings.source!.path,
-              postId: video.post.id,
-              priority: blockIndex === 0 ? 1 : 2 + blockIndex, // Higher priority for earlier blocks
-              onSuccess: () => {
-                console.log(`✅ Video file preloaded for block ${blockIndex}, video ${index}: ${video.post.id}`);
-              },
-              onError: (error) => {
-                console.warn(`⚠️ Video file preload failed for block ${blockIndex}, video ${index}:`, error.message);
-              }
-            });
-          });
-        }
-      });
-    }
-  }, [blockQueue, prefetchBlockVideos]);
-
-  // Get videos from queue or load immediately
-  const getBlockVideos = useCallback(async (blockIndex: number, searchQuery: string): Promise<SoraFeedItem[]> => {
-    const queued = blockQueue.get(blockIndex);
-    
-    if (queued && !queued.isLoading && queued.videos.length > 0) {
-      const cacheAge = Date.now() - queued.loadedAt;
-      const isLoop = blockIndex === 0 && customFeedPlayback && customFeedPlayback.currentBlockIndex > 0;
-      console.log(`📦 Using ${isLoop ? 'loop-preloaded' : 'prefetched'} videos for block ${blockIndex} (${queued.videos.length} videos, cached ${Math.round(cacheAge/1000)}s ago)`);
-      return queued.videos as SoraFeedItem[];
-    }
-    
-    // Fallback to immediate load
-    console.log(`⚡ Loading block ${blockIndex} immediately (not prefetched)`);
-    return await prefetchBlockVideos(blockIndex, searchQuery);
-  }, [blockQueue, customFeedPlayback, prefetchBlockVideos]);
-
-  const loadCustomFeedBlock = useCallback(async (blockIndex: number, searchQuery: string) => {
-    try {
-      // NO LOADING STATE - seamless transition
-      setError(null);
-      
-      console.log(`🎬 Seamlessly switching to block ${blockIndex}: "${searchQuery}"`);
-      console.log(`🎬 Current items count before load: ${items.length}`);
-      console.log(`🎬 Current feedType: ${feedType}, customFeedPlayback:`, customFeedPlayback);
-      
-      // Get videos from queue or load immediately
-      const videos = await getBlockVideos(blockIndex, searchQuery);
-      
-      if (videos.length > 0) {
-        console.log(`🎬 Setting ${videos.length} videos for custom feed block ${blockIndex}`);
-        console.log(`🎬 First video ID: ${videos[0]?.post?.id}, title: ${videos[0]?.post?.text?.substring(0, 50)}...`);
-        
-        // Deduplicate videos to prevent duplicate keys in custom feed blocks
-        const uniqueVideos = videos.filter((video: SoraFeedItem, index: number, arr: SoraFeedItem[]) => {
-          return arr.findIndex((v: SoraFeedItem) => v.post.id === video.post.id) === index;
-        });
-        
-        if (uniqueVideos.length !== videos.length) {
-          console.log(`🎲 Deduplicated ${videos.length - uniqueVideos.length} duplicate videos in block ${blockIndex}`);
-        }
-        
-        setItems(uniqueVideos as SoraFeedItem[]);
-        setError(null); // Clear any previous errors
-        console.log(`✅ Seamlessly loaded ${uniqueVideos.length} unique videos for block ${blockIndex}: "${searchQuery}"`);
-      } else {
-        console.warn(`⚠️ No videos found for block ${blockIndex}: "${searchQuery}"`);
-        
-        // Try a fallback search with just the first word
-        const fallbackQuery = searchQuery.split(' ')[0];
-        if (fallbackQuery && fallbackQuery !== searchQuery) {
-          console.log(`🔄 Trying fallback search with: "${fallbackQuery}"`);
-          try {
-            const fallbackVideos = await prefetchBlockVideos(blockIndex, fallbackQuery);
-            if (fallbackVideos.length > 0) {
-              console.log(`✅ Fallback search found ${fallbackVideos.length} videos`);
-              
-              // Deduplicate fallback videos too
-              const uniqueFallbackVideos = fallbackVideos.filter((video: SoraFeedItem, index: number, arr: SoraFeedItem[]) => {
-                return arr.findIndex((v: SoraFeedItem) => v.post.id === video.post.id) === index;
-              });
-              
-              if (uniqueFallbackVideos.length !== fallbackVideos.length) {
-                console.log(`🎲 Deduplicated ${fallbackVideos.length - uniqueFallbackVideos.length} duplicate videos in fallback`);
-              }
-              
-              setItems(uniqueFallbackVideos as SoraFeedItem[]);
-              setError(null);
-            } else {
-              setError(`No videos found for "${searchQuery}" or "${fallbackQuery}"`);
-            }
-          } catch (fallbackErr) {
-            console.error('❌ Fallback search also failed:', fallbackErr);
-            setError(`Search failed for "${searchQuery}"`);
-          }
-        } else {
-          setError(`No videos found for "${searchQuery}"`);
-        }
-      }
-      
-      setCursor(null);
-      setHasMore(false);
-    } catch (err) {
-      console.error(`❌ Custom feed block load error for block ${blockIndex}:`, err);
-      setError(err instanceof Error ? err.message : 'Failed to load custom feed block');
-      // Don't clear items on error to prevent black screen
-    }
-    // NO FINALLY BLOCK - no loading state to clear for seamless transitions
-  }, [getBlockVideos, items.length, feedType, customFeedPlayback, prefetchBlockVideos]);
-
-
-  // Start prefetching next blocks during current block playback
-  const startPrefetching = useCallback((feed: CustomFeed, currentIndex: number) => {
-    // Clear any existing prefetch timer
-    if (prefetchTimerRef.current) {
-      clearTimeout(prefetchTimerRef.current);
-    }
-
-    // Start prefetching IMMEDIATELY for seamless transitions
-    const currentBlock = feed.blocks[currentIndex];
-    if (!currentBlock) return;
-
-    console.log(`🚀 Starting immediate prefetch for seamless transitions from block ${currentIndex}`);
-
-    // Prefetch next 2-3 blocks immediately
-    const blocksToPreload = Math.min(3, feed.blocks.length - currentIndex - 1);
-    
-    for (let i = 1; i <= blocksToPreload; i++) {
-      const nextIndex = currentIndex + i;
-      if (nextIndex < feed.blocks.length) {
-        const nextBlock = feed.blocks[nextIndex];
-        console.log(`📦 Immediately prefetching block ${nextIndex}: "${nextBlock.searchQuery}"`);
-        queueBlock(nextIndex, nextBlock.searchQuery);
-      }
-    }
-
-    // If looping, prefetch beginning blocks when approaching the end
-    if (feed.loop) {
-      const blocksFromEnd = feed.blocks.length - currentIndex;
-      
-      // Start preloading loop content when we're 3 blocks from the end
-      if (blocksFromEnd <= 3) {
-        console.log(`🔄 Preloading loop content (${blocksFromEnd} blocks from end)`);
-        
-        // Preload first few blocks for seamless loop transition
-        const loopBlocksToPreload = Math.min(3, feed.blocks.length);
-        for (let i = 0; i < loopBlocksToPreload; i++) {
-          const loopBlock = feed.blocks[i];
-          console.log(`📦 Preloading loop block ${i}: "${loopBlock.searchQuery}"`);
-          queueBlock(i, loopBlock.searchQuery);
-        }
-      }
-    }
-  }, [queueBlock]);
-
-  // Execute the actual block transition logic
-  const executeBlockTransition = useCallback((feed: CustomFeed, currentIndex: number, nextIndex: number): void => {
-    // Check if we should loop or stop
-    if (nextIndex >= feed.blocks.length) {
-      if (feed.loop) {
-        console.log('🔁 Seamless loop transition to block 0');
-        
-        // Seamless loop transition - use preloaded content
-        const firstBlock = feed.blocks[0];
-        const loopState: CustomFeedPlaybackState = {
-          currentBlockIndex: 0,
-          blockStartTime: Date.now(),
-          currentSearchQuery: firstBlock.searchQuery,
-          blockElapsedTime: 0,
-          currentVideoStartTime: Date.now(),
-          currentVideoDuration: 0,
-        };
-
-        setCustomFeedPlayback(loopState);
-        
-        // Use preloaded content if available, otherwise load immediately
-        loadCustomFeedBlock(0, firstBlock.searchQuery);
-        
-        // Continue the prefetch cycle - use setTimeout to avoid circular dependency
-        setTimeout(() => scheduleNextBlock(feed, 0), 0);
-        
-        // Note: Don't clear seen videos cache on loop to maintain variety across loops
-      } else {
-        console.log('🏁 Custom feed completed, stopping playback');
-        // End of feed, stop playback
-        setCustomFeedPlayback(null);
-        setBlockQueue(new Map()); // Clear queue
-      }
-    } else {
-      // Move to next block
-      const nextBlock = feed.blocks[nextIndex];
-      console.log(`▶️ Starting block ${nextIndex}: "${nextBlock.searchQuery}" (${nextBlock.durationSeconds}s)`);
-      
-      const newState: CustomFeedPlaybackState = {
-        currentBlockIndex: nextIndex,
-        blockStartTime: Date.now(),
-        currentSearchQuery: nextBlock.searchQuery,
-        blockElapsedTime: 0,
-        currentVideoStartTime: Date.now(),
-        currentVideoDuration: 0,
-      };
-
-      setCustomFeedPlayback(newState);
-      loadCustomFeedBlock(nextIndex, nextBlock.searchQuery);
-      // Use setTimeout to avoid circular dependency
-      setTimeout(() => scheduleNextBlock(feed, nextIndex), 0);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadCustomFeedBlock]); // scheduleNextBlock intentionally omitted to avoid circular dependency
-
-  const scheduleNextBlock = useCallback((feed: CustomFeed, currentIndex: number) => {
-    const currentBlock = feed.blocks[currentIndex];
-    if (!currentBlock) return;
-
-    const durationMs = currentBlock.durationSeconds * 1000;
-
-    // Start prefetching for upcoming blocks
-    startPrefetching(feed, currentIndex);
-
-    console.log(`⏰ Scheduling next block transition in ${durationMs}ms (${currentBlock.durationSeconds}s)`);
-    
-    playbackTimerRef.current = setTimeout(() => {
-      const nextIndex = currentIndex + 1;
-      console.log(`⏰ Block ${currentIndex} timer expired, checking if video is still playing...`);
-
-      // Check if there's a video currently playing
-      // Look for videos that are actively playing (not paused, not ended, and visible)
-      const videos = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
-      const activeVideo = videos.find(video => {
-        // Check if video is playing and visible
-        const isPlaying = !video.paused && !video.ended && video.currentTime > 0;
-        const isVisible = video.offsetParent !== null; // Simple visibility check
-        return isPlaying && isVisible;
-      });
-      const isVideoPlaying = !!activeVideo;
-      
-      if (isVideoPlaying) {
-        console.log('🎬 Video is still playing, waiting for it to finish before transitioning');
-        waitingForVideoEndRef.current = true;
-        
-        // Store the transition function to execute when video ends
-        pendingBlockTransitionRef.current = () => {
-          console.log(`🔄 Block ${currentIndex} completed (after video), moving to block ${nextIndex}/${feed.blocks.length}`);
-          executeBlockTransition(feed, currentIndex, nextIndex);
-        };
-        
-        // Fallback: if video doesn't end within a reasonable time, force transition
-        // This prevents getting stuck if the video end event doesn't fire
-        const fallbackTimeout = Math.max(5000, (activeVideo?.duration || 30) * 1000); // 5s minimum or video duration
-        setTimeout(() => {
-          if (waitingForVideoEndRef.current && pendingBlockTransitionRef.current) {
-            console.log('⚠️ Video end timeout reached, forcing block transition');
-            waitingForVideoEndRef.current = false;
-            const transition = pendingBlockTransitionRef.current;
-            pendingBlockTransitionRef.current = null;
-            transition();
-          }
-        }, fallbackTimeout);
-        
-        return; // Don't transition yet, wait for video to end
-      }
-      
-      // No video playing or video already ended, transition immediately
-      console.log(`🔄 Block ${currentIndex} completed, moving to block ${nextIndex}/${feed.blocks.length}`);
-      executeBlockTransition(feed, currentIndex, nextIndex);
-    }, durationMs);
-  }, [startPrefetching, executeBlockTransition]);
-
-  const startCustomFeedPlayback = useCallback((feed: CustomFeed) => {
-    console.log(`🎵 Starting custom feed playback: "${feed.name}" (${feed.blocks.length} blocks, loop: ${feed.loop})`);
-    console.log('🎵 Feed blocks:', feed.blocks.map(b => `"${b.searchQuery}" (${b.durationSeconds}s)`));
-    
-    // Clear any existing timer and reset waiting state
-    if (playbackTimerRef.current) {
-      clearTimeout(playbackTimerRef.current);
-      console.log('🧹 Cleared existing playback timer');
-    }
-    
-    // Reset video waiting state
-    waitingForVideoEndRef.current = false;
-    pendingBlockTransitionRef.current = null;
-
     if (!feed.blocks || feed.blocks.length === 0) {
-      console.error('❌ Cannot start playback: feed has no blocks');
       setError('Custom feed has no blocks');
       return;
     }
 
-    // Initialize playback state
-    const initialState: CustomFeedPlaybackState = {
+    // Clear timers and reset state
+    if (playbackTimerRef.current) {
+      clearTimeout(playbackTimerRef.current);
+      playbackTimerRef.current = null;
+    }
+
+    // Pre-compile ALL blocks into a single video queue
+    console.log('🧠 Pre-compiling all blocks...');
+    const allVideos: SoraFeedItem[] = [];
+    
+    for (const block of feed.blocks) {
+      console.log(`📦 Compiling block: "${block.searchQuery}"`);
+      const blockVideos = await fetchVideosForBlock(block.searchQuery);
+      allVideos.push(...blockVideos);
+    }
+
+    console.log(`✅ Pre-compiled ${allVideos.length} videos from ${feed.blocks.length} blocks`);
+
+    // Set up simple playback state
+    setCustomFeedPlayback({
       currentBlockIndex: 0,
       blockStartTime: Date.now(),
-      currentSearchQuery: feed.blocks[0]?.searchQuery || '',
+      currentSearchQuery: 'compiled',
       blockElapsedTime: 0,
       currentVideoStartTime: Date.now(),
       currentVideoDuration: 0,
-    };
+    });
 
-    console.log(`▶️ Starting block 0: "${feed.blocks[0].searchQuery}" (${feed.blocks[0].durationSeconds}s)`);
-
-    setCustomFeedPlayback(initialState);
-
-    // Clear existing queue and start fresh
-    setBlockQueue(new Map());
+    // Set all videos at once - no more block transitions!
+    setItems(allVideos);
+    setCursor(null);
+    setHasMore(feed.loop); // Enable looping if feed loops
+    setError(null);
     
-    // Clear seen videos for fresh randomization
-    videoTracker.clear();
-    console.log('🧹 Cleared seen videos cache for fresh randomization');
-    
-    // IMMEDIATE PRELOADING: Preload first few blocks for seamless experience
-    console.log('🚀 Starting immediate preload of first blocks for seamless experience');
-    const blocksToPreloadAtStart = Math.min(3, feed.blocks.length);
-    for (let i = 0; i < blocksToPreloadAtStart; i++) {
-      const block = feed.blocks[i];
-      console.log(`📦 Preloading block ${i} at startup: "${block.searchQuery}"`);
-      queueBlock(i, block.searchQuery);
-    }
-    
-    // Load initial search results (should be instant due to preloading)
-    if (feed.blocks[0]) {
-      loadCustomFeedBlock(0, feed.blocks[0].searchQuery);
-      
-      // Schedule next block transition
-      scheduleNextBlock(feed, 0);
-    }
-  }, [scheduleNextBlock, loadCustomFeedBlock, queueBlock]);
+    console.log(`🎬 Custom feed ready with ${allVideos.length} videos`);
+  }, [fetchVideosForBlock]);
 
-  // Track if we're waiting for a video to finish before transitioning
-  const waitingForVideoEndRef = useRef(false);
-  const pendingBlockTransitionRef = useRef<(() => void) | null>(null);
+  // Removed complex transition tracking - using simple pre-compiled queue
 
   // Handle video events for custom feed timing
   const handleCustomFeedVideoEvent = useCallback((eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => {
-    if (feedType !== 'custom' || !customFeedPlayback || !selectedCustomFeed) return;
+    if (feedType !== 'custom' || !customFeedPlayback) return;
 
     if (eventType === 'loadedmetadata' && videoDuration) {
       // Update playback state with video duration
@@ -842,19 +562,9 @@ export default function FeedLoader() {
         currentVideoDuration: videoDuration,
         currentVideoStartTime: Date.now(),
       } : null);
-    } else if (eventType === 'ended') {
-      console.log('🎬 Custom feed video ended');
-      
-      // If we were waiting for this video to end before transitioning, do it now
-      if (waitingForVideoEndRef.current && pendingBlockTransitionRef.current) {
-        console.log('🔄 Video finished, executing pending block transition');
-        waitingForVideoEndRef.current = false;
-        const transition = pendingBlockTransitionRef.current;
-        pendingBlockTransitionRef.current = null;
-        transition();
-      }
     }
-  }, [feedType, customFeedPlayback, selectedCustomFeed]);
+    // No need to handle 'ended' - videos will naturally progress in the carousel
+  }, [feedType, customFeedPlayback]);
 
   const loadFeed = useCallback(async (type: FeedType = feedType, reset: boolean = true) => {
     try {
@@ -890,7 +600,7 @@ export default function FeedLoader() {
           return;
         }
         
-        const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=20&format=${formatFilter}`);
+        const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&limit=3&format=${formatFilter}`);
         if (!response.ok) {
           throw new Error('Failed to search database');
         }
@@ -900,12 +610,7 @@ export default function FeedLoader() {
         if (reset) {
           setItems(data.items || []);
         } else {
-          // Deduplicate items to prevent duplicate keys
-          setItems(prev => {
-            const existingIds = new Set(prev.map((item: SoraFeedItem) => item.post.id));
-            const newItems = (data.items || []).filter((item: SoraFeedItem) => !existingIds.has(item.post.id));
-            return [...prev, ...newItems];
-          });
+          setItems(prev => [...prev, ...(data.items || [])]);
         }
         setCursor(null);
         setHasMore(false); // No pagination for search yet
@@ -916,7 +621,7 @@ export default function FeedLoader() {
       // Map feed type to API cut parameter
       const cut = type === 'top' ? 'nf2_top' : 'nf2_latest';
       // For top feed, request more items since we need to filter client-side
-      const requestLimit = type === 'top' ? 30 : 20; // Reduced from 100 to prevent overloading
+      const requestLimit = type === 'top' ? 100 : 100; // Both use 100, but top will fetch 200 internally
       const data = await fetchFeed(requestLimit, cut, undefined, formatFilter);
       console.log('✅ Loaded', data.items?.length || 0, 'feed items');
       
@@ -936,12 +641,7 @@ export default function FeedLoader() {
         if (reset) {
           setItems(data.items);
         } else {
-          // Deduplicate items to prevent duplicate keys
-          setItems(prev => {
-            const existingIds = new Set(prev.map((item: SoraFeedItem) => item.post.id));
-            const newItems = data.items.filter((item: SoraFeedItem) => !existingIds.has(item.post.id));
-            return [...prev, ...newItems];
-          });
+          setItems(prev => [...prev, ...data.items]);
         }
         setCursor(data.cursor || null);
         setHasMore(!!data.cursor);
@@ -951,13 +651,22 @@ export default function FeedLoader() {
         remixCache.preloadRemixFeeds(data.items);
       } else {
         if (reset) {
-          console.warn('⚠️ No items in feed response, using mock data');
-          setItems(mockFeedData.items);
-          setCursor(null);
-          setHasMore(false);
-          
-          // Preload remix feeds for mock data
-          remixCache.preloadRemixFeeds(mockFeedData.items);
+          console.warn('⚠️ No items in feed response');
+          // Only use mock data in development mode
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔧 Development mode: using mock data');
+            setItems(mockFeedData.items);
+            setCursor(null);
+            setHasMore(false);
+            
+            // Preload remix feeds for mock data
+            remixCache.preloadRemixFeeds(mockFeedData.items);
+          } else {
+            setError('No videos available');
+            setItems([]);
+            setCursor(null);
+            setHasMore(false);
+          }
         }
       }
     } catch (err) {
@@ -965,14 +674,20 @@ export default function FeedLoader() {
       setError(err instanceof Error ? err.message : 'Failed to load feed');
       
       if (reset) {
-        // Fallback to mock data on error
-        console.log('🔄 Falling back to mock data');
-        setItems(mockFeedData.items);
-        setCursor(null);
-        setHasMore(false);
-        
-        // Preload remix feeds for mock data
-        remixCache.preloadRemixFeeds(mockFeedData.items);
+        // Only fallback to mock data in development mode
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔧 Development mode: falling back to mock data');
+          setItems(mockFeedData.items);
+          setCursor(null);
+          setHasMore(false);
+          
+          // Preload remix feeds for mock data
+          remixCache.preloadRemixFeeds(mockFeedData.items);
+        } else {
+          setItems([]);
+          setCursor(null);
+          setHasMore(false);
+        }
       }
     } finally {
       if (reset) {
@@ -989,16 +704,11 @@ export default function FeedLoader() {
       console.log('🔄 Loading more feed data with cursor...');
       
       const cut = feedType === 'top' ? 'nf2_top' : 'nf2_latest';
-      const data = await fetchFeed(20, cut, cursor, formatFilter);
+      const data = await fetchFeed(100, cut, cursor, formatFilter);
       console.log('✅ Loaded', data.items?.length || 0, 'more feed items');
       
       if (data.items && data.items.length > 0) {
-        // Deduplicate items to prevent duplicate keys
-        setItems(prev => {
-          const existingIds = new Set(prev.map((item: SoraFeedItem) => item.post.id));
-          const newItems = data.items.filter((item: SoraFeedItem) => !existingIds.has(item.post.id));
-          return [...prev, ...newItems];
-        });
+        setItems(prev => [...prev, ...data.items]);
         setCursor(data.cursor || null);
         setHasMore(!!data.cursor);
         
@@ -1070,7 +780,7 @@ export default function FeedLoader() {
     setHasMore(false);
     
     try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(searchInput.trim())}&limit=20&format=${formatFilter}`);
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchInput.trim())}&limit=3&format=${formatFilter}`);
       if (!response.ok) {
         throw new Error('Failed to search database');
       }

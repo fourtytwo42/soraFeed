@@ -5,7 +5,7 @@ import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
-import { fetchRemixFeed } from '@/lib/api';
+import { remixCache } from '@/lib/remixCache';
 import VideoPost from './VideoPost';
 
 interface VideoFeedProps {
@@ -244,6 +244,13 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     setShowControls(false);
     setScrollDirection(null);
     setTargetIndex(null);
+    
+    // Load more videos for custom feed if needed
+    const windowWithFeedLoader = window as unknown as { feedLoaderLoadMore?: (index: number) => void };
+    if (windowWithFeedLoader.feedLoaderLoadMore) {
+      console.log('🎬 VideoFeed requesting more videos for index:', currentIndex);
+      windowWithFeedLoader.feedLoaderLoadMore(currentIndex);
+    }
   }, [currentIndex]);
 
   // Handle remix status change from current video
@@ -263,12 +270,12 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     }
   }, [showControls, onControlsChange]);
 
-  // Preload remix feeds for upcoming videos
+  // Preload remix feeds for upcoming videos (conservative approach)
   const preloadRemixFeeds = async () => {
     const preloadPromises: Promise<void>[] = [];
     
-    // Preload remix feeds for next 4-5 videos
-    for (let i = 1; i <= 5; i++) {
+    // Preload remix feeds for next 2 videos only (reduced from 5 to prevent bandwidth issues)
+    for (let i = 1; i <= 2; i++) {
       const targetIndex = currentIndex + i;
       if (targetIndex < items.length) {
         const item = items[targetIndex];
@@ -276,11 +283,11 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         
         // Skip if already preloaded
         if (!preloadedRemixFeeds.has(postId)) {
-          const promise = fetchRemixFeed(postId, 10)
-            .then((feed) => {
+          const promise = remixCache.getRemixFeed(postId)
+            .then((remixes) => {
               setPreloadedRemixFeeds(prev => {
                 const newMap = new Map(prev);
-                newMap.set(postId, feed.items || []);
+                newMap.set(postId, remixes);
                 return newMap;
               });
             })
@@ -297,12 +304,12 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
     await Promise.allSettled(preloadPromises);
   };
 
-  // Preload remix feeds when current index changes
+  // Preload remix feeds when current index changes (with longer delay to be less aggressive)
   useEffect(() => {
-    // Small delay to avoid blocking the main navigation
+    // Longer delay to avoid blocking navigation and reduce bandwidth usage
     const timeoutId = setTimeout(() => {
       preloadRemixFeeds();
-    }, 500);
+    }, 2000); // Increased from 500ms to 2s
     
     return () => clearTimeout(timeoutId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -369,8 +376,19 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         {/* Render videos with scroll-aware playback */}
         {items.map((item, index) => {
           const offset = index - currentIndex;
-          // Keep videos mounted within ±2 positions for smooth scrolling
-          const shouldRender = Math.abs(offset) <= 2;
+          // Keep videos mounted within ±1 positions for smooth scrolling (reduced from ±2)
+          const shouldRender = Math.abs(offset) <= 1;
+          
+          // Log virtualization decisions
+          if (index < 10) { // Only log first 10 to avoid spam
+            console.log('🎬 VideoFeed virtualization:', {
+              itemId: item.post.id,
+              index,
+              currentIndex,
+              offset,
+              shouldRender
+            });
+          }
           const isCurrentVideo = index === currentIndex;
           const isUpcomingVideo = index === currentIndex + 1;
           const isPreviousVideo = index === currentIndex - 1;
@@ -411,6 +429,7 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
                 onKeyboardNavigation={isCurrentVideo ? handleKeyboardNavigation : undefined}
                 preloadedRemixFeed={preloadedRemixFeeds.get(item.post.id)}
                 onControlsChange={isCurrentVideo ? setShowControls : undefined}
+                nextItem={index < items.length - 1 ? items[index + 1] : undefined}
               />
             </div>
           );

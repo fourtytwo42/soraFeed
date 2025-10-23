@@ -6,6 +6,7 @@ import { useDrag } from '@use-gesture/react';
 import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download, Facebook, Twitter, Monitor, Smartphone, Grid3X3 } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
+import { videoPreloadManager } from '@/lib/videoPreloadManager';
 
 interface VideoPostProps {
   item: SoraFeedItem;
@@ -24,6 +25,7 @@ interface VideoPostProps {
   onControlsChange?: (showing: boolean) => void;
   formatFilter?: 'both' | 'tall' | 'wide';
   onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
+  nextItem?: SoraFeedItem; // For preloading the next video
 }
 
 // Unified Video Management System
@@ -48,7 +50,8 @@ export default function VideoPost({
   preloadedRemixFeed, 
   onControlsChange,
   formatFilter = 'both',
-  onFormatFilterChange
+  onFormatFilterChange,
+  nextItem
 }: VideoPostProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data
@@ -70,6 +73,15 @@ export default function VideoPost({
   const [videoReady, setVideoReady] = useState(false);
   const [leftVideoReady, setLeftVideoReady] = useState(false);
   const [rightVideoReady, setRightVideoReady] = useState(false);
+  
+  // Video state monitoring
+  const lastKnownVideoState = useRef<{paused: boolean, time: number}>({paused: true, time: 0});
+  
+  // Preloading state
+  const preloadStartedRef = useRef<string | null>(null);
+  
+  // Track remix loading to prevent duplicates
+  const remixLoadingRef = useRef<string | null>(null);
   
   // Remix state
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
@@ -235,11 +247,8 @@ export default function VideoPost({
       }
     });
     
-    // Update React state based on center video
-    const centerVideo = centerVideoRef.current;
-    if (centerVideo) {
-      setIsPlaying(!centerVideo.paused);
-    }
+    // Note: React state is now synced via video event listeners (onPlay/onPause)
+    // This prevents race conditions between user actions and automatic state updates
   }, [createVideoGrid]);
   
   // ===== SCROLL DETECTION =====
@@ -249,23 +258,83 @@ export default function VideoPost({
   
   // ===== UNIFIED VIDEO CONTROL EFFECT =====
   
-  // Single effect to control all videos
+  // Video state monitor - detects unexpected pauses
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const monitorInterval = setInterval(() => {
+      const centerVideo = centerVideoRef.current;
+      if (!centerVideo) return;
+      
+      const currentState = {
+        paused: centerVideo.paused,
+        time: Date.now()
+      };
+      
+      // Check if video state changed without React knowing
+      if (currentState.paused !== lastKnownVideoState.current.paused) {
+        const timeSinceLastChange = currentState.time - lastKnownVideoState.current.time;
+        
+        if (currentState.paused && isPlaying) {
+          console.log('🚨 UNEXPECTED PAUSE DETECTED (VideoPost):', {
+            reactState: 'playing',
+            videoState: 'paused',
+            timeSinceLastChange,
+            userPaused: userPausedRef.current,
+            videoError: centerVideo.error?.message,
+            networkState: centerVideo.networkState,
+            readyState: centerVideo.readyState,
+            currentRemixIndex,
+            src: centerVideo.src
+          });
+          // Sync React state to match video
+          setIsPlaying(false);
+        } else if (!currentState.paused && !isPlaying) {
+          console.log('🚨 UNEXPECTED PLAY DETECTED (VideoPost):', {
+            reactState: 'paused',
+            videoState: 'playing',
+            timeSinceLastChange,
+            userPaused: userPausedRef.current,
+            currentRemixIndex
+          });
+          // Sync React state to match video
+          setIsPlaying(true);
+        }
+      }
+      
+      lastKnownVideoState.current = currentState;
+    }, 500); // Check every 500ms
+    
+    return () => clearInterval(monitorInterval);
+  }, [isActive, isPlaying, currentRemixIndex]);
+
+  // Single effect to control all videos - with improved race condition handling
   useEffect(() => {
     if (!isActive) {
-      // Pause and mute all videos when inactive
-      [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
-        const video = ref.current;
-        if (video) {
-          video.pause();
-          video.muted = true;
+      // Add delay before pausing to prevent pausing during quick transitions
+      const pauseTimeoutId = setTimeout(() => {
+        if (!isActive) {
+          // Pause and mute all videos when inactive
+          [centerVideoRef, leftVideoRef, rightVideoRef, upVideoRef, downVideoRef].forEach(ref => {
+            const video = ref.current;
+            if (video) {
+              video.pause();
+              video.muted = true;
+            }
+          });
+          setIsPlaying(false);
         }
-      });
-    setIsPlaying(false);
-      return;
+      }, 150);
+      
+      return () => clearTimeout(pauseTimeoutId);
     }
     
-    // Control videos based on current state
-    controlAllVideos();
+    // Add a longer delay to ensure all state updates have settled and avoid conflicts with user actions
+    const timeoutId = setTimeout(() => {
+      controlAllVideos();
+    }, 200);
+    
+    return () => clearTimeout(timeoutId);
   }, [isActive, scrollState, currentRemixIndex, isMuted, controlAllVideos]);
   
   // ===== NAVIGATION FUNCTIONS =====
@@ -317,34 +386,63 @@ export default function VideoPost({
     hasUserInteractedRef.current = true;
   }, []);
   
-  // Unified click handler
+  // Unified click handler with improved error handling
   const handleVideoClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     
     const centerVideo = centerVideoRef.current;
-    if (!centerVideo) return;
+    if (!centerVideo) {
+      console.log('🖱️ Click ignored - no center video');
+      return;
+    }
+    
+    // Check if video has errors
+    if (centerVideo.error) {
+      console.log('❌ Click ignored - video has error:', centerVideo.error.message);
+      return;
+    }
+    
+    // Check if video is ready
+    if (centerVideo.readyState < 2) {
+      console.log('🖱️ Click ignored - video not ready');
+      return;
+    }
+    
+    // Prevent rapid clicks
+    const now = Date.now();
+    const timeSinceLastInteraction = now - lastInteractionRef.current;
+    if (timeSinceLastInteraction < 500) {
+      console.log('🖱️ Click ignored - too rapid');
+      return;
+    }
     
     const actuallyPlaying = !centerVideo.paused;
     console.log('🖱️ Video clicked:', { 
       currentRemixIndex, 
       actuallyPlaying, 
-      reactIsPlaying: isPlaying 
+      reactIsPlaying: isPlaying,
+      readyState: centerVideo.readyState,
+      networkState: centerVideo.networkState
     });
     
     if (actuallyPlaying) {
-      centerVideo.pause();
-      setIsPlaying(false);
+      // Set user pause flag and pause video - state will be synced by onPause event
       userPausedRef.current = true;
+      centerVideo.pause();
+      console.log('⏸️ VideoPost pause initiated');
     } else {
+      // Set user pause flag and play video - state will be synced by onPlay event
+      userPausedRef.current = false;
       centerVideo.play().then(() => {
-        setIsPlaying(true);
-        userPausedRef.current = false;
-      }).catch(() => {
-        setIsPlaying(false);
+        console.log('✅ VideoPost play successful');
+      }).catch((err) => {
+        console.log('❌ VideoPost play failed:', err);
+        // Only set userPausedRef on failure, let onPause event handle state
+        userPausedRef.current = true;
       });
     }
     
-        handleInteraction();
+    handleInteraction();
   }, [currentRemixIndex, isPlaying, handleInteraction]);
   
   // Mouse handlers - removed unused hover state
@@ -611,30 +709,36 @@ export default function VideoPost({
   
   // ===== INITIALIZATION EFFECTS =====
   
-  // Load remix feed
+  // Load remix feed - only when becoming active for a new item
   useEffect(() => {
-    if (isActive && remixFeed.length === 0 && !loadingRemixes) {
+    if (isActive && remixFeed.length === 0 && !loadingRemixes && remixLoadingRef.current !== item.post.id) {
       if (preloadedRemixFeed && preloadedRemixFeed.length > 0) {
+        console.log('📦 Using preloaded remix feed for', item.post.id, ':', preloadedRemixFeed.length, 'items');
         setRemixFeed(preloadedRemixFeed);
       } else {
         // Load remix feed
+        console.log('🔄 Loading remix feed for', item.post.id);
+        remixLoadingRef.current = item.post.id;
+        
         const loadRemixFeed = async () => {
           setLoadingRemixes(true);
           try {
             const remixes = await remixCache.getRemixFeed(item.post.id);
+            console.log('✅ Loaded', remixes.length, 'remixes for', item.post.id);
             setRemixFeed(remixes);
           } catch (error) {
-            console.error('Failed to load remix feed:', error);
+            console.error('❌ Failed to load remix feed for', item.post.id, ':', error);
             setRemixFeed([]);
           } finally {
             setLoadingRemixes(false);
+            remixLoadingRef.current = null;
           }
         };
         
         loadRemixFeed();
       }
     }
-  }, [isActive, remixFeed.length, loadingRemixes, preloadedRemixFeed, item.post.id]);
+  }, [isActive, item.post.id, preloadedRemixFeed, loadingRemixes, remixFeed.length]);
   
   // Reset state when item changes
   useEffect(() => {
@@ -663,6 +767,7 @@ export default function VideoPost({
     setRemixFeed([]);
     setCurrentRemixIndex(0);
     setLoadingRemixes(false);
+    remixLoadingRef.current = null; // Clear remix loading tracker
     setVideoReady(false);
     setLeftVideoReady(false);
     setRightVideoReady(false);
@@ -705,6 +810,61 @@ export default function VideoPost({
       setIsLiked(isInFavorites(getCurrentItem().post.id));
     }
   }, [getCurrentItem, isInFavorites]);
+  
+  // Preload next video when current video starts playing (using centralized manager)
+  useEffect(() => {
+    if (!nextItem || !isActive || !isPlaying) {
+      // Cancel any existing preloads for this component when not active/playing
+      if (preloadStartedRef.current) {
+        videoPreloadManager.cancelPreload(preloadStartedRef.current);
+        preloadStartedRef.current = null;
+      }
+      return;
+    }
+
+    const nextVideoUrl = nextItem.post.attachments[0]?.encodings?.md?.path || 
+                        nextItem.post.attachments[0]?.encodings?.source?.path;
+    
+    if (!nextVideoUrl || preloadStartedRef.current === nextVideoUrl) {
+      return; // Already preloading this video
+    }
+
+    // Request preload through centralized manager
+    const success = videoPreloadManager.requestPreload({
+      videoUrl: nextVideoUrl,
+      postId: nextItem.post.id,
+      priority: 1, // High priority for immediate next video
+      onSuccess: () => {
+        // setPreloadedVideoUrl removed
+        preloadStartedRef.current = null;
+      },
+      onError: () => {
+        preloadStartedRef.current = null;
+      }
+    });
+
+    if (success) {
+      preloadStartedRef.current = nextVideoUrl;
+    }
+
+    // Cleanup function
+    return () => {
+      if (preloadStartedRef.current) {
+        videoPreloadManager.cancelPreload(preloadStartedRef.current);
+        preloadStartedRef.current = null;
+      }
+    };
+  }, [nextItem, isActive, isPlaying, item.post.id]);
+
+  // Clean up preloads when component unmounts or item changes
+  useEffect(() => {
+    return () => {
+      // Cancel any preloads for this post when component unmounts
+      videoPreloadManager.cancelPreloadsForPost(item.post.id);
+      preloadStartedRef.current = null;
+      // setPreloadedVideoUrl removed
+    };
+  }, [item.post.id]);
   
   // Mobile detection removed - not currently used
 
@@ -897,22 +1057,67 @@ export default function VideoPost({
                   });
                   handleVideoLoad(e.currentTarget);
                 }}
-                onPlay={(e) => {
-                  console.log('🎬 Video started playing', { 
-                    videoId: videoItem.post.id, 
+                onError={(e) => {
+                  const video = e.currentTarget;
+                  console.log('❌ Video error:', {
+                    videoId: videoItem.post.id,
                     isCenter,
-                    duration: e.currentTarget.duration,
-                    currentTime: e.currentTarget.currentTime,
-                    ended: e.currentTarget.ended
+                    error: video.error?.message,
+                    code: video.error?.code,
+                    networkState: video.networkState,
+                    readyState: video.readyState,
+                    src: videoUrl
+                  });
+                  // Reset playing state on error
+                  setIsPlaying(false);
+                  // Don't set userPausedRef - let user try to play again
+                }}
+                onStalled={(e) => {
+                  console.log('⚠️ Video stalled:', {
+                    videoId: videoItem.post.id,
+                    isCenter,
+                    networkState: e.currentTarget.networkState,
+                    readyState: e.currentTarget.readyState
                   });
                 }}
-                onPause={(e) => {
-                  console.log('🎬 Video paused', { 
+                onWaiting={(e) => {
+                  console.log('⏳ Video waiting for data:', {
+                    videoId: videoItem.post.id,
+                    isCenter,
+                    networkState: e.currentTarget.networkState,
+                    readyState: e.currentTarget.readyState
+                  });
+                }}
+                onPlay={(e) => {
+                  console.log('▶️ VIDEO PLAY EVENT (VideoPost):', { 
                     videoId: videoItem.post.id, 
                     isCenter,
-                    duration: e.currentTarget.duration,
-                    currentTime: e.currentTarget.currentTime
+                    currentTime: e.currentTarget.currentTime.toFixed(1),
+                    remixIndex: currentRemixIndex
                   });
+                  // Sync React state when video actually starts playing
+                  if (isCenter) {
+                    setIsPlaying(true);
+                  }
+                }}
+                onPause={(e) => {
+                  console.log('⏸️ VIDEO PAUSE EVENT (VideoPost):', { 
+                    videoId: videoItem.post.id, 
+                    isCenter,
+                    currentTime: e.currentTarget.currentTime.toFixed(1),
+                    remixIndex: currentRemixIndex,
+                    reason: userPausedRef.current ? 'user' : 'automatic'
+                  });
+                  
+                  // Capture stack trace to see what caused the pause
+                  if (!userPausedRef.current && isCenter) {
+                    console.log('📍 AUTOMATIC PAUSE STACK TRACE (VideoPost):', new Error().stack);
+                  }
+                  
+                  // Sync React state when video actually pauses
+                  if (isCenter) {
+                    setIsPlaying(false);
+                  }
                 }}
                 onTimeUpdate={(e) => {
                   const video = e.currentTarget;
@@ -973,7 +1178,7 @@ export default function VideoPost({
     );
   }, [getAllItems, videoWidth, videoReady, leftVideoReady, rightVideoReady, isMuted, 
       getVideoRefForItem, handleVideoMetadata, handleVideoCanPlay, handleVideoLoad, 
-      handleLeftVideoCanPlay, handleRightVideoCanPlay, handleVideoEnd]);
+      handleLeftVideoCanPlay, handleRightVideoCanPlay, handleVideoEnd, currentRemixIndex]);
 
     return (
     <div className="relative w-full h-full bg-black overflow-hidden">

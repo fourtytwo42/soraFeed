@@ -5,6 +5,7 @@ import useEmblaCarousel from 'embla-carousel-react';
 import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Facebook, Twitter, Download, Monitor, Smartphone, Grid3X3 } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
 import { remixCache } from '@/lib/remixCache';
+import { videoPreloadManager } from '@/lib/videoPreloadManager';
 
 interface VideoCarouselProps {
   item: SoraFeedItem;
@@ -18,6 +19,7 @@ interface VideoCarouselProps {
   onCustomFeedVideoEvent?: (eventType: 'loadedmetadata' | 'ended', videoDuration?: number) => void;
   formatFilter?: 'both' | 'tall' | 'wide';
   onFormatFilterChange?: (filter: 'both' | 'tall' | 'wide') => void;
+  nextItem?: SoraFeedItem; // For preloading the next video
 }
 
 export default function VideoCarousel({
@@ -30,7 +32,8 @@ export default function VideoCarousel({
   onNext,
   onCustomFeedVideoEvent,
   formatFilter = 'both',
-  onFormatFilterChange
+  onFormatFilterChange,
+  nextItem
 }: VideoCarouselProps) {
   
   // 🔍 USERNAME LOGGING: Log initial item data in VideoCarousel
@@ -49,6 +52,9 @@ export default function VideoCarousel({
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [videoWidth, setVideoWidth] = useState<number | null>(null);
   
+  // Video state monitoring
+  const lastKnownVideoState = useRef<{paused: boolean, time: number}>({paused: true, time: 0});
+  
   // Remix state
   const [remixFeed, setRemixFeed] = useState<SoraFeedItem[]>([]);
   const [currentRemixIndex, setCurrentRemixIndex] = useState(0);
@@ -58,6 +64,13 @@ export default function VideoCarousel({
   const videoRefsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
   const userPausedRef = useRef(false);
   const hasUserInteractedRef = useRef(false);
+  const lastClickTime = useRef(0);
+  
+  // Preloading state
+  const preloadStartedRef = useRef<string | null>(null);
+  
+  // Track remix loading to prevent duplicates
+  const remixLoadingRef = useRef<string | null>(null);
   
   // Track isActive and remix count with refs so watchDrag can always access the latest values
   // (avoids stale closure issue - watchDrag is created once and captures props)
@@ -115,6 +128,19 @@ export default function VideoCarousel({
     setCurrentRemixIndex(selectedIndex);
   }, [emblaApi, currentRemixIndex, getAllItems]);
 
+  // Virtualized video rendering - only render videos that are visible or adjacent
+  const getVisibleVideoIndices = useCallback(() => {
+    const allItems = getAllItems();
+    const totalItems = allItems.length;
+    
+    // Only render current video + 1 before and 1 after (3 total max)
+    const bufferSize = 1;
+    const startIndex = Math.max(0, currentRemixIndex - bufferSize);
+    const endIndex = Math.min(totalItems - 1, currentRemixIndex + bufferSize);
+    
+    return { startIndex, endIndex, totalItems };
+  }, [currentRemixIndex, getAllItems]);
+
   // Set up event listeners
   useEffect(() => {
     if (!emblaApi) {
@@ -130,6 +156,21 @@ export default function VideoCarousel({
       emblaApi.off('select', onSelect);
     };
   }, [emblaApi, onSelect]);
+
+  // Cleanup video refs that are no longer visible
+  useEffect(() => {
+    const { startIndex, endIndex } = getVisibleVideoIndices();
+    const allItems = getAllItems();
+    
+    // Remove video refs for items that are no longer in the visible range
+    videoRefsMap.current.forEach((video, itemId) => {
+      const itemIndex = allItems.findIndex(item => item.post.id === itemId);
+      if (itemIndex < startIndex || itemIndex > endIndex) {
+        console.log('🧹 Cleaning up video ref for item:', itemId);
+        videoRefsMap.current.delete(itemId);
+      }
+    });
+  }, [currentRemixIndex, getVisibleVideoIndices, getAllItems]);
 
   // Keyboard navigation for horizontal scrolling
   useEffect(() => {
@@ -186,32 +227,83 @@ export default function VideoCarousel({
       return;
     }
 
+    // Check if current video is in visible range
+    const currentItem = getCurrentItem();
+    const allItems = getAllItems();
+    const currentIndex = allItems.findIndex(item => item.post.id === currentItem.post.id);
+    const { startIndex, endIndex } = getVisibleVideoIndices();
+    
+    if (currentIndex < startIndex || currentIndex > endIndex) {
+      console.log('🎬 Video not in visible range, skipping playback control');
+      return;
+    }
+
     // Use ref to avoid stale closure
     const currentIsActive = isActiveRef.current;
     const shouldPlay = currentIsActive && !userPausedRef.current;
     
-    console.log('🎬 Control playback', { 
-      isActive: currentIsActive, 
-      userPaused: userPausedRef.current, 
-      shouldPlay,
-      videoPaused: currentVideo.paused,
-      isMuted 
-    });
+    // Only log control playback in development or when there are issues
+    if (process.env.NODE_ENV === 'development' || currentVideo.error) {
+      console.log('🎬 Control playback', { 
+        isActive: currentIsActive, 
+        userPaused: userPausedRef.current, 
+        shouldPlay,
+        videoPaused: currentVideo.paused,
+        isMuted,
+        videoReadyState: currentVideo.readyState,
+        networkState: currentVideo.networkState,
+        error: currentVideo.error?.message
+      });
+    }
+
+    // Only control playback if video is ready and has no errors
+    if (currentVideo.readyState < 2) {
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🎬 Video not ready yet, skipping playback control');
+      }
+      return;
+    }
+
+    // Check for video errors
+    if (currentVideo.error) {
+      console.log('❌ Video has error, skipping playback control:', currentVideo.error.message);
+      setIsPlaying(false);
+      return;
+    }
+
+    // Avoid conflicts with recent user clicks (increased timeout)
+    const timeSinceLastClick = Date.now() - lastClickTime.current;
+    if (timeSinceLastClick < 800) {
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🎬 Skipping control - recent user click');
+      }
+      return;
+    }
 
     if (shouldPlay) {
       if (currentVideo.paused) {
-        console.log('▶️ Playing video');
-        currentVideo.play().catch(err => {
-          console.log('Play failed:', err);
-          setIsPlaying(false);
-        });
-        setIsPlaying(true);
+        console.log('▶️ Auto-playing video');
+        // Add a small delay to prevent rapid play/pause cycles
+        setTimeout(() => {
+          if (currentVideo.paused && shouldPlay && currentIsActive && !userPausedRef.current) {
+            currentVideo.play().then(() => {
+              console.log('✅ Auto-play successful');
+              // State will be synced by onPlay event
+            }).catch(err => {
+              console.log('❌ Auto-play failed:', err);
+              // Don't set userPausedRef here - let user try again
+            });
+          }
+        }, 50);
       }
+      // Note: State sync is now handled by video event listeners (onPlay/onPause)
     } else {
       if (!currentVideo.paused) {
-        console.log('⏸️ Pausing video');
+        console.log('⏸️ Auto-pausing video');
         currentVideo.pause();
-        setIsPlaying(false);
+        // State will be synced by onPause event
       }
     }
 
@@ -222,7 +314,7 @@ export default function VideoCarousel({
       currentVideo.muted = true; // Always mute inactive videos
     }
     
-    // Pause other videos in this carousel
+    // Pause other videos in this carousel (but only if they're not the current one)
     videoRefsMap.current.forEach((video, itemId) => {
       if (itemId !== getCurrentItem().post.id && !video.paused) {
         console.log('⏸️ Pausing other video in carousel:', itemId);
@@ -230,20 +322,78 @@ export default function VideoCarousel({
       }
     });
     
-    // If this carousel is not active, pause ALL videos including current one
+    // If this carousel is not active, pause ALL videos including current one (but be less aggressive)
     if (!currentIsActive) {
-      videoRefsMap.current.forEach((video, itemId) => {
-        if (!video.paused) {
-          console.log('⏸️ Pausing video (carousel not active):', itemId);
-          video.pause();
+      // Add a delay to prevent pausing during quick transitions
+      setTimeout(() => {
+        if (!isActiveRef.current) {
+          videoRefsMap.current.forEach((video, itemId) => {
+            if (!video.paused) {
+              console.log('⏸️ Pausing video (carousel not active):', itemId);
+              video.pause();
+            }
+          });
         }
-      });
+      }, 200);
     }
-  }, [isMuted, getCurrentVideo, getCurrentItem]);
+  }, [isMuted, getCurrentVideo, getCurrentItem, getAllItems, getVisibleVideoIndices]);
 
-  // Effect to control video playback
+  // Video state monitor - detects unexpected pauses
   useEffect(() => {
-    controlVideoPlayback();
+    if (!isActive) return;
+    
+    const monitorInterval = setInterval(() => {
+      const currentVideo = getCurrentVideo();
+      if (!currentVideo) return;
+      
+      const currentState = {
+        paused: currentVideo.paused,
+        time: Date.now()
+      };
+      
+      // Check if video state changed without React knowing
+      if (currentState.paused !== lastKnownVideoState.current.paused) {
+        const timeSinceLastChange = currentState.time - lastKnownVideoState.current.time;
+        
+        if (currentState.paused && isPlaying) {
+          console.log('🚨 UNEXPECTED PAUSE DETECTED:', {
+            reactState: 'playing',
+            videoState: 'paused',
+            timeSinceLastChange,
+            userPaused: userPausedRef.current,
+            videoError: currentVideo.error?.message,
+            networkState: currentVideo.networkState,
+            readyState: currentVideo.readyState,
+            src: currentVideo.src
+          });
+          // Sync React state to match video
+          setIsPlaying(false);
+        } else if (!currentState.paused && !isPlaying) {
+          console.log('🚨 UNEXPECTED PLAY DETECTED:', {
+            reactState: 'paused',
+            videoState: 'playing',
+            timeSinceLastChange,
+            userPaused: userPausedRef.current
+          });
+          // Sync React state to match video
+          setIsPlaying(true);
+        }
+      }
+      
+      lastKnownVideoState.current = currentState;
+    }, 500); // Check every 500ms
+    
+    return () => clearInterval(monitorInterval);
+  }, [isActive, isPlaying, getCurrentVideo]);
+
+  // Effect to control video playback - debounced to prevent rapid changes
+  useEffect(() => {
+    // Increase delay to reduce race conditions and rapid state changes
+    const timeoutId = setTimeout(() => {
+      controlVideoPlayback();
+    }, 200);
+    
+    return () => clearTimeout(timeoutId);
   }, [isActive, currentRemixIndex, isMuted, controlVideoPlayback]);
 
   // Effect to ensure proper mute state when becoming active
@@ -258,10 +408,12 @@ export default function VideoCarousel({
     }
   }, [isActive, isMuted, getCurrentVideo, getCurrentItem]);
 
-  // Load remix feed
+  // Load remix feed - only when becoming active for a new item
   useEffect(() => {
-    if (isActive && remixFeed.length === 0 && !loadingRemixes) {
+    if (isActive && remixFeed.length === 0 && !loadingRemixes && remixLoadingRef.current !== item.post.id) {
       console.log('🟧 HORIZONTAL: Loading remix feed for', item.post.id);
+      remixLoadingRef.current = item.post.id;
+      
       const loadRemixFeed = async () => {
         setLoadingRemixes(true);
         try {
@@ -273,82 +425,50 @@ export default function VideoCarousel({
           setRemixFeed([]);
         } finally {
           setLoadingRemixes(false);
+          remixLoadingRef.current = null;
         }
       };
       
       loadRemixFeed();
     }
-  }, [isActive, remixFeed.length, loadingRemixes, item.post.id]);
+  }, [isActive, item.post.id, loadingRemixes, remixFeed.length]);
 
   // Sync refs with props/state (so watchDrag always has latest values)
   useEffect(() => {
+    const wasActive = isActiveRef.current;
     isActiveRef.current = isActive;
     
     // When video becomes inactive, pause all videos and reset user pause state
-    if (!isActive) {
+    if (!isActive && wasActive) {
       console.log('🔄 Video became inactive, pausing all videos and resetting userPaused');
       
-      // Immediately pause all videos in this carousel
-      videoRefsMap.current.forEach((video, itemId) => {
-        if (!video.paused) {
-          console.log('⏸️ Force pausing video (became inactive):', itemId);
-          video.pause();
-        }
-        // Also mute to prevent any audio bleeding through
-        video.muted = true;
-      });
-      
-      // Also find and pause any video elements that might not be in our map
-      // This is a safety net for any edge cases
-      const videoElements = document.querySelectorAll('video');
-      videoElements.forEach((video) => {
-        if (!video.paused && video.closest('[data-carousel-item]')) {
-          console.log('⏸️ Safety pause for unmapped video element');
-          video.pause();
-          video.muted = true;
-        }
-      });
-      
-      // Reset user pause state so videos auto-play when scrolled back to them
-      if (userPausedRef.current) {
-        userPausedRef.current = false;
-      }
-      
-      // Update UI state
-      setIsPlaying(false);
-    }
-  }, [isActive]);
-
-  // Additional safety effect - pause videos immediately when becoming inactive
-  useEffect(() => {
-    if (!isActive) {
-      // Use a small timeout to ensure this runs after any other effects
+      // Use a small delay to avoid race conditions with other effects
       const timeoutId = setTimeout(() => {
-        console.log('🔄 Safety effect: Ensuring all videos are paused');
-        
-        // Double-check that all videos in our map are paused
+        // Pause all videos in this carousel
         videoRefsMap.current.forEach((video, itemId) => {
           if (!video.paused) {
-            console.log('⏸️ Safety pause for video in map:', itemId);
+            console.log('⏸️ Force pausing video (became inactive):', itemId);
             video.pause();
-            video.muted = true;
           }
+          // Also mute to prevent any audio bleeding through
+          video.muted = true;
         });
         
-        // Also check for any video elements in the DOM that might be playing
-        const allVideos = document.querySelectorAll('video');
-        allVideos.forEach((video) => {
-          if (!video.paused) {
-            console.log('⏸️ Safety pause for any playing video in DOM');
-            video.pause();
-            video.muted = true;
-          }
-        });
-      }, 0);
+        // Reset user pause state so videos auto-play when scrolled back to them
+        if (userPausedRef.current) {
+          console.log('🔄 Resetting userPaused state');
+          userPausedRef.current = false;
+        }
+        
+        // State will be synced by onPause events from individual videos
+      }, 50); // Small delay to let other effects settle
       
       return () => clearTimeout(timeoutId);
     }
   }, [isActive]);
+
+  // Additional safety effect - pause videos immediately when becoming inactive
+  // REMOVED: This was causing race conditions with the main video control effect
 
   // Cleanup effect on unmount
   useEffect(() => {
@@ -392,7 +512,8 @@ export default function VideoCarousel({
     setRemixFeed([]);
     setCurrentRemixIndex(0);
     setLoadingRemixes(false);
-    setIsPlaying(false);
+    remixLoadingRef.current = null; // Clear remix loading tracker
+    // isPlaying state will be synced by video events
     userPausedRef.current = false;
     hasUserInteractedRef.current = false;
     // Also reset showControls to ensure clean feed
@@ -428,6 +549,61 @@ export default function VideoCarousel({
     }
   }, [isPlaying, onControlsChange]);
 
+  // Preload next video when current video starts playing (using centralized manager)
+  useEffect(() => {
+    if (!nextItem || !isActive || !isPlaying) {
+      // Cancel any existing preloads for this component when not active/playing
+      if (preloadStartedRef.current) {
+        videoPreloadManager.cancelPreload(preloadStartedRef.current);
+        preloadStartedRef.current = null;
+      }
+      return;
+    }
+
+    const nextVideoUrl = nextItem.post.attachments[0]?.encodings?.md?.path || 
+                        nextItem.post.attachments[0]?.encodings?.source?.path;
+    
+    if (!nextVideoUrl || preloadStartedRef.current === nextVideoUrl) {
+      return; // Already preloading this video
+    }
+
+    // Request preload through centralized manager
+    const success = videoPreloadManager.requestPreload({
+      videoUrl: nextVideoUrl,
+      postId: nextItem.post.id,
+      priority: 1, // High priority for immediate next video
+      onSuccess: () => {
+        // setPreloadedVideoUrl removed
+        preloadStartedRef.current = null;
+      },
+      onError: () => {
+        preloadStartedRef.current = null;
+      }
+    });
+
+    if (success) {
+      preloadStartedRef.current = nextVideoUrl;
+    }
+
+    // Cleanup function
+    return () => {
+      if (preloadStartedRef.current) {
+        videoPreloadManager.cancelPreload(preloadStartedRef.current);
+        preloadStartedRef.current = null;
+      }
+    };
+  }, [nextItem, isActive, isPlaying, item.post.id]);
+
+  // Clean up preloads when component unmounts or item changes
+  useEffect(() => {
+    return () => {
+      // Cancel any preloads for this post when component unmounts
+      videoPreloadManager.cancelPreloadsForPost(item.post.id);
+      preloadStartedRef.current = null;
+      // setPreloadedVideoUrl removed
+    };
+  }, [item.post.id]);
+
   // Event handlers
   const handleVideoClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -438,27 +614,51 @@ export default function VideoCarousel({
       return;
     }
     
+    // Check if video has errors
+    if (currentVideo.error) {
+      console.log('❌ Click ignored - video has error:', currentVideo.error.message);
+      return;
+    }
+    
+    // Check if video is ready
+    if (currentVideo.readyState < 2) {
+      console.log('🎬 Click ignored - video not ready');
+      return;
+    }
+    
+    // Prevent rapid clicks that can cause conflicts
+    const now = Date.now();
+    if (now - lastClickTime.current < 500) {
+      console.log('🎬 Click ignored - too rapid');
+      return;
+    }
+    lastClickTime.current = now;
+    
     console.log('🎬 Video clicked', { 
       wasPaused: currentVideo.paused,
-      userPausedBefore: userPausedRef.current 
+      userPausedBefore: userPausedRef.current,
+      readyState: currentVideo.readyState,
+      networkState: currentVideo.networkState
     });
     
     if (currentVideo.paused) {
       console.log('▶️ User clicked play');
+      // Set user pause flag and play video - state will be synced by onPlay event
+      userPausedRef.current = false;
+      
       currentVideo.play().then(() => {
-        setIsPlaying(true);
-        userPausedRef.current = false;
-        console.log('▶️ Play successful, userPaused = false');
+        console.log('▶️ Play successful');
       }).catch((err) => {
         console.log('▶️ Play failed:', err);
-        setIsPlaying(false);
+        // Only set userPausedRef on failure, let onPause event handle state
+        userPausedRef.current = true;
       });
     } else {
       console.log('⏸️ User clicked pause');
-      currentVideo.pause();
-      setIsPlaying(false);
+      // Set user pause flag and pause video - state will be synced by onPause event
       userPausedRef.current = true;
-      console.log('⏸️ Pause successful, userPaused = true');
+      currentVideo.pause();
+      console.log('⏸️ Pause initiated');
     }
     
     hasUserInteractedRef.current = true;
@@ -506,13 +706,24 @@ export default function VideoCarousel({
     setIsMuted(!isMuted);
   }, [isMuted]);
 
-  // Render video slide
-  const renderVideoSlide = useCallback((videoItem: SoraFeedItem) => {
+  // Render video slide with virtualization
+  const renderVideoSlide = useCallback((videoItem: SoraFeedItem, itemIndex: number) => {
+    const { startIndex, endIndex } = getVisibleVideoIndices();
+    const shouldRenderVideo = itemIndex >= startIndex && itemIndex <= endIndex;
+    
+    // Log virtualization decisions
+    console.log('🎬 Video virtualization:', {
+      itemId: videoItem.post.id,
+      itemIndex,
+      startIndex,
+      endIndex,
+      shouldRender: shouldRenderVideo
+    });
+    
     const videoUrl = videoItem.post.attachments[0]?.encodings?.md?.path || 
                      videoItem.post.attachments[0]?.encodings?.source?.path;
     
     if (!videoUrl) return null;
-    
     
     return (
       <div 
@@ -527,22 +738,80 @@ export default function VideoCarousel({
               maxWidth: '100%'
             }}
           >
-            <video
-              ref={getVideoRef(videoItem.post.id)}
-              src={videoUrl}
-              className="object-contain block w-full h-full"
-              style={{
-                width: videoWidth ? `${videoWidth}px` : 'auto',
-                height: videoWidth ? 'auto' : '100%',
-              }}
-              playsInline
-              data-carousel-item={videoItem.post.id}
-              onLoadedMetadata={(e) => {
-                handleVideoMetadata(e);
-                // Call custom feed event handler if provided
-                if (onCustomFeedVideoEvent) {
+            {shouldRenderVideo ? (
+              <video
+                ref={getVideoRef(videoItem.post.id)}
+                src={videoUrl}
+                className="object-contain block w-full h-full"
+                style={{
+                  width: videoWidth ? `${videoWidth}px` : 'auto',
+                  height: videoWidth ? 'auto' : '100%',
+                }}
+                playsInline
+                data-carousel-item={videoItem.post.id}
+                onLoadedMetadata={(e) => {
+                  handleVideoMetadata(e);
+                  // Call custom feed event handler if provided
+                  if (onCustomFeedVideoEvent) {
+                    const video = e.currentTarget;
+                    onCustomFeedVideoEvent('loadedmetadata', video.duration);
+                  }
+                }}
+                onError={(e) => {
                   const video = e.currentTarget;
-                  onCustomFeedVideoEvent('loadedmetadata', video.duration);
+                  console.log('❌ Video error:', {
+                    postId: videoItem.post.id,
+                    error: video.error?.message,
+                    code: video.error?.code,
+                    networkState: video.networkState,
+                    readyState: video.readyState,
+                    src: videoUrl
+                  });
+                  // Reset playing state on error
+                  setIsPlaying(false);
+                // Don't set userPausedRef - let user try to play again
+              }}
+              onStalled={(e) => {
+                console.log('⚠️ Video stalled:', {
+                  postId: videoItem.post.id,
+                  networkState: e.currentTarget.networkState,
+                  readyState: e.currentTarget.readyState
+                });
+              }}
+              onWaiting={(e) => {
+                console.log('⏳ Video waiting for data:', {
+                  postId: videoItem.post.id,
+                  networkState: e.currentTarget.networkState,
+                  readyState: e.currentTarget.readyState
+                });
+              }}
+              onPlay={(e) => {
+                console.log('▶️ VIDEO PLAY EVENT:', {
+                  postId: videoItem.post.id,
+                  isActive,
+                  currentTime: e.currentTarget.currentTime.toFixed(1)
+                });
+                // Sync React state when video actually starts playing
+                if (videoItem.post.id === getCurrentItem().post.id) {
+                  setIsPlaying(true);
+                }
+              }}
+              onPause={(e) => {
+                console.log('⏸️ VIDEO PAUSE EVENT:', {
+                  postId: videoItem.post.id,
+                  isActive,
+                  currentTime: e.currentTarget.currentTime.toFixed(1),
+                  reason: userPausedRef.current ? 'user' : 'automatic'
+                });
+                
+                // Capture stack trace to see what caused the pause
+                if (!userPausedRef.current) {
+                  console.log('📍 AUTOMATIC PAUSE STACK TRACE:', new Error().stack);
+                }
+                
+                // Sync React state when video actually pauses
+                if (videoItem.post.id === getCurrentItem().post.id) {
+                  setIsPlaying(false);
                 }
               }}
               onEnded={() => {
@@ -571,11 +840,17 @@ export default function VideoCarousel({
             >
               <source src={videoUrl} type="video/mp4" />
             </video>
+            ) : (
+              // Placeholder for non-rendered videos
+              <div className="w-full h-full bg-gray-900 flex items-center justify-center">
+                <div className="text-white/50 text-sm">Video {itemIndex + 1}</div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
-  }, [videoWidth, isActive, getVideoRef, handleVideoMetadata, onNext, onCustomFeedVideoEvent]);
+  }, [videoWidth, isActive, getVideoRef, handleVideoMetadata, onNext, onCustomFeedVideoEvent, getVisibleVideoIndices, getCurrentItem]);
 
   const currentItem = getCurrentItem();
   const allItems = getAllItems();
@@ -594,7 +869,7 @@ export default function VideoCarousel({
       >
         <div className="h-full" ref={emblaRef}>
           <div className="flex h-full">
-            {allItems.map((videoItem) => renderVideoSlide(videoItem))}
+            {allItems.map((videoItem, index) => renderVideoSlide(videoItem, index))}
           </div>
         </div>
       </div>

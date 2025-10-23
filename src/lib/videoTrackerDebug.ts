@@ -64,12 +64,11 @@ export const videoTrackerDebug = {
   /**
    * Log information about recently seen videos
    */
-  logRecentVideos(count: number = 10) {
+  logRecentVideos() {
     const stats = videoTracker.getStats();
     console.log(`📋 Video Tracker has ${stats.total} videos tracked`);
     
     if (stats.newestTimestamp) {
-      const recentThreshold = Date.now() - (24 * 60 * 60 * 1000); // Last 24 hours
       console.log(`🕒 Videos seen in last 24 hours: checking...`);
     }
   }
