@@ -186,6 +186,7 @@ export default function VMPlayer() {
           setVMState(prev => ({ ...prev, isMuted: false }));
           break;
         case 'next':
+          console.log('⏭️ Next video command received');
           handleVideoEnd();
           break;
         case 'seek':
@@ -197,7 +198,7 @@ export default function VMPlayer() {
           console.warn('Unknown command:', command.type);
       }
     });
-  }, []);
+  }, [handleVideoEnd]);
 
   // Handle video end
   const handleVideoEnd = useCallback(async () => {

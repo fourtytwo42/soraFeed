@@ -53,10 +53,14 @@ export async function POST(
       }
     }
 
+    // Get timeline progress for WebSocket updates
+    const progress = QueueManager.getTimelineProgress(code);
+
     return NextResponse.json({
       commands,
       nextVideo,
       displayName: display.name,
+      progress,
       status: 'ok'
     });
   } catch (error) {
