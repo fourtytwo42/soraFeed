@@ -41,32 +41,39 @@ export default function CustomFeedTimeline({
 }: CustomFeedTimelineProps) {
   const [segments, setSegments] = useState<TimelineSegment[]>([]);
 
-  // Calculate timeline segments from feed blocks using actual positions
+  // Calculate timeline segments from feed blocks using actual positions where available
   const timelineSegments = useMemo(() => {
-    if (!feed || !feed.blocks.length || !blockPositions.length) return [];
+    if (!feed || !feed.blocks.length) return [];
 
     const segments: TimelineSegment[] = [];
+    let theoreticalStartIndex = 0;
 
     feed.blocks.forEach((block, index) => {
-      // Only create segments for blocks that have been loaded (exist in blockPositions)
-      if (index < blockPositions.length) {
-        const startVideoIndex = blockPositions[index];
-        const nextBlockStart = index + 1 < blockPositions.length 
-          ? blockPositions[index + 1] 
-          : totalVideos;
-        const actualVideoCount = Math.max(0, nextBlockStart - startVideoIndex);
+      let startVideoIndex: number;
+      let videoCount: number;
 
-        // Only add segment if it has videos
-        if (actualVideoCount > 0) {
-          segments.push({
-            blockIndex: index,
-            searchQuery: block.searchQuery,
-            startVideoIndex: startVideoIndex,
-            videoCount: actualVideoCount,
-            color: generateColor(block.searchQuery)
-          });
-        }
+      if (index < blockPositions.length && blockPositions[index] !== undefined) {
+        // Use actual position for loaded blocks
+        startVideoIndex = blockPositions[index];
+        const nextBlockStart = index + 1 < blockPositions.length && blockPositions[index + 1] !== undefined
+          ? blockPositions[index + 1] 
+          : (index === blockPositions.length - 1 ? totalVideos : startVideoIndex + block.videoCount);
+        videoCount = Math.max(0, nextBlockStart - startVideoIndex);
+      } else {
+        // Use theoretical position for unloaded blocks
+        startVideoIndex = theoreticalStartIndex;
+        videoCount = block.videoCount;
       }
+
+      segments.push({
+        blockIndex: index,
+        searchQuery: block.searchQuery,
+        startVideoIndex: startVideoIndex,
+        videoCount: videoCount,
+        color: generateColor(block.searchQuery)
+      });
+
+      theoreticalStartIndex += block.videoCount;
     });
 
     return segments;
@@ -79,7 +86,8 @@ export default function CustomFeedTimeline({
 
   // Calculate current position percentage (including progress within current video)
   const currentPositionWithProgress = currentVideoIndex + videoProgress;
-  const progressPercentage = totalVideos > 0 ? (currentPositionWithProgress / totalVideos) * 100 : 0;
+  const totalPlannedVideos = feed ? feed.blocks.reduce((sum, block) => sum + block.videoCount, 0) : totalVideos;
+  const progressPercentage = totalPlannedVideos > 0 ? (currentPositionWithProgress / totalPlannedVideos) * 100 : 0;
 
   // Find current active segment
   const activeSegment = segments.find(segment => 
@@ -121,8 +129,12 @@ export default function CustomFeedTimeline({
         <div className="relative h-6 bg-gray-700 rounded-full overflow-hidden">
           {/* Segments */}
           {segments.map((segment, index) => {
-            const segmentWidth = totalVideos > 0 ? (segment.videoCount / totalVideos) * 100 : 0;
-            const segmentLeft = totalVideos > 0 ? (segment.startVideoIndex / totalVideos) * 100 : 0;
+            // Calculate total planned videos for proper proportions
+            const totalPlannedVideos = feed ? feed.blocks.reduce((sum, block) => sum + block.videoCount, 0) : totalVideos;
+            const segmentWidth = totalPlannedVideos > 0 ? (segment.videoCount / totalPlannedVideos) * 100 : 0;
+            const segmentLeft = totalPlannedVideos > 0 ? (segment.startVideoIndex / totalPlannedVideos) * 100 : 0;
+            const isLoaded = segment.blockIndex < blockPositions.length && blockPositions[segment.blockIndex] !== undefined;
+            const isActive = activeSegment?.blockIndex === segment.blockIndex;
             
             return (
               <div
@@ -132,7 +144,8 @@ export default function CustomFeedTimeline({
                   left: `${segmentLeft}%`,
                   width: `${segmentWidth}%`,
                   backgroundColor: segment.color,
-                  opacity: activeSegment?.blockIndex === segment.blockIndex ? 1 : 0.7
+                  opacity: isActive ? 1 : (isLoaded ? 0.7 : 0.3), // Dimmer for unloaded blocks
+                  border: isLoaded ? 'none' : '1px dashed rgba(255,255,255,0.3)' // Dashed border for unloaded
                 }}
               />
             );
