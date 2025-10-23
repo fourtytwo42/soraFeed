@@ -36,6 +36,10 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (!adminId || adminId.trim() === '') {
+      console.log('🔌 Admin WebSocket: No adminId provided, skipping connection');
+      return;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws?type=admin&adminId=${adminId}`;
@@ -188,20 +192,24 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
     });
   }, [sendMessage]);
 
-  // Initialize connection
+  // Initialize connection when adminId is available
   useEffect(() => {
-    connect();
+    if (adminId && adminId.trim() !== '') {
+      connect();
+    }
 
-    // Cleanup on unmount
+    // Cleanup on unmount or adminId change
     return () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
+      setIsConnected(false);
     };
-  }, [connect]);
+  }, [adminId, connect]);
 
   // Keep-alive ping
   useEffect(() => {

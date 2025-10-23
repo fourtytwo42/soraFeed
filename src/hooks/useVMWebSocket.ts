@@ -26,6 +26,10 @@ export function useVMWebSocket(displayId: string): VMWebSocketHook {
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (!displayId || displayId.trim() === '') {
+      console.log('🔌 VM WebSocket: No displayId provided, skipping connection');
+      return;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws?type=vm&displayId=${displayId}`;
@@ -130,20 +134,24 @@ export function useVMWebSocket(displayId: string): VMWebSocketHook {
     });
   }, [sendMessage]);
 
-  // Initialize connection
+  // Initialize connection when displayId is available
   useEffect(() => {
-    connect();
+    if (displayId && displayId.trim() !== '') {
+      connect();
+    }
 
-    // Cleanup on unmount
+    // Cleanup on unmount or displayId change
     return () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
+      setIsConnected(false);
     };
-  }, [connect]);
+  }, [displayId, connect]);
 
   // Keep-alive ping
   useEffect(() => {

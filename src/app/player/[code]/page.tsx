@@ -57,8 +57,8 @@ export default function VMPlayer() {
   const codeInitialized = useRef(false);
   const autoInteractionTriggered = useRef(false);
 
-  // Initialize WebSocket connection
-  const { isConnected: wsConnected, sendProgressUpdate, sendVideoChange } = useVMWebSocket(code);
+  // Initialize WebSocket connection only when code is available
+  const { isConnected: wsConnected, sendProgressUpdate, sendVideoChange } = useVMWebSocket(code || '');
 
   // Polling function
   const pollServer = useCallback(async () => {
