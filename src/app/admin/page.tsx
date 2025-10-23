@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye } from 'lucide-react';
-import { Display, TimelineProgress } from '@/types/timeline';
+import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List } from 'lucide-react';
+import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
+import PlaylistBuilder from '@/components/admin/PlaylistBuilder';
+import TimelineProgressComponent from '@/components/admin/TimelineProgress';
 
 interface DisplayWithProgress extends Display {
   isOnline: boolean;
@@ -23,6 +25,8 @@ export default function AdminDashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newDisplayCode, setNewDisplayCode] = useState('');
+  const [showPlaylistBuilder, setShowPlaylistBuilder] = useState(false);
+  const [selectedDisplayForPlaylist, setSelectedDisplayForPlaylist] = useState<string | null>(null);
 
   // Fetch displays and their status
   const fetchDisplays = async () => {
@@ -102,6 +106,46 @@ export default function AdminDashboard() {
     }
   };
 
+  // Create playlist for display
+  const createPlaylist = async (name: string, blocks: BlockDefinition[]) => {
+    if (!selectedDisplayForPlaylist) return;
+    
+    try {
+      const response = await fetch('/api/playlists', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          displayId: selectedDisplayForPlaylist,
+          name,
+          blocks
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create playlist');
+      }
+      
+      // Activate the playlist immediately
+      const playlist = await response.json();
+      await fetch(`/api/playlists/${playlist.id}/activate`, {
+        method: 'POST'
+      });
+      
+      setShowPlaylistBuilder(false);
+      setSelectedDisplayForPlaylist(null);
+      setError(null);
+      fetchDisplays();
+      
+      console.log(`✅ Playlist "${name}" created and activated for display ${selectedDisplayForPlaylist}`);
+    } catch (err) {
+      console.error('Error creating playlist:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create playlist');
+    }
+  };
+
   // Send command to display
   const sendCommand = async (displayId: string, type: string, payload?: any) => {
     try {
@@ -137,6 +181,20 @@ export default function AdminDashboard() {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <div className="text-xl text-gray-600">Loading dashboard...</div>
         </div>
+      </div>
+    );
+  }
+
+  if (showPlaylistBuilder) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <PlaylistBuilder
+          onSave={createPlaylist}
+          onCancel={() => {
+            setShowPlaylistBuilder(false);
+            setSelectedDisplayForPlaylist(null);
+          }}
+        />
       </div>
     );
   }
@@ -226,20 +284,14 @@ export default function AdminDashboard() {
               </div>
 
               {/* Timeline Progress */}
-              {display.progress && (
+              {display.progress ? (
                 <div className="p-4 bg-gray-50">
-                  <div className="text-sm font-medium text-gray-700 mb-2">
-                    Current: {display.progress.currentBlock.name}
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${display.progress.currentBlock.progress}%` }}
-                    ></div>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Video {display.progress.currentBlock.currentVideo} of {display.progress.currentBlock.totalVideos} • 
-                    Loop #{display.progress.overallProgress.loopCount + 1}
+                  <TimelineProgressComponent progress={display.progress} className="mb-0" />
+                </div>
+              ) : display.isOnline && (
+                <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400">
+                  <div className="text-sm text-yellow-800">
+                    Display is online but no playlist assigned
                   </div>
                 </div>
               )}
@@ -278,13 +330,28 @@ export default function AdminDashboard() {
 
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => {
+                        setSelectedDisplayForPlaylist(display.id);
+                        setShowPlaylistBuilder(true);
+                      }}
+                      className="p-2 bg-purple-100 hover:bg-purple-200 rounded-lg transition-colors"
+                      title="Create Playlist"
+                    >
+                      <List className="w-4 h-4 text-purple-600" />
+                    </button>
+                    
+                    <button
                       onClick={() => window.open(`/player/${display.id}`, '_blank')}
                       className="p-2 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
+                      title="View Display"
                     >
                       <Eye className="w-4 h-4 text-green-600" />
                     </button>
                     
-                    <button className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                    <button 
+                      className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                      title="Display Settings"
+                    >
                       <Settings className="w-4 h-4 text-gray-600" />
                     </button>
                   </div>
@@ -299,9 +366,14 @@ export default function AdminDashboard() {
           <div className="text-center py-12">
             <Monitor className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No displays yet</h3>
-            <p className="text-gray-600 mb-6">
-              Open <code className="bg-gray-100 px-2 py-1 rounded text-sm">/player</code> on a VM to get a code, then add it here
-            </p>
+            <div className="text-gray-600 mb-6 space-y-2">
+              <p>Get started in 3 steps:</p>
+              <div className="text-sm space-y-1">
+                <p>1. Open <code className="bg-gray-100 px-2 py-1 rounded">/player</code> on a VM to get a code</p>
+                <p>2. Add the display here with that code</p>
+                <p>3. Create a playlist with video blocks to start playing</p>
+              </div>
+            </div>
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
