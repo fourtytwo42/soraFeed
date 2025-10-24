@@ -164,6 +164,18 @@ async function fetchSoraFeed(limit = FIXED_FETCH_LIMIT) {
     const req = https.get(options, (res) => {
       let data = '';
 
+      // Log HTTP status code for debugging
+      console.log(`🌐 HTTP Status: ${res.statusCode} ${res.statusMessage}`);
+
+      // Check for authentication-related HTTP status codes
+      if (res.statusCode === 401) {
+        console.log(`🔐 HTTP 401 Unauthorized: Authentication failed. JWT token may be invalid or expired.`);
+      } else if (res.statusCode === 403) {
+        console.log(`🔐 HTTP 403 Forbidden: Access denied. Check your authentication credentials.`);
+      } else if (res.statusCode >= 400) {
+        console.log(`❌ HTTP ${res.statusCode}: Request failed`);
+      }
+
       res.on('data', (chunk) => {
         data += chunk;
       });
@@ -177,6 +189,44 @@ async function fetchSoraFeed(limit = FIXED_FETCH_LIMIT) {
           console.log(`   - Items count: ${jsonData.items?.length || 0}`);
           console.log(`   - Has cursor: ${!!jsonData.cursor}`);
           console.log(`   - Response keys: ${Object.keys(jsonData).join(', ')}`);
+          
+          // Check if the response contains an error
+          if (jsonData.error) {
+            // Log the full error object for debugging
+            console.log(`❌ API Error Details:`, JSON.stringify(jsonData.error, null, 2));
+            
+            // Check for specific error types
+            if (jsonData.error.message) {
+              console.log(`❌ API Error Message: ${jsonData.error.message}`);
+            }
+            if (jsonData.error.code) {
+              console.log(`❌ API Error Code: ${jsonData.error.code}`);
+            }
+            if (jsonData.error.type) {
+              console.log(`❌ API Error Type: ${jsonData.error.type}`);
+            }
+            
+            // Check for authentication/JWT related errors
+            if (jsonData.error.message && (
+              jsonData.error.message.includes('token') || 
+              jsonData.error.message.includes('auth') || 
+              jsonData.error.message.includes('unauthorized') ||
+              jsonData.error.message.includes('invalid') ||
+              jsonData.error.message.includes('expired')
+            )) {
+              console.log(`🔐 AUTHENTICATION ERROR: JWT token may be invalid or expired. Please check your AUTH_BEARER_TOKEN in .env file.`);
+            }
+            
+            reject(new Error(`API Error: ${JSON.stringify(jsonData.error)}`));
+            return;
+          }
+          
+          // Check if we have the expected structure
+          if (!jsonData.items || !Array.isArray(jsonData.items)) {
+            console.log(`❌ Invalid API response structure. Expected 'items' array, got:`, Object.keys(jsonData));
+            reject(new Error(`Invalid API response structure. Expected 'items' array, got: ${Object.keys(jsonData).join(', ')}`));
+            return;
+          }
           
           resolve(jsonData);
         } catch (error) {
@@ -431,10 +481,6 @@ async function processPosts(feedData) {
   
   try {
     await client.query('BEGIN');
-
-    if (!feedData.items || !Array.isArray(feedData.items)) {
-      throw new Error('Invalid feed data structure');
-    }
 
     for (const item of feedData.items) {
       const { post, profile } = item;

@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const https = require('https');
 require('dotenv').config();
 
+async function main() {
 console.log('🚀 Sora Feed - Complete Setup');
 console.log('==============================\n');
 
@@ -262,4 +263,9 @@ log('  docs/README_SCANNER.md - Scanner documentation', 'yellow');
 log('  docs/INSTALLATION_COMPLETE.md - Success guide\n', 'yellow');
 
 log('🎯 Your Sora Feed Scanner is ready to use!\n', 'green');
+
+}
+
+// Run the main function
+main().catch(console.error);
 
