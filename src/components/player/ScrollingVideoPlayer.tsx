@@ -222,17 +222,45 @@ export default function ScrollingVideoPlayer({
       sessionStorage.setItem('sorafeed-user-interacted', 'true');
     }
 
-    // Play current video
+    // Play current video with better error handling
     if (videos.length > 0 && currentIndex < videos.length) {
       const currentVideo = videos[currentIndex];
       const videoElement = videoRefs.current.get(currentVideo.post.id);
       if (videoElement) {
-        videoElement.play().catch(err => {
-          console.error('❌ Failed to play video after interaction:', err);
-        });
+        console.log('🎬 Playing current video after interaction');
+        // Add a small delay to ensure the element is stable
+        setTimeout(() => {
+          const currentVideoElement = videoRefs.current.get(currentVideo.post.id);
+          if (currentVideoElement && currentVideoElement.paused) {
+            // Check if video is ready to play
+            if (currentVideoElement.readyState >= 2) {
+              currentVideoElement.play().then(() => {
+                console.log('✅ Video play successful after interaction');
+              }).catch(err => {
+                console.error('❌ Failed to play video after interaction:', err);
+                onAutoplayBlocked?.();
+              });
+            } else {
+              console.log('⏳ Video not ready yet after interaction, readyState:', currentVideoElement.readyState);
+              // Wait for video to be ready
+              const handleCanPlay = () => {
+                currentVideoElement.removeEventListener('canplay', handleCanPlay);
+                if (currentVideoElement.paused) {
+                  currentVideoElement.play().then(() => {
+                    console.log('✅ Video play successful after interaction (after canplay)');
+                  }).catch(err => {
+                    console.error('❌ Failed to play video after interaction (after canplay):', err);
+                    onAutoplayBlocked?.();
+                  });
+                }
+              };
+              currentVideoElement.addEventListener('canplay', handleCanPlay);
+            }
+          }
+        }, 50);
       }
     }
-  }, [videos, currentIndex]);
+  }, [videos, currentIndex, onAutoplayBlocked]);
 
   // Component to render a single video
   const VideoComponent = ({ videoData, index }: { videoData: SoraFeedItem; index: number }) => {
@@ -274,25 +302,61 @@ export default function ScrollingVideoPlayer({
       if (!isActive) return;
       
       const videoElement = videoRefs.current.get(videoData.post.id);
-      if (!videoElement) return;
+      if (!videoElement) {
+        console.error('❌ No video element found for click');
+        return;
+      }
       
       console.log('🎬 Video clicked:', {
         videoId: videoData.post.id.slice(-6),
         userHasInteracted,
         isPlaying,
-        videoPaused: videoElement.paused
+        videoPaused: videoElement.paused,
+        readyState: videoElement.readyState,
+        networkState: videoElement.networkState
       });
       
       if (!userHasInteracted) {
         // First interaction - enable auto-play for future videos
+        console.log('👆 First interaction detected');
         handleUserInteraction();
       } else {
-        // Toggle play/pause
+        // Toggle play/pause with better error handling
         if (videoElement.paused) {
-          videoElement.play().catch(err => {
-            console.error('❌ Failed to play video:', err);
-          });
+          console.log('▶️ Attempting to play video');
+          // Add a small delay to ensure the element is stable
+          setTimeout(() => {
+            const currentVideoElement = videoRefs.current.get(videoData.post.id);
+            if (currentVideoElement && currentVideoElement.paused) {
+              // Check if video is ready to play
+              if (currentVideoElement.readyState >= 2) {
+                currentVideoElement.play().then(() => {
+                  console.log('✅ Video play successful');
+                }).catch(err => {
+                  console.error('❌ Failed to play video:', err);
+                  // Try to trigger onAutoplayBlocked if play fails
+                  onAutoplayBlocked?.();
+                });
+              } else {
+                console.log('⏳ Video not ready yet, readyState:', currentVideoElement.readyState);
+                // Wait for video to be ready
+                const handleCanPlay = () => {
+                  currentVideoElement.removeEventListener('canplay', handleCanPlay);
+                  if (currentVideoElement.paused) {
+                    currentVideoElement.play().then(() => {
+                      console.log('✅ Video play successful (after canplay)');
+                    }).catch(err => {
+                      console.error('❌ Failed to play video (after canplay):', err);
+                      onAutoplayBlocked?.();
+                    });
+                  }
+                };
+                currentVideoElement.addEventListener('canplay', handleCanPlay);
+              }
+            }
+          }, 50);
         } else {
+          console.log('⏸️ Pausing video');
           videoElement.pause();
         }
       }
@@ -325,6 +389,11 @@ export default function ScrollingVideoPlayer({
           onError={handleVideoError}
           onLoadedData={handleVideoLoaded}
           onCanPlayThrough={handleVideoLoaded}
+          onLoadedMetadata={() => {
+            if (isActive) {
+              console.log('📹 Video metadata loaded:', videoData.post.id.slice(-6));
+            }
+          }}
           onPlay={() => {
             if (isActive) {
               console.log('▶️ Video play event');
@@ -381,7 +450,7 @@ export default function ScrollingVideoPlayer({
         {/* Draggable container with all videos */}
         <motion.div 
           {...(bind() as any)}
-          style={{ y }}
+          style={{ y, touchAction: 'none' }} // Fix @use-gesture warning
           className="absolute inset-0"
         >
           {/* Render videos with offset positioning */}
