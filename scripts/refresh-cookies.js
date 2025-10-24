@@ -113,7 +113,7 @@ function saveCookiesToFile(cookies) {
   };
   
   fs.writeFileSync(COOKIE_FILE, JSON.stringify(cookieData, null, 2));
-  console.log('💾 Saved cookies to .cookies.json');
+  console.log('💾 Saved cookies to .cookies.json (backup only)');
 }
 
 // Main function

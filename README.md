@@ -227,6 +227,20 @@ The scanner will automatically detect JWT token problems and log:
 - `🔐 HTTP 401 Unauthorized: Authentication failed`
 - `🔐 AUTHENTICATION ERROR: JWT token may be invalid or expired`
 
+### Cookie Management
+
+The scanner automatically handles Cloudflare cookies, but you can manually refresh them:
+
+```bash
+# Manual cookie refresh
+npm run refresh-cookies
+
+# Set up automatic cookie refresh every 12 hours
+chmod +x scripts/cron-refresh.sh
+crontab -e
+# Add this line: 0 */12 * * * /full/path/to/soraFeed/scripts/cron-refresh.sh
+```
+
 Update your `AUTH_BEARER_TOKEN` in `.env` and restart the scanner.
 
 ## 🚀 Deployment
