@@ -235,6 +235,7 @@ export default function TVVideoPlayer({
   const VideoComponent = ({ videoData, index }: { videoData: SoraFeedItem; index: number }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [videoLoaded, setVideoLoaded] = useState(false);
+    const playingRef = useRef(false); // Track if we're currently trying to play
     const isActive = index === currentIndex;
     const offset = index - currentIndex;
 
@@ -249,25 +250,32 @@ export default function TVVideoPlayer({
       );
     }
 
-    // Video control effect
+    // Video control effect - simplified to prevent loops
     useEffect(() => {
       const video = videoRef.current;
-      if (!video || !isActive) return;
+      if (!video || !isActive || !videoLoaded) return;
 
-      if (isPlaying && userHasInteracted && videoLoaded) {
-        console.log('▶️ Playing video:', videoData.post.id.slice(-6));
-        video.play().catch(err => {
-          console.error('❌ Failed to play video:', err);
-          onAutoplayBlocked?.();
-        });
-      } else if (!isPlaying) {
-        console.log('⏸️ Pausing video:', videoData.post.id.slice(-6));
-        video.pause();
-      } else if (!userHasInteracted) {
-        console.log('⏸️ Video ready but waiting for user interaction');
+      // Only control video if user has interacted
+      if (userHasInteracted) {
+        if (isPlaying && video.paused && !playingRef.current) {
+          console.log('▶️ Starting video playback:', videoData.post.id.slice(-6));
+          playingRef.current = true;
+          video.play().then(() => {
+            playingRef.current = false;
+          }).catch(err => {
+            console.error('❌ Failed to play video:', err);
+            playingRef.current = false;
+            onAutoplayBlocked?.();
+          });
+        } else if (!isPlaying && !video.paused) {
+          console.log('⏸️ Pausing video:', videoData.post.id.slice(-6));
+          video.pause();
+        }
+      } else if (!userHasInteracted && video.paused) {
+        // Video is ready but waiting for user interaction
         onAutoplayBlocked?.();
       }
-    }, [isActive, isPlaying, userHasInteracted, videoLoaded, videoData.post.id]);
+    }, [isActive, isPlaying, userHasInteracted, videoLoaded]);
 
     // Mute control
     useEffect(() => {
@@ -278,7 +286,7 @@ export default function TVVideoPlayer({
     }, [isMuted]);
 
     const handleVideoClick = () => {
-      if (!isActive) return;
+      if (!isActive || !videoLoaded) return;
       
       const video = videoRef.current;
       if (!video) return;
@@ -287,18 +295,26 @@ export default function TVVideoPlayer({
         videoId: videoData.post.id.slice(-6),
         userHasInteracted,
         isPlaying,
-        videoPaused: video.paused
+        videoPaused: video.paused,
+        playingRef: playingRef.current
       });
       
       if (!userHasInteracted) {
+        // First interaction
         handleUserInteraction();
-      } else {
-        // Toggle play/pause
+      } else if (!playingRef.current) {
+        // Toggle play/pause only if we're not already trying to play
         if (video.paused) {
-          video.play().catch(err => {
-            console.error('❌ Failed to play video:', err);
+          console.log('👆 Manual play request');
+          playingRef.current = true;
+          video.play().then(() => {
+            playingRef.current = false;
+          }).catch(err => {
+            console.error('❌ Failed to play video manually:', err);
+            playingRef.current = false;
           });
         } else {
+          console.log('👆 Manual pause request');
           video.pause();
         }
       }
@@ -332,13 +348,13 @@ export default function TVVideoPlayer({
             }
           }}
           onPlay={() => {
-            if (isActive) {
+            if (isActive && !playingRef.current) {
               console.log('▶️ Video play event');
               onPlayStateChange?.(true);
             }
           }}
           onPause={() => {
-            if (isActive) {
+            if (isActive && !playingRef.current) {
               console.log('⏸️ Video pause event');
               onPlayStateChange?.(false);
             }
