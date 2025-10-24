@@ -21,14 +21,14 @@ export default function SimpleVideoPlayer({
   onVideoReady,
   onAutoplayBlocked
 }: SimpleVideoPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videos, setVideos] = useState<SoraFeedItem[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentVideo, setCurrentVideo] = useState<SoraFeedItem | null>(null);
-  const [nextVideo, setNextVideo] = useState<SoraFeedItem | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [screenHeight, setScreenHeight] = useState(0);
-  const containerY = useMotionValue(0);
+  const [userHasInteracted, setUserHasInteracted] = useState(false);
+  const y = useMotionValue(0);
+  const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
   // Get screen height on mount
   useEffect(() => {
@@ -41,188 +41,170 @@ export default function SimpleVideoPlayer({
     }
   }, []);
 
-  // Video control effect
+  // Video management - add new videos and handle transitions
   useEffect(() => {
-    const videoElement = videoRef.current;
-    
-    console.log('🎮 Video control effect triggered:', {
-      hasVideoElement: !!videoElement,
+    console.log('🎬 Video management effect triggered:', {
       hasVideo: !!video,
-      isPlaying,
-      isTransitioning,
-      videoSrc: videoElement?.src?.slice(-20) || 'none',
-      videoPaused: videoElement?.paused,
-      videoReadyState: videoElement?.readyState
+      videoId: video?.post.id.slice(-6),
+      videosCount: videos.length,
+      currentIndex
     });
 
-    if (!videoElement || !video) {
-      console.log('⏸️ No video element or video data, skipping control');
-      return;
-    }
-
-    // Don't control video during transitions - let the transition complete first
-    if (isTransitioning) {
-      console.log('⏸️ Skipping video control during transition');
-      return;
-    }
-
-    if (isPlaying && !videoElement.paused) {
-      console.log('✅ Video already playing, no action needed');
-      return;
-    }
-    if (!isPlaying && videoElement.paused) {
-      console.log('✅ Video already paused, no action needed');
-      return;
-    }
-
-    if (isPlaying) {
-      console.log('🎬 Attempting to play video, readyState:', videoElement.readyState);
-      
-      // Check if video is ready to play
-      if (videoElement.readyState < 2) { // HAVE_CURRENT_DATA
-        console.log('⏳ Video not ready yet, waiting for loadeddata event');
-        const handleLoadedData = () => {
-          console.log('✅ Video data loaded, attempting play');
-          videoElement.play().then(() => {
-            console.log('✅ Video playing successfully after load');
-            setError(null);
-          }).catch(err => {
-            console.error('❌ Failed to play video after load:', err);
-            if (err.name === 'NotAllowedError') {
-              console.log('🚫 Autoplay blocked after load, trying muted');
-              videoElement.muted = true;
-              videoElement.play().then(() => {
-                console.log('✅ Video playing successfully after load (muted)');
-                setError(null);
-              }).catch(mutedErr => {
-                console.error('❌ Failed to play even muted after load:', mutedErr);
-                onAutoplayBlocked?.();
-              });
-            }
-          });
-          videoElement.removeEventListener('loadeddata', handleLoadedData);
-        };
-        videoElement.addEventListener('loadeddata', handleLoadedData);
-        return;
-      }
-      
-      const playPromise = videoElement.play();
-      if (playPromise) {
-        playPromise.then(() => {
-          console.log('✅ Video playing successfully');
-          setError(null);
-        }).catch(err => {
-          console.error('❌ Failed to play video:', err);
-          if (err.name === 'NotAllowedError') {
-            console.log('🚫 Autoplay blocked, trying muted playback');
-            // Try playing muted as fallback
-            videoElement.muted = true;
-            videoElement.play().then(() => {
-              console.log('✅ Video playing successfully (muted)');
-              setError(null);
-            }).catch(mutedErr => {
-              console.error('❌ Failed to play even muted:', mutedErr);
-              onAutoplayBlocked?.();
-            });
-          } else {
-            setError('Failed to play video');
-          }
-        });
-      }
-    } else {
-      console.log('⏸️ Pausing video');
-      videoElement.pause();
-    }
-  }, [isPlaying, video, onAutoplayBlocked, isTransitioning]);
-
-  // Mute control effect
-  useEffect(() => {
-    const videoElement = videoRef.current;
-    if (!videoElement) return;
-    
-    videoElement.muted = isMuted;
-  }, [isMuted]);
-
-  // Video change effect with scroll transition
-  useEffect(() => {
     if (!video) {
-      setCurrentVideo(null);
-      setNextVideo(null);
+      setVideos([]);
+      setCurrentIndex(0);
       setIsLoading(true);
       setError(null);
       return;
     }
 
-    // If this is the first video, just set it directly
-    if (!currentVideo) {
-      setCurrentVideo(video);
+    // Check if this video is already in our list
+    const existingIndex = videos.findIndex(v => v.post.id === video.post.id);
+    
+    if (existingIndex !== -1) {
+      console.log('🎬 Video already exists at index:', existingIndex);
+      // Video already exists, just switch to it if needed
+      if (existingIndex !== currentIndex) {
+        console.log('🎬 Switching to existing video');
+        goToVideo(existingIndex);
+      }
+      return;
+    }
+
+    // New video - add it to the list and transition to it
+    console.log('🎬 Adding new video to list');
+    const newVideos = [...videos, video];
+    setVideos(newVideos);
+    
+    if (videos.length === 0) {
+      // First video - no animation needed
+      console.log('🎬 First video, no animation');
+      setCurrentIndex(0);
       setIsLoading(false);
       setError(null);
       onVideoReady();
+    } else {
+      // Transition to new video
+      console.log('🎬 Transitioning to new video');
+      goToVideo(newVideos.length - 1);
+    }
+  }, [video]);
+
+  // Function to transition to a specific video index
+  const goToVideo = (targetIndex: number) => {
+    if (targetIndex === currentIndex || targetIndex < 0 || targetIndex >= videos.length) {
       return;
     }
 
-    // If video changed, start transition
-    if (currentVideo && video.post.id !== currentVideo.post.id) {
-      setIsTransitioning(true);
-      setNextVideo(video);
-      setIsLoading(true);
-      setError(null);
-
-      // Start scroll animation
-      animate(containerY, -screenHeight, {
-        type: 'spring',
-        stiffness: 300,
-        damping: 30,
-        duration: 0.8,
-        onComplete: () => {
-          console.log('🎬 Transition complete, swapping videos');
-          // Swap videos and reset position
-          setCurrentVideo(video);
-          setNextVideo(null);
-          setIsTransitioning(false);
-          containerY.set(0);
-          setIsLoading(false);
-          onVideoReady();
-          
-          // Force play the new video after a short delay to ensure ref is attached
-          setTimeout(() => {
-            const videoElement = videoRef.current;
-            if (videoElement && isPlaying) {
-              console.log('🎬 Force playing new video after transition');
-              videoElement.play().catch(err => {
-                console.error('❌ Failed to play video after transition:', err);
-              });
-            }
-          }, 100);
-        }
-      });
-    }
-  }, [video, currentVideo, containerY, onVideoReady, screenHeight, isPlaying]);
-
-  const handleVideoEnd = () => {
-    console.log('🎬 Video ended:', video?.post.id);
-    onVideoEnd();
-  };
-
-  const handleVideoError = () => {
-    console.error('❌ Video error:', video?.post.id);
-    setError('Video failed to load');
-    setIsLoading(false);
-  };
-
-  const handleVideoLoaded = () => {
-    console.log('✅ Video loaded:', video?.post.id);
-    setIsLoading(false);
+    setIsLoading(true);
     setError(null);
+
+    // Calculate the distance to move
+    const distance = (targetIndex - currentIndex) * screenHeight;
+    
+    animate(y, -distance, {
+      type: 'spring',
+      stiffness: 300,
+      damping: 30,
+      duration: 0.8,
+      onComplete: () => {
+        console.log('🎬 Transition complete to video', targetIndex);
+        setCurrentIndex(targetIndex);
+        y.set(0);
+        setIsLoading(false);
+        onVideoReady();
+      }
+    });
   };
+
+  // Simple video control - only play if user has interacted
+  useEffect(() => {
+    if (videos.length === 0 || currentIndex >= videos.length) return;
+
+    const currentVideo = videos[currentIndex];
+    const videoElement = videoRefs.current.get(currentVideo.post.id);
+    
+    if (!videoElement) {
+      console.log('⏸️ No video element found for current video:', currentVideo.post.id.slice(-6));
+      return;
+    }
+
+    console.log('🎮 Video control effect:', {
+      videoId: currentVideo.post.id.slice(-6),
+      isPlaying,
+      userHasInteracted,
+      videoPaused: videoElement.paused
+    });
+
+    // Only auto-play if user has interacted before
+    if (isPlaying && userHasInteracted) {
+      console.log('🎬 Playing video (user has interacted)');
+      videoElement.play().catch(err => {
+        console.error('❌ Failed to play video:', err);
+      });
+    } else if (!isPlaying) {
+      console.log('⏸️ Pausing video');
+      videoElement.pause();
+    } else {
+      console.log('⏸️ Video ready but waiting for user interaction');
+      // Video is loaded but waiting for user to click play
+      onAutoplayBlocked?.();
+    }
+  }, [isPlaying, videos, currentIndex, userHasInteracted, onAutoplayBlocked]);
+
+  // Mute control effect
+  useEffect(() => {
+    if (videos.length === 0 || currentIndex >= videos.length) return;
+
+    const currentVideo = videos[currentIndex];
+    const videoElement = videoRefs.current.get(currentVideo.post.id);
+    
+    if (videoElement) {
+      videoElement.muted = isMuted;
+    }
+  }, [isMuted, videos, currentIndex]);
+
+  // Handle user interaction - this enables auto-play for future videos
+  const handleUserInteraction = () => {
+    console.log('👆 User interaction detected, enabling auto-play');
+    setUserHasInteracted(true);
+    
+    // Store in sessionStorage
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('sorafeed-user-interacted', 'true');
+    }
+
+    // Play current video
+    if (videos.length > 0 && currentIndex < videos.length) {
+      const currentVideo = videos[currentIndex];
+      const videoElement = videoRefs.current.get(currentVideo.post.id);
+      if (videoElement) {
+        videoElement.play().catch(err => {
+          console.error('❌ Failed to play video after interaction:', err);
+        });
+      }
+    }
+  };
+
+  // Check if user has interacted in this session
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hasInteracted = sessionStorage.getItem('sorafeed-user-interacted') === 'true';
+      if (hasInteracted) {
+        console.log('✅ User has already interacted in this session');
+        setUserHasInteracted(true);
+      }
+    }
+  }, []);
 
   // Component to render a single video
-  const VideoComponent = ({ videoData, isActive }: { videoData: SoraFeedItem; isActive: boolean }) => {
+  const VideoComponent = ({ videoData, index }: { videoData: SoraFeedItem; index: number }) => {
     const videoUrl = videoData.post.attachments?.[0]?.encodings?.md?.path || 
                      videoData.post.attachments?.[0]?.encodings?.source?.path;
+    const isActive = index === currentIndex;
+    const offset = index - currentIndex;
 
-    console.log(`🎥 VideoComponent render - videoId: ${videoData.post.id.slice(-6)}, isActive: ${isActive}, hasRef: ${isActive ? 'yes' : 'no'}`);
+    console.log(`🎥 VideoComponent render - videoId: ${videoData.post.id.slice(-6)}, index: ${index}, isActive: ${isActive}, offset: ${offset}`);
 
     if (!videoUrl) {
       return (
@@ -232,29 +214,78 @@ export default function SimpleVideoPlayer({
       );
     }
 
+    const handleVideoEnd = () => {
+      if (isActive) {
+        console.log('🎬 Video ended:', videoData.post.id);
+        onVideoEnd();
+      }
+    };
+
+    const handleVideoError = () => {
+      if (isActive) {
+        console.error('❌ Video error:', videoData.post.id);
+        setError('Video failed to load');
+        setIsLoading(false);
+      }
+    };
+
+    const handleVideoLoaded = () => {
+      if (isActive) {
+        console.log('✅ Video loaded:', videoData.post.id);
+        setIsLoading(false);
+        setError(null);
+      }
+    };
+
+    const handleVideoClick = () => {
+      if (isActive && !userHasInteracted) {
+        handleUserInteraction();
+      }
+    };
+
     return (
-      <div className="relative w-full h-full">
-        {/* Video element */}
+      <div 
+        className="absolute inset-0 w-full h-full cursor-pointer"
+        style={{ 
+          transform: `translateY(${offset * 100}%)`,
+          zIndex: isActive ? 20 : 10
+        }}
+        onClick={handleVideoClick}
+      >
         <video
-          ref={isActive ? videoRef : undefined}
+          ref={(el) => {
+            if (el) {
+              videoRefs.current.set(videoData.post.id, el);
+            } else {
+              videoRefs.current.delete(videoData.post.id);
+            }
+          }}
           className="w-full h-full object-cover"
           src={videoUrl}
           loop={false}
           playsInline
           preload="auto"
           muted={isMuted}
-          onEnded={isActive ? handleVideoEnd : undefined}
-          onError={isActive ? handleVideoError : undefined}
-          onLoadedData={isActive ? handleVideoLoaded : undefined}
-          onCanPlayThrough={isActive ? handleVideoLoaded : undefined}
-          onLoadStart={() => isActive && console.log('🎥 Video load started')}
-          onCanPlay={() => isActive && console.log('🎥 Video can play')}
-          onPlay={() => isActive && console.log('🎥 Video play event fired')}
-          onPause={() => isActive && console.log('🎥 Video pause event fired')}
+          onEnded={handleVideoEnd}
+          onError={handleVideoError}
+          onLoadedData={handleVideoLoaded}
+          onCanPlayThrough={handleVideoLoaded}
         />
 
+        {/* Click to play overlay - only show for first interaction */}
+        {isActive && !userHasInteracted && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div className="text-center text-white">
+              <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
+              </div>
+              <div className="text-xl font-semibold">Click to Play</div>
+            </div>
+          </div>
+        )}
+
         {/* Video info overlay */}
-        <div className="absolute bottom-4 left-4 right-4 text-white">
+        <div className="absolute bottom-4 left-4 right-4 text-white pointer-events-none">
           <div className="text-sm opacity-70 bg-black bg-opacity-50 p-2 rounded">
             @{videoData.profile.username} • {videoData.post.text?.slice(0, 100)}
           </div>
@@ -263,7 +294,7 @@ export default function SimpleVideoPlayer({
     );
   };
 
-  if (!currentVideo && !nextVideo) {
+  if (videos.length === 0) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-black">
         <div className="text-white text-xl">No video loaded</div>
@@ -275,7 +306,7 @@ export default function SimpleVideoPlayer({
     <div className="relative w-full h-full bg-black overflow-hidden">
       {/* Loading overlay */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-30">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
             <div className="text-white text-xl">Loading video...</div>
@@ -285,38 +316,32 @@ export default function SimpleVideoPlayer({
 
       {/* Error overlay */}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-30">
           <div className="text-red-500 text-xl">{error}</div>
         </div>
       )}
 
-      {/* Scrolling container */}
+      {/* Scrolling container - like social branch */}
       <motion.div
-        className="relative w-full"
-        style={{ 
-          y: containerY,
-          height: isTransitioning ? `${screenHeight * 2}px` : '100vh'
-        }}
+        className="relative w-full h-full"
+        style={{ y }}
       >
-        {/* Current video */}
-        {currentVideo && (
-          <div key={`current-${currentVideo.post.id}`} className="w-full h-screen">
+        {/* Render videos with offset positioning */}
+        {videos.map((videoData, index) => {
+          const offset = index - currentIndex;
+          // Only render videos within ±1 positions for performance
+          const shouldRender = Math.abs(offset) <= 1;
+          
+          if (!shouldRender) return null;
+          
+          return (
             <VideoComponent 
-              videoData={currentVideo} 
-              isActive={!isTransitioning} // Only active when not transitioning
+              key={videoData.post.id}
+              videoData={videoData} 
+              index={index}
             />
-          </div>
-        )}
-
-        {/* Next video (during transition) */}
-        {nextVideo && isTransitioning && (
-          <div key={`next-${nextVideo.post.id}`} className="w-full h-screen">
-            <VideoComponent 
-              videoData={nextVideo} 
-              isActive={true} // This becomes the active video during transition
-            />
-          </div>
-        )}
+          );
+        })}
       </motion.div>
     </div>
   );

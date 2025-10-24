@@ -50,14 +50,13 @@ export default function VMPlayer() {
     isConnected: false,
     hasActivePlaylist: false
   });
-  const [needsUserInteraction, setNeedsUserInteraction] = useState(true); // Start with true to handle refresh
+  const [needsUserInteraction, setNeedsUserInteraction] = useState(false); // Start with false, let video component handle it
   const [videoProgress, setVideoProgress] = useState({ currentTime: 0, duration: 0 });
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoPreloadRef = useRef<HTMLVideoElement[]>([]);
   const codeInitialized = useRef(false);
-  const autoInteractionTriggered = useRef(false);
 
   // Initialize WebSocket connection only when code is available
   const { isConnected: wsConnected, sendProgressUpdate, sendVideoChange } = useVMWebSocket(code || '');
@@ -181,9 +180,10 @@ export default function VMPlayer() {
               ...prev,
               currentVideo: videoData,
               currentTimelineVideo: data.nextVideo,
-              status: 'playing',
-              isPlaying: true, // Actually start playing the video
-              hasActivePlaylist: true // Mark that we have an active playlist
+              status: 'idle', // Always start paused
+              isPlaying: false, // Always start paused
+              hasActivePlaylist: true, // Mark that we have an active playlist
+              isMuted: true // Start muted
             }));
 
             // Send video change to WebSocket
@@ -250,7 +250,7 @@ export default function VMPlayer() {
 
   // Handle autoplay failure
   const handleAutoplayBlocked = useCallback(() => {
-    console.log('🚫 Autoplay blocked, requiring user interaction');
+    console.log('🚫 Video ready but needs user interaction to play');
     setNeedsUserInteraction(true);
   }, []);
 
@@ -259,7 +259,7 @@ export default function VMPlayer() {
     event.preventDefault();
     event.stopPropagation();
     
-    console.log('👆 User interaction detected, enabling autoplay for session');
+    console.log('👆 User interaction detected, enabling auto-play for future videos');
     setNeedsUserInteraction(false);
     
     // Store in sessionStorage that user has interacted (persists until tab close)
@@ -270,23 +270,12 @@ export default function VMPlayer() {
     setVMState(prev => ({
       ...prev,
       isPlaying: true,
+      isMuted: false, // Unmute when user interacts
       status: 'playing'
     }));
     
     // Start video progress tracking
     startVideoProgressTracking();
-    
-    // Immediately try to play the video to establish user interaction
-    const video = document.querySelector('video');
-    if (video) {
-      console.log('🎬 Attempting direct video play after user interaction');
-      video.play().then(() => {
-        console.log('✅ Video started playing successfully');
-      }).catch(err => {
-        console.error('❌ Direct video play failed:', err);
-        // If it still fails, the video component will handle it
-      });
-    }
   }, [startVideoProgressTracking]);
 
   // Process commands from admin
@@ -326,24 +315,16 @@ export default function VMPlayer() {
   const handleVideoReady = useCallback(() => {
     console.log('✅ Video ready');
 
-    // Always wait for user interaction on first load or after refresh
-    if (needsUserInteraction) {
-      console.log('⏸️ User interaction required, showing click to play overlay');
-      return;
-    }
-
-    // Only auto-start if user has already interacted
-    console.log('🎬 Auto-starting playback (user has already interacted)');
+    // Always start in paused state - let user click to play
     setVMState(prev => ({
       ...prev,
-      status: 'playing',
-      isPlaying: true,
+      status: 'idle', // Start idle, not playing
+      isPlaying: false, // Start paused
       error: null
     }));
 
-    // Start tracking video progress for smooth updates
-    startVideoProgressTracking();
-  }, [needsUserInteraction, startVideoProgressTracking]);
+    // Don't start video progress tracking yet - wait for user interaction
+  }, []);
 
   // Initialize code and display
   useEffect(() => {
@@ -351,18 +332,6 @@ export default function VMPlayer() {
     codeInitialized.current = true;
 
     const initializeCode = () => {
-      // Check if user has already interacted in this session
-      if (typeof window !== 'undefined') {
-        const hasInteracted = sessionStorage.getItem('sorafeed-user-interacted') === 'true';
-        if (hasInteracted) {
-          console.log('✅ User has already interacted in this session, autoplay enabled');
-          setNeedsUserInteraction(false);
-        } else {
-          console.log('⏸️ New session, user interaction required');
-          setNeedsUserInteraction(true);
-        }
-      }
-
       // Check if we have a stored code in localStorage
       const storedCode = localStorage.getItem('sorafeed-display-code');
       
@@ -432,35 +401,6 @@ export default function VMPlayer() {
     };
   }, [code, pollServer]);
 
-  // Auto-interaction for kiosk mode - triggers when first video loads
-  useEffect(() => {
-    if (vmState.currentVideo && !autoInteractionTriggered.current) {
-      autoInteractionTriggered.current = true;
-      
-      // Small delay to ensure video element is ready
-      setTimeout(() => {
-        console.log('🤖 Triggering auto-interaction for kiosk mode');
-        
-        // Simulate multiple interaction types to ensure autoplay is enabled
-        const interactionEvents = ['click', 'touchstart', 'keydown'];
-        
-        interactionEvents.forEach(eventType => {
-          const event = new Event(eventType, { bubbles: true });
-          document.body.dispatchEvent(event);
-        });
-        
-        // Also try direct video interaction
-        const videoElement = document.querySelector('video');
-        if (videoElement) {
-          const clickEvent = new MouseEvent('click', { bubbles: true });
-          videoElement.dispatchEvent(clickEvent);
-        }
-        
-        console.log('🤖 Auto-interaction events dispatched');
-      }, 100);
-    }
-  }, [vmState.currentVideo]);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -506,7 +446,7 @@ export default function VMPlayer() {
                 </div>
                 <div className="text-2xl font-bold mb-3">Click to Play</div>
                 <div className="text-base opacity-90 max-w-xs">
-                  Tap anywhere to start watching videos
+                  Tap to start watching
                 </div>
               </button>
             </div>
