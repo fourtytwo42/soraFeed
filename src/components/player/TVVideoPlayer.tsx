@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { SoraFeedItem } from '@/types/sora';
+import SingleVideoPlayer from './SingleVideoPlayer';
 
 interface TVVideoPlayerProps {
   video: SoraFeedItem | null;
@@ -12,7 +13,7 @@ interface TVVideoPlayerProps {
   onVideoEnd: () => void;
   onVideoReady: () => void;
   onAutoplayBlocked?: () => void;
-  onPlayStateChange?: (isPlaying: boolean) => void;
+  onVideoClick?: () => void;
 }
 
 export default function TVVideoPlayer({ 
@@ -22,7 +23,7 @@ export default function TVVideoPlayer({
   onVideoEnd, 
   onVideoReady,
   onAutoplayBlocked,
-  onPlayStateChange
+  onVideoClick
 }: TVVideoPlayerProps) {
   // State from social VideoFeed
   const [videos, setVideos] = useState<SoraFeedItem[]>([]);
@@ -44,7 +45,7 @@ export default function TVVideoPlayer({
     }
   }, []);
 
-  // Video management - prevent unnecessary reloads
+  // Video management - simple replacement for playlist mode
   useEffect(() => {
     if (!video) {
       if (videos.length > 0) {
@@ -55,36 +56,18 @@ export default function TVVideoPlayer({
       return;
     }
 
-    // Check if this video is already in our list
-    const existingIndex = videos.findIndex(v => v.post.id === video.post.id);
-    
-    if (existingIndex !== -1) {
-      // Video already exists, just switch to it if needed
-      if (existingIndex !== currentIndex) {
-        console.log('🎬 Switching to existing video at index:', existingIndex);
-        goToVideo(existingIndex);
-      } else {
-        console.log('🎬 Video already active, no action needed');
-      }
+    // Check if this is the same video
+    if (videos.length > 0 && videos[0].post.id === video.post.id) {
+      console.log('🎬 Same video, no reload needed');
       return;
     }
 
-    // New video - add it to the list and transition to it
-    console.log('🎬 Adding new video to list:', video.post.id.slice(-6));
-    const newVideos = [...videos, video];
-    setVideos(newVideos);
-    
-    if (videos.length === 0) {
-      // First video - no animation needed
-      console.log('🎬 First video, setting index to 0');
-      setCurrentIndex(0);
-      onVideoReady();
-    } else {
-      // Transition to new video
-      console.log('🎬 Transitioning to new video');
-      goToVideo(newVideos.length - 1);
-    }
-  }, [video?.post.id]); // Only depend on video ID, not the whole video object
+    // Replace with new video (playlist mode - no accumulation)
+    console.log('🎬 Loading new video:', video.post.id.slice(-6));
+    setVideos([video]);  // Replace entire list with just this video
+    setCurrentIndex(0);
+    onVideoReady();
+  }, [video?.post.id, onVideoReady]); // Only depend on video ID, not the whole video object
 
   // Navigation functions from social VideoFeed
   const goToNext = useCallback((animated = true) => {
@@ -236,174 +219,9 @@ export default function TVVideoPlayer({
       sessionStorage.setItem('sorafeed-user-interacted', 'true');
     }
 
-    // Update play state
-    onPlayStateChange?.(true);
-  }, [onPlayStateChange]);
-
-  // Single Video Component - memoized to prevent unnecessary re-renders
-  const VideoComponent = memo(({ videoData, index }: { videoData: SoraFeedItem; index: number }) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [videoLoaded, setVideoLoaded] = useState(false);
-    const playingRef = useRef(false); // Track if we're currently trying to play
-    const isActive = index === currentIndex;
-    const offset = index - currentIndex;
-
-    const videoUrl = videoData.post.attachments?.[0]?.encodings?.md?.path || 
-                     videoData.post.attachments?.[0]?.encodings?.source?.path;
-
-    if (!videoUrl) {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-black">
-          <div className="text-white text-xl">Video URL not available</div>
-        </div>
-      );
-    }
-
-    // Video control effect - simplified to prevent loops
-    useEffect(() => {
-      const video = videoRef.current;
-      if (!video || !isActive || !videoLoaded) return;
-
-      // Only control video if user has interacted
-      if (userHasInteracted) {
-        if (isPlaying && video.paused && !playingRef.current) {
-          console.log('▶️ Starting video playback:', videoData.post.id.slice(-6));
-          playingRef.current = true;
-          video.play().then(() => {
-            playingRef.current = false;
-          }).catch(err => {
-            console.error('❌ Failed to play video:', err);
-            playingRef.current = false;
-            onAutoplayBlocked?.();
-          });
-        } else if (!isPlaying && !video.paused) {
-          console.log('⏸️ Pausing video:', videoData.post.id.slice(-6));
-          video.pause();
-        }
-      } else if (!userHasInteracted && video.paused) {
-        // Video is ready but waiting for user interaction
-        onAutoplayBlocked?.();
-      }
-    }, [isActive, isPlaying, userHasInteracted, videoLoaded]);
-
-    // Mute control
-    useEffect(() => {
-      const video = videoRef.current;
-      if (video) {
-        video.muted = isMuted;
-      }
-    }, [isMuted]);
-
-    const handleVideoClick = () => {
-      if (!isActive || !videoLoaded) return;
-      
-      const video = videoRef.current;
-      if (!video) return;
-      
-      console.log('🎬 Video clicked:', {
-        videoId: videoData.post.id.slice(-6),
-        userHasInteracted,
-        isPlaying,
-        videoPaused: video.paused,
-        playingRef: playingRef.current
-      });
-      
-      if (!userHasInteracted) {
-        // First interaction
-        handleUserInteraction();
-      } else if (!playingRef.current) {
-        // Toggle play/pause only if we're not already trying to play
-        if (video.paused) {
-          console.log('👆 Manual play request');
-          playingRef.current = true;
-          video.play().then(() => {
-            playingRef.current = false;
-          }).catch(err => {
-            console.error('❌ Failed to play video manually:', err);
-            playingRef.current = false;
-          });
-        } else {
-          console.log('👆 Manual pause request');
-          video.pause();
-        }
-      }
-    };
-
-    // Cleanup effect
-    useEffect(() => {
-      return () => {
-        // Reset video loaded state when component unmounts
-        setVideoLoaded(false);
-        playingRef.current = false;
-      };
-    }, []);
-
-    return (
-      <div 
-        className="absolute inset-0 w-full h-full cursor-pointer"
-        style={{ 
-          transform: `translateY(${offset * 100}%)`,
-          zIndex: isActive ? 20 : 10
-        }}
-        onClick={handleVideoClick}
-      >
-        <video
-          key={videoData.post.id} // Stable key to prevent recreation
-          ref={videoRef}
-          className="w-full h-full object-cover"
-          src={videoUrl}
-          loop={false}
-          playsInline
-          preload="auto"
-          muted={isMuted}
-          onLoadedData={() => {
-            console.log('✅ Video loaded:', videoData.post.id.slice(-6));
-            setVideoLoaded(true);
-          }}
-          onEnded={() => {
-            if (isActive) {
-              console.log('🎬 Video ended:', videoData.post.id);
-              onVideoEnd();
-            }
-          }}
-          onPlay={() => {
-            if (isActive && !playingRef.current) {
-              console.log('▶️ Video play event');
-              onPlayStateChange?.(true);
-            }
-          }}
-          onPause={() => {
-            if (isActive && !playingRef.current) {
-              console.log('⏸️ Video pause event');
-              onPlayStateChange?.(false);
-            }
-          }}
-          onError={() => {
-            console.error('❌ Video error:', videoData.post.id);
-          }}
-        />
-
-        {/* Click to play overlay */}
-        {isActive && (!userHasInteracted || !isPlaying) && videoLoaded && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
-            <div className="text-center text-white">
-              <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
-              </div>
-              <div className="text-xl font-semibold">Click to Play</div>
-            </div>
-          </div>
-        )}
-
-        {/* Video info overlay */}
-        <div className="absolute bottom-4 left-4 right-4 text-white pointer-events-none">
-          <div className="text-sm opacity-70 bg-black bg-opacity-50 p-2 rounded">
-            @{videoData.profile.username} • {videoData.post.text?.slice(0, 100)}
-          </div>
-        </div>
-      </div>
-    );
-  });
+    // User has interacted - video can now autoplay
+    console.log('👆 User interaction detected');
+  }, []);
 
   if (videos.length === 0) {
     return (
@@ -437,10 +255,18 @@ export default function TVVideoPlayer({
             if (!shouldRender) return null;
             
             return (
-              <VideoComponent 
+              <SingleVideoPlayer
                 key={videoData.post.id}
-                videoData={videoData} 
+                videoData={videoData}
                 index={index}
+                currentIndex={currentIndex}
+                isPlaying={isPlaying}
+                isMuted={isMuted}
+                userHasInteracted={userHasInteracted}
+                onVideoEnd={onVideoEnd}
+                onAutoplayBlocked={onAutoplayBlocked}
+                onVideoClick={onVideoClick}
+                onUserInteraction={handleUserInteraction}
               />
             );
           })}

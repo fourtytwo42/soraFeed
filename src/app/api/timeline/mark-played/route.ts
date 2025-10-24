@@ -6,6 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     const { timelineVideoId } = await request.json();
     
+    console.log('📝 Marking video as played - timelineVideoId:', timelineVideoId?.slice(-6));
+    
     if (!timelineVideoId) {
       return NextResponse.json(
         { error: 'timelineVideoId is required' },
@@ -14,6 +16,8 @@ export async function POST(request: NextRequest) {
     }
 
     QueueManager.markVideoPlayed(timelineVideoId);
+    
+    console.log('✅ Video marked as played successfully');
     
     return NextResponse.json({ success: true });
   } catch (error) {

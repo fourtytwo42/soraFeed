@@ -24,17 +24,50 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       );
     }
     
-    // Valid command types
-    const validCommands = ['play', 'pause', 'next', 'previous', 'seek', 'playVideo', 'mute', 'unmute'];
-    if (!validCommands.includes(type)) {
-      return NextResponse.json(
-        { error: 'Invalid command type' },
-        { status: 400 }
-      );
+    // Handle commands - write directly to database for playback state
+    switch (type) {
+      case 'play':
+        DisplayManager.playDisplay(id);
+        break;
+      case 'pause':
+        DisplayManager.pauseDisplay(id);
+        break;
+      case 'mute':
+        DisplayManager.muteDisplay(id);
+        break;
+      case 'unmute':
+        DisplayManager.unmuteDisplay(id);
+        break;
+      case 'seek':
+        if (payload?.position !== undefined) {
+          DisplayManager.seekDisplay(id, payload.position);
+        } else {
+          return NextResponse.json(
+            { error: 'Seek command requires position payload' },
+            { status: 400 }
+          );
+        }
+        break;
+      case 'next':
+      case 'previous':
+      case 'playVideo':
+        // These commands still use the old command queue system
+        const validCommands = ['next', 'previous', 'playVideo'];
+        if (!validCommands.includes(type)) {
+          return NextResponse.json(
+            { error: 'Invalid command type' },
+            { status: 400 }
+          );
+        }
+        const command: DisplayCommand = { type, payload };
+        DisplayManager.addCommand(id, command);
+        break;
+      default:
+        return NextResponse.json(
+          { error: 'Invalid command type' },
+          { status: 400 }
+        );
     }
-    
-    const command: DisplayCommand = { type, payload };
-    DisplayManager.addCommand(id, command);
     
     return NextResponse.json({ 
       success: true, 
@@ -42,8 +75,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
   } catch (error) {
     console.error('Error sending command:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to send command' },
+      { error: `Failed to send command: ${errorMessage}` },
       { status: 500 }
     );
   }

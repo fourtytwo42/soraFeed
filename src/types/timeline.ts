@@ -10,6 +10,12 @@ export interface Display {
   current_playlist_id?: string;
   timeline_position: number;
   commands: string; // JSON string of pending commands
+  // Playback state fields (source of truth)
+  playback_state: 'idle' | 'playing' | 'paused' | 'loading';
+  is_playing: boolean;
+  is_muted: boolean;
+  video_position: number;
+  last_state_change: string;
 }
 
 export interface Playlist {

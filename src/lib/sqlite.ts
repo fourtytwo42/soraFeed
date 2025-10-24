@@ -46,7 +46,13 @@ export function initQueueDatabase() {
       current_block_id TEXT,
       current_playlist_id TEXT,
       timeline_position INTEGER DEFAULT 0,
-      commands TEXT DEFAULT '[]'
+      commands TEXT DEFAULT '[]',
+      -- Playback state fields (source of truth)
+      playback_state TEXT DEFAULT 'idle',
+      is_playing BOOLEAN DEFAULT false,
+      is_muted BOOLEAN DEFAULT true,
+      video_position REAL DEFAULT 0,
+      last_state_change DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -129,13 +135,51 @@ export function initQueueDatabase() {
   `);
 
   // Migration: Add format column if it doesn't exist
-  const columnExists = queueDb.prepare(`
+  const formatColumnExists = queueDb.prepare(`
     SELECT COUNT(*) as count FROM pragma_table_info('playlist_blocks') WHERE name = 'format'
   `).get() as { count: number };
   
-  if (columnExists.count === 0) {
+  if (formatColumnExists.count === 0) {
     queueDb.exec(`ALTER TABLE playlist_blocks ADD COLUMN format TEXT DEFAULT 'mixed'`);
     console.log('✅ Added format column to playlist_blocks table');
+  }
+
+  // Migration: Add playback state columns to displays table if they don't exist
+  const playbackColumns = ['playback_state', 'is_playing', 'is_muted', 'video_position', 'last_state_change'];
+  
+  for (const column of playbackColumns) {
+    const columnExists = queueDb.prepare(`
+      SELECT COUNT(*) as count FROM pragma_table_info('displays') WHERE name = ?
+    `).get(column) as { count: number };
+    
+    if (columnExists.count === 0) {
+      let columnDef = '';
+      switch (column) {
+        case 'playback_state':
+          columnDef = 'TEXT DEFAULT \'idle\'';
+          break;
+        case 'is_playing':
+          columnDef = 'BOOLEAN DEFAULT false';
+          break;
+        case 'is_muted':
+          columnDef = 'BOOLEAN DEFAULT true';
+          break;
+        case 'video_position':
+          columnDef = 'REAL DEFAULT 0';
+          break;
+        case 'last_state_change':
+          // SQLite doesn't support CURRENT_TIMESTAMP in ALTER TABLE, so just add without default
+          columnDef = 'DATETIME';
+          break;
+      }
+      
+      try {
+        queueDb.exec(`ALTER TABLE displays ADD COLUMN ${column} ${columnDef}`);
+        console.log(`✅ Added ${column} column to displays table`);
+      } catch (error) {
+        console.error(`❌ Failed to add ${column} column:`, error);
+      }
+    }
   }
 
   console.log('✅ Queue database initialized successfully');

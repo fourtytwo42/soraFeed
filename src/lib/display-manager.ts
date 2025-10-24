@@ -7,8 +7,9 @@ export class DisplayManager {
   static createDisplay(name: string): Display {
     const id = generateUniqueDisplayCode();
     const stmt = queueDb.prepare(`
-      INSERT INTO displays (id, name, status, current_position, timeline_position, commands)
-      VALUES (?, ?, 'offline', 0, 0, '[]')
+      INSERT INTO displays (id, name, status, current_position, timeline_position, commands, 
+                           playback_state, is_playing, is_muted, video_position, last_state_change)
+      VALUES (?, ?, 'offline', 0, 0, '[]', 'idle', false, true, 0, CURRENT_TIMESTAMP)
     `);
     
     stmt.run(id, name);
@@ -19,8 +20,9 @@ export class DisplayManager {
   // Create a new display with specific code
   static createDisplayWithCode(name: string, code: string): Display {
     const stmt = queueDb.prepare(`
-      INSERT INTO displays (id, name, status, current_position, timeline_position, commands)
-      VALUES (?, ?, 'offline', 0, 0, '[]')
+      INSERT INTO displays (id, name, status, current_position, timeline_position, commands,
+                           playback_state, is_playing, is_muted, video_position, last_state_change)
+      VALUES (?, ?, 'offline', 0, 0, '[]', 'idle', false, true, 0, CURRENT_TIMESTAMP)
     `);
     
     stmt.run(code, name);
@@ -46,7 +48,12 @@ export class DisplayManager {
       current_block_id: row.current_block_id,
       current_playlist_id: row.current_playlist_id,
       timeline_position: row.timeline_position,
-      commands: row.commands
+      commands: row.commands,
+      playback_state: row.playback_state || 'idle',
+      is_playing: Boolean(row.is_playing),
+      is_muted: Boolean(row.is_muted),
+      video_position: row.video_position || 0,
+      last_state_change: row.last_state_change
     };
   }
 
@@ -66,7 +73,12 @@ export class DisplayManager {
       current_block_id: row.current_block_id,
       current_playlist_id: row.current_playlist_id,
       timeline_position: row.timeline_position,
-      commands: row.commands
+      commands: row.commands,
+      playback_state: row.playback_state || 'idle',
+      is_playing: Boolean(row.is_playing),
+      is_muted: Boolean(row.is_muted),
+      video_position: row.video_position || 0,
+      last_state_change: row.last_state_change
     }));
   }
 
@@ -114,16 +126,126 @@ export class DisplayManager {
     stmt.run(...values);
   }
 
-  // Add command for display (called by admin)
-  static addCommand(displayId: string, command: DisplayCommand): void {
-    const display = this.getDisplay(displayId);
+  // Update playback state (called by admin or VM client)
+  static updatePlaybackState(
+    id: string,
+    updates: {
+      playback_state?: 'idle' | 'playing' | 'paused' | 'loading';
+      is_playing?: boolean;
+      is_muted?: boolean;
+      video_position?: number;
+    }
+  ): void {
+    const display = this.getDisplay(id);
     if (!display) throw new Error('Display not found');
 
-    const commands = JSON.parse(display.commands) as DisplayCommand[];
-    commands.push(command);
+    const setParts: string[] = [];
+    const values: any[] = [];
 
-    const stmt = queueDb.prepare('UPDATE displays SET commands = ? WHERE id = ?');
-    stmt.run(JSON.stringify(commands), displayId);
+    if (updates.playback_state !== undefined) {
+      setParts.push('playback_state = ?');
+      values.push(updates.playback_state);
+    }
+    if (updates.is_playing !== undefined) {
+      setParts.push('is_playing = ?');
+      // Convert boolean to integer for SQLite (0 or 1)
+      values.push(updates.is_playing ? 1 : 0);
+    }
+    if (updates.is_muted !== undefined) {
+      setParts.push('is_muted = ?');
+      // Convert boolean to integer for SQLite (0 or 1)
+      values.push(updates.is_muted ? 1 : 0);
+    }
+    if (updates.video_position !== undefined) {
+      setParts.push('video_position = ?');
+      values.push(updates.video_position);
+    }
+
+    if (setParts.length === 0) return;
+
+    // Always update last_state_change and last_ping
+    setParts.push('last_state_change = CURRENT_TIMESTAMP');
+    setParts.push('last_ping = CURRENT_TIMESTAMP');
+
+    const stmt = queueDb.prepare(`
+      UPDATE displays 
+      SET ${setParts.join(', ')}
+      WHERE id = ?
+    `);
+    
+    values.push(id);
+    stmt.run(...values);
+    
+    console.log(`📊 Updated playback state for display ${id}:`, updates);
+  }
+
+  // Admin command methods - these now update database directly
+  static playDisplay(displayId: string): void {
+    this.updatePlaybackState(displayId, {
+      playback_state: 'playing',
+      is_playing: true
+    });
+  }
+
+  static pauseDisplay(displayId: string): void {
+    this.updatePlaybackState(displayId, {
+      playback_state: 'paused',
+      is_playing: false
+    });
+  }
+
+  static muteDisplay(displayId: string): void {
+    this.updatePlaybackState(displayId, {
+      is_muted: true
+    });
+  }
+
+  static unmuteDisplay(displayId: string): void {
+    this.updatePlaybackState(displayId, {
+      is_muted: false
+    });
+  }
+
+  static seekDisplay(displayId: string, position: number): void {
+    this.updatePlaybackState(displayId, {
+      video_position: position
+    });
+  }
+
+  // Legacy command methods for backward compatibility (deprecated)
+  static addCommand(displayId: string, command: DisplayCommand): void {
+    console.warn('⚠️ addCommand is deprecated. Use direct playback state methods instead.');
+    
+    // Convert old commands to new playback state updates
+    switch (command.type) {
+      case 'play':
+        this.playDisplay(displayId);
+        break;
+      case 'pause':
+        this.pauseDisplay(displayId);
+        break;
+      case 'mute':
+        this.muteDisplay(displayId);
+        break;
+      case 'unmute':
+        this.unmuteDisplay(displayId);
+        break;
+      case 'seek':
+        if (command.payload?.position !== undefined) {
+          this.seekDisplay(displayId, command.payload.position);
+        }
+        break;
+      default:
+        // For non-playback commands (like 'next'), still use the old system
+        const display = this.getDisplay(displayId);
+        if (!display) throw new Error('Display not found');
+
+        const commands = JSON.parse(display.commands) as DisplayCommand[];
+        commands.push(command);
+
+        const stmt = queueDb.prepare('UPDATE displays SET commands = ? WHERE id = ?');
+        stmt.run(JSON.stringify(commands), displayId);
+    }
   }
 
   // Get and clear commands for display (called by VM client)

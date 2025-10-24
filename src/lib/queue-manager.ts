@@ -312,7 +312,12 @@ export class QueueManager {
       const getStmt = queueDb.prepare('SELECT * FROM timeline_videos WHERE id = ?');
       const video = getStmt.get(timelineVideoId) as any;
       
-      if (!video) return;
+      if (!video) {
+        console.error(`❌ Timeline video not found: ${timelineVideoId}`);
+        return;
+      }
+
+      console.log(`🎯 Found video to mark as played: ${video.video_id.slice(-6)} (timeline: ${timelineVideoId.slice(-6)}, status: ${video.status})`);
 
       // Mark as played
       const updateStmt = queueDb.prepare(`
@@ -320,7 +325,8 @@ export class QueueManager {
         SET status = 'played', played_at = CURRENT_TIMESTAMP 
         WHERE id = ?
       `);
-      updateStmt.run(timelineVideoId);
+      const result = updateStmt.run(timelineVideoId);
+      console.log(`✏️ Updated ${result.changes} rows to 'played' status`);
 
       // Add to history
       const historyStmt = queueDb.prepare(`

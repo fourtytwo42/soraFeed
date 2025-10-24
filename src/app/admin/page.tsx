@@ -322,7 +322,12 @@ export default function AdminDashboard() {
         body: JSON.stringify({ type, payload })
       });
       
-      if (!response.ok) throw new Error('Failed to send command');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.error || `HTTP ${response.status}`;
+        console.error(`❌ Command failed: ${type} to ${displayId} - ${errorMsg}`);
+        throw new Error(`Failed to send command: ${errorMsg}`);
+      }
       
       console.log(`✅ Command sent: ${type} to ${displayId}`);
     } catch (err) {
@@ -643,11 +648,11 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => sendCommand(display.id, display.status === 'playing' ? 'pause' : 'play')}
+                      onClick={() => sendCommand(display.id, display.is_playing ? 'pause' : 'play')}
                       className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
                       disabled={!display.isOnline}
                     >
-                      {display.status === 'playing' ? 
+                      {display.is_playing ? 
                         <Pause className="w-4 h-4 text-blue-600" /> : 
                         <Play className="w-4 h-4 text-blue-600" />
                       }
