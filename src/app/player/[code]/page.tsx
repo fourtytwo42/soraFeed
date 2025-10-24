@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { SoraFeedItem } from '@/types/sora';
 import { TimelineVideo, DisplayCommand } from '@/types/timeline';
-import SimpleVideoPlayer from '@/components/player/SimpleVideoPlayer';
+import ScrollingVideoPlayer from '@/components/player/ScrollingVideoPlayer';
 import CodeDisplay from '@/components/player/CodeDisplay';
 import ConnectedDisplay from '@/components/player/ConnectedDisplay';
 import { useVMWebSocket } from '@/hooks/useVMWebSocket';
@@ -427,7 +427,7 @@ export default function VMPlayer() {
     <div className="w-full h-screen overflow-hidden">
       {vmState.currentVideo ? (
         <div className="relative w-full h-full">
-          <SimpleVideoPlayer
+          <ScrollingVideoPlayer
             video={vmState.currentVideo}
             isPlaying={vmState.isPlaying}
             isMuted={vmState.isMuted}
