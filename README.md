@@ -8,6 +8,7 @@ An automated data collection system for Sora-generated videos with PostgreSQL-po
 - 🗄️ **PostgreSQL Backend** - Robust database with duplicate detection
 - 📊 **Performance Monitoring** - Real-time scanner statistics and error tracking
 - 🔐 **Authentication Handling** - Automatic JWT token validation and error reporting
+- 🍪 **Automatic Cookie Management** - Refreshes Cloudflare cookies every 12 hours and on error detection
 - ⚡ **High Performance** - Optimized polling with dynamic timing adjustment
 - 🛡️ **Error Recovery** - Automatic retry logic and rate limiting
 - 📝 **Comprehensive Logging** - Detailed logs for debugging and monitoring
@@ -229,16 +230,14 @@ The scanner will automatically detect JWT token problems and log:
 
 ### Cookie Management
 
-The scanner automatically handles Cloudflare cookies, but you can manually refresh them:
+The scanner automatically handles Cloudflare cookies:
+- **Automatic refresh every 12 hours** - No manual intervention needed
+- **Error-based refresh** - Automatically refreshes when cookie-related errors are detected
+- **Manual refresh available** - For troubleshooting if needed
 
 ```bash
-# Manual cookie refresh
+# Manual cookie refresh (if needed for troubleshooting)
 npm run refresh-cookies
-
-# Set up automatic cookie refresh every 12 hours
-chmod +x scripts/cron-refresh.sh
-crontab -e
-# Add this line: 0 */12 * * * /full/path/to/soraFeed/scripts/cron-refresh.sh
 ```
 
 Update your `AUTH_BEARER_TOKEN` in `.env` and restart the scanner.
