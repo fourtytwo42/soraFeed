@@ -1,17 +1,16 @@
-# 🎬 Sora Feed - TikTok-Style Video Feed App
+# 🎬 Sora Feed Scanner
 
-A beautiful, responsive video feed application for browsing Sora-generated videos with PostgreSQL-powered indexing and real-time monitoring.
+An automated data collection system for Sora-generated videos with PostgreSQL-powered indexing and real-time monitoring.
 
 ## ✨ Features
 
-- 📱 **TikTok-style Interface** - Vertical scrolling video feed with smooth animations
-- 🎥 **Video Controls** - Play/pause, mute, download, and share functionality
-- 🔄 **Remix Navigation** - Swipe through video remixes with horizontal gestures
-- ❤️ **Favorites System** - Save and browse your favorite videos
-- 🔍 **Real-time Scanner** - Automatic indexing of latest Sora posts
-- 📊 **Debug Dashboard** - Monitor scanner performance and database stats
+- 🔄 **Automated Scanning** - Continuous monitoring of Sora API for new posts
 - 🗄️ **PostgreSQL Backend** - Robust database with duplicate detection
-- 🎨 **Modern UI** - Beautiful gradients, smooth animations, responsive design
+- 📊 **Performance Monitoring** - Real-time scanner statistics and error tracking
+- 🔐 **Authentication Handling** - Automatic JWT token validation and error reporting
+- ⚡ **High Performance** - Optimized polling with dynamic timing adjustment
+- 🛡️ **Error Recovery** - Automatic retry logic and rate limiting
+- 📝 **Comprehensive Logging** - Detailed logs for debugging and monitoring
 
 ## 🚀 Quick Start
 
@@ -20,6 +19,7 @@ A beautiful, responsive video feed application for browsing Sora-generated video
 ```bash
 git clone https://github.com/fourtytwo42/soraFeed.git
 cd soraFeed
+git checkout scanner
 ```
 
 ### 2. Configure Environment
@@ -35,8 +35,19 @@ Edit `.env` and add your credentials:
 ```env
 # Sora API Authentication
 AUTH_BEARER_TOKEN=your_jwt_token_here
-USER_AGENT=Mozilla/5.0...
-ACCEPT_LANGUAGE=en-US,en;q=0.9
+COOKIE_SESSION=your_session_cookie
+CF_CLEARANCE=your_cloudflare_clearance
+CF_BM=your_cloudflare_bm
+OAI_SC=your_oai_sc
+OAI_DID=your_oai_did
+
+# Headers
+USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...
+ACCEPT_LANGUAGE=en-US,en;q=0.9,fr;q=0.8
+
+# API Config
+FEED_LIMIT=16
+FEED_CUT=nf2_latest
 
 # Database Configuration
 DB_HOST=localhost
@@ -55,112 +66,77 @@ npm run setup
 This single command will:
 - ✅ Install PostgreSQL (if not installed)
 - ✅ Create and configure the database
-- ✅ Initialize database tables
-- ✅ Test Sora API connection
+- ✅ Initialize database tables with proper schema
+- ✅ Test database connection
 - ✅ Install all npm dependencies
 
-### 4. Start the Application
+### 4. Start the Scanner
 
-**Start the scanner** (in one terminal):
+**Option 1: Direct execution**
 ```bash
 npm run scanner
 ```
 
-**Start the app** (in another terminal):
+**Option 2: Using PM2 (recommended for production)**
 ```bash
-npm run dev
+pm2 start ecosystem.config.js
+pm2 logs sora-feed-scanner
 ```
-
-### 5. Access the App
-
-- **Main Feed**: http://localhost:3000
-- **Scanner Dashboard**: http://localhost:3000/scanner-debug
-- **Setup Guide**: http://localhost:3000/setup
 
 ## 📋 Available Commands
 
 | Command | Description |
 |---------|-------------|
 | `npm run setup` | Complete setup (PostgreSQL + database + dependencies) |
-| `npm run dev` | Start Next.js development server |
-| `npm run scanner` | Start PostgreSQL scanner service |
-| `npm run build` | Build for production |
-| `npm start` | Start production server |
-| `npm run lint` | Run ESLint |
+| `npm run scanner` | Start scanner service |
+| `npm start` | Start scanner service (alias for scanner) |
+| `npm run refresh-cookies` | Refresh authentication cookies |
+| `npm run update-cookies` | Update cookies from browser |
 
 ## 🗂️ Project Structure
 
 ```
 soraFeed/
-├── src/
-│   ├── app/                    # Next.js app directory
-│   │   ├── page.tsx           # Main feed page
-│   │   ├── scanner-debug/     # Scanner monitoring dashboard
-│   │   ├── setup/             # Setup guide page
-│   │   └── api/               # API routes
-│   ├── components/            # React components
-│   │   ├── VideoFeed.tsx     # Main video feed component
-│   │   ├── VideoPost.tsx     # Individual video post
-│   │   ├── FeedLoader.tsx    # Feed data loader
-│   │   └── RemixCacheDebug.tsx
-│   ├── lib/                   # Utilities
-│   │   ├── api.ts            # Sora API client
-│   │   ├── db.ts             # Database connection
-│   │   └── remixCache.ts     # Remix caching system
-│   └── types/                 # TypeScript types
-│       └── sora.ts           # Sora API types
-├── scripts/                   # Setup and utility scripts
-│   ├── scanner.js            # PostgreSQL scanner
-│   ├── setup.js              # Automated setup script
-│   └── test-*.js             # Test utilities
-├── docs/                      # Documentation
-│   ├── DATABASE_SETUP.md     # Detailed database guide
-│   ├── README_SCANNER.md     # Scanner documentation
-│   └── INSTALLATION_COMPLETE.md
-├── public/                    # Static assets
-├── .env                       # Environment variables (create from env.example)
+├── scripts/                   # Core scanner scripts
+│   ├── scanner.js            # Main scanner service
+│   ├── setup.cjs             # Automated setup script
+│   ├── refresh-cookies.js    # Cookie refresh utility
+│   └── update-cookies.js     # Cookie update utility
+├── logs/                     # Scanner logs
+│   ├── scanner-error.log     # Error logs
+│   ├── scanner-out.log       # Output logs
+│   └── scanner-combined.log  # Combined logs
+├── docs/                     # Documentation
+├── ecosystem.config.js       # PM2 configuration
+├── docker-compose.yml        # PostgreSQL Docker setup
+├── .env                      # Environment variables
 └── package.json
 ```
 
-## 🎯 Key Features Explained
+## 🎯 Scanner Features
 
-### Video Feed
-- Vertical scrolling with keyboard navigation (↑↓)
-- Smooth animations with Framer Motion
-- Auto-play on scroll
-- Pause on click/hover
+### Automated Data Collection
+- Polls Sora API every 8-10 seconds (dynamic timing)
+- Fetches latest 200 posts per scan
+- Automatic duplicate detection and filtering
+- Real-time performance monitoring
 
-### Remix Navigation
-- Horizontal swipe gestures
-- Visual remix indicators
-- Sliding window for many remixes
-- Preloaded remix data with caching
+### Database Schema
+- **creators** - User profile information
+- **sora_posts** - Video post data with metadata
+- **scanner_stats** - Performance and error tracking
 
-### Scanner System
-- Polls Sora API every 10 seconds
-- Fetches latest 200 posts
-- Automatic duplicate detection
-- Real-time monitoring dashboard
+### Error Handling
+- JWT token validation and expiration detection
+- HTTP status code monitoring (401, 403, etc.)
+- Automatic retry logic with exponential backoff
+- Comprehensive error logging
 
-### Social Sharing
-- Share to Facebook & Twitter
-- Download videos locally
-- Copy permalink to clipboard
-
-## 📊 Database Schema
-
-### sora_posts
-- `id` (PRIMARY KEY) - Unique post identifier
-- `post_data` (JSONB) - Complete post data
-- `profile_data` (JSONB) - User profile data
-- `text` (TEXT) - Post caption
-- `posted_at`, `updated_at` (BIGINT) - Timestamps
-- `indexed_at` (TIMESTAMP) - When added to database
-
-### scanner_stats
-- Tracks scanner performance metrics
-- Records scan duration and errors
-- Stores current scanner status
+### Performance Optimization
+- Dynamic polling interval adjustment based on overlap
+- Memory usage monitoring and restart protection
+- Efficient database indexing for fast queries
+- Connection pooling for database operations
 
 ## 🔧 Configuration
 
@@ -169,6 +145,11 @@ soraFeed/
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AUTH_BEARER_TOKEN` | Sora API JWT token | Required |
+| `COOKIE_SESSION` | Session cookie | Required |
+| `CF_CLEARANCE` | Cloudflare clearance | Required |
+| `CF_BM` | Cloudflare BM | Required |
+| `OAI_SC` | OpenAI SC | Required |
+| `OAI_DID` | OpenAI DID | Required |
 | `DB_HOST` | PostgreSQL host | localhost |
 | `DB_PORT` | PostgreSQL port | 5432 |
 | `DB_NAME` | Database name | sora_feed |
@@ -178,19 +159,57 @@ soraFeed/
 ### Scanner Settings
 
 Edit `scripts/scanner.js` to customize:
-- Scan frequency (default: 10 seconds)
+- Scan frequency (default: 8-10 seconds, dynamic)
 - Posts per scan (default: 200)
 - API endpoint and parameters
+- Error handling and retry logic
 
-## 📚 Documentation
+## 📊 Database Schema
 
-- **[Database Setup](docs/DATABASE_SETUP.md)** - Detailed PostgreSQL setup guide
-- **[Scanner Guide](docs/README_SCANNER.md)** - Scanner system documentation
-- **[API Documentation](API-Doc.md)** - Sora API reference
+### creators
+- `id` (PRIMARY KEY) - User ID
+- `username` - Username
+- `display_name` - Display name
+- `profile_picture_url` - Profile picture
+- `permalink` - Profile URL
+- `follower_count`, `following_count`, `post_count` - Stats
+- `verified` - Verification status
+- `first_seen`, `last_updated` - Timestamps
+
+### sora_posts
+- `id` (PRIMARY KEY) - Post ID
+- `creator_id` (FOREIGN KEY) - References creators.id
+- `text` - Post caption
+- `posted_at`, `updated_at` - Timestamps
+- `permalink` - Post URL
+- `video_url`, `video_url_md` - Video URLs
+- `thumbnail_url`, `gif_url` - Media URLs
+- `width`, `height` - Video dimensions
+- `generation_id`, `task_id` - Generation metadata
+- `like_count`, `view_count`, `remix_count` - Engagement
+- `indexed_at`, `last_updated` - Timestamps
+
+### scanner_stats
+- Performance metrics and error tracking
+- Scan duration and success rates
+- Current scanner status and configuration
 
 ## 🐛 Troubleshooting
 
-### PostgreSQL Connection Issues
+### Scanner Not Working
+
+```bash
+# Check scanner logs
+pm2 logs sora-feed-scanner
+
+# Check for authentication errors
+grep "AUTHENTICATION ERROR" logs/scanner-error.log
+
+# Verify API token in .env
+cat .env | grep AUTH_BEARER_TOKEN
+```
+
+### Database Connection Issues
 
 ```bash
 # Check if PostgreSQL is running
@@ -203,54 +222,57 @@ sudo systemctl start postgresql
 npm run setup
 ```
 
-### Scanner Not Working
+### JWT Token Issues
 
-```bash
-# Check scanner logs
-npm run scanner
+The scanner will automatically detect JWT token problems and log:
+- `🔐 HTTP 401 Unauthorized: Authentication failed`
+- `🔐 AUTHENTICATION ERROR: JWT token may be invalid or expired`
 
-# Verify API token in .env
-cat .env | grep AUTH_BEARER_TOKEN
-
-# Test API connection
-node scripts/test-api.js
-```
-
-### Port 3000 Already in Use
-
-```bash
-# Kill process on port 3000
-lsof -ti:3000 | xargs kill -9
-
-# Or use a different port
-PORT=3001 npm run dev
-```
+Update your `AUTH_BEARER_TOKEN` in `.env` and restart the scanner.
 
 ## 🚀 Deployment
 
-### Production Build
+### Using PM2 (Recommended)
 
 ```bash
-# Build the application
-npm run build
+# Start scanner
+pm2 start ecosystem.config.js
 
-# Start production server
-npm start
+# Monitor logs
+pm2 logs sora-feed-scanner
+
+# Restart scanner
+pm2 restart sora-feed-scanner
+
+# Stop scanner
+pm2 stop sora-feed-scanner
 ```
 
-### Environment Setup
+### Using Docker
 
-Make sure to set production environment variables:
-- `NODE_ENV=production`
-- Valid `AUTH_BEARER_TOKEN`
-- Production database credentials
+```bash
+# Start PostgreSQL with Docker
+docker-compose up -d
+
+# Run setup
+npm run setup
+
+# Start scanner
+npm run scanner
+```
+
+## 📚 Documentation
+
+- **[Scanner Guide](docs/README_SCANNER.md)** - Detailed scanner documentation
+- **[Database Setup](docs/DATABASE_SETUP.md)** - PostgreSQL setup guide
+- **[API Documentation](API-Doc.md)** - Sora API reference
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch from `scanner`
 3. Make your changes
-4. Submit a pull request
+4. Submit a pull request to the `scanner` branch
 
 ## 📝 License
 
@@ -258,10 +280,9 @@ MIT License - see LICENSE file for details
 
 ## 🙏 Acknowledgments
 
-- Built with [Next.js](https://nextjs.org/)
-- UI powered by [Tailwind CSS](https://tailwindcss.com/)
-- Animations with [Framer Motion](https://www.framer.com/motion/)
-- Database: [PostgreSQL](https://www.postgresql.org/)
+- Built with Node.js and PostgreSQL
+- Powered by the Sora API
+- PM2 for process management
 
 ---
 
