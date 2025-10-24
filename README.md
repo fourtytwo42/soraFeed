@@ -108,7 +108,6 @@ soraFeed/
 │   └── scanner-combined.log  # Combined logs
 ├── docs/                     # Documentation
 ├── ecosystem.config.js       # PM2 configuration
-├── docker-compose.yml        # PostgreSQL Docker setup
 ├── .env                      # Environment variables
 └── package.json
 ```
@@ -248,18 +247,6 @@ pm2 restart sora-feed-scanner
 pm2 stop sora-feed-scanner
 ```
 
-### Using Docker
-
-```bash
-# Start PostgreSQL with Docker
-docker-compose up -d
-
-# Run setup
-npm run setup
-
-# Start scanner
-npm run scanner
-```
 
 ## 📚 Documentation
 
