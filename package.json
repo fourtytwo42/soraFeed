@@ -4,11 +4,11 @@
   "private": true,
   "description": "Sora Feed Scanner - Automated data collection from Sora API",
   "scripts": {
-    "scanner": "node scripts/scanner.js",
-    "refresh-cookies": "node scripts/refresh-cookies.js",
-    "update-cookies": "node scripts/update-cookies.js",
-    "setup": "node scripts/setup.cjs",
-    "start": "node scripts/scanner.js"
+    "scanner": "node src/scanner.js",
+    "refresh-cookies": "node src/utils/refresh-cookies.js",
+    "update-cookies": "node src/utils/update-cookies.js",
+    "setup": "node src/setup.cjs",
+    "start": "node src/scanner.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

@@ -127,7 +127,7 @@ function shouldRefreshCookies() {
 async function refreshCookies() {
   try {
     console.log('🔄 Refreshing cookies...');
-    const { refreshCookies: refreshFn } = require('./refresh-cookies.js');
+    const { refreshCookies: refreshFn } = require('./utils/refresh-cookies.js');
     await refreshFn();
     lastCookieRefresh = Date.now();
     console.log('✅ Cookies refreshed successfully');

@@ -1,8 +1,8 @@
 module.exports = {
   apps: [
-    {
-      name: 'sora-feed-scanner',
-      script: 'scripts/scanner.js',
+        {
+          name: 'sora-feed-scanner',
+          script: 'src/scanner.js',
       cwd: '/home/hendo420/soraFeed',
       instances: 1,
       autorestart: true,

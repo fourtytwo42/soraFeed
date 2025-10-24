@@ -98,16 +98,17 @@ pm2 logs sora-feed-scanner
 
 ```
 soraFeed/
-├── scripts/                   # Core scanner scripts
-│   ├── scanner.js            # Main scanner service
-│   ├── setup.cjs             # Automated setup script
-│   ├── refresh-cookies.js    # Cookie refresh utility
-│   └── update-cookies.js     # Cookie update utility
+├── src/                       # Main application source code
+│   ├── scanner.js            # Main scanner application
+│   ├── setup.cjs             # Automated database setup script
+│   └── utils/                # Utility scripts
+│       ├── refresh-cookies.js # Cookie refresh utility
+│       └── update-cookies.js  # Cookie update utility
+├── docs/                     # Documentation
 ├── logs/                     # Scanner logs
 │   ├── scanner-error.log     # Error logs
 │   ├── scanner-out.log       # Output logs
 │   └── scanner-combined.log  # Combined logs
-├── docs/                     # Documentation
 ├── ecosystem.config.js       # PM2 configuration
 ├── .env                      # Environment variables
 └── package.json
