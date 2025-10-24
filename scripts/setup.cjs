@@ -120,22 +120,53 @@ info('\nStep 5: Initializing database tables...');
 try {
   const client = await pool.connect();
   
-  // Create posts table
+  // Enable pg_trgm extension for fuzzy matching
+  try {
+    await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    success('pg_trgm extension enabled');
+  } catch (error) {
+    warning('pg_trgm extension check: ' + error.message);
+  }
+
+  // Create creators table
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS creators (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      display_name TEXT,
+      profile_picture_url TEXT,
+      permalink TEXT,
+      follower_count INTEGER DEFAULT 0,
+      following_count INTEGER DEFAULT 0,
+      post_count INTEGER DEFAULT 0,
+      verified BOOLEAN DEFAULT false,
+      first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Create posts table with normalized schema
   await client.query(`
     CREATE TABLE IF NOT EXISTS sora_posts (
       id TEXT PRIMARY KEY,
-      post_data JSONB NOT NULL,
-      profile_data JSONB NOT NULL,
+      creator_id TEXT NOT NULL REFERENCES creators(id),
       text TEXT,
-      posted_at BIGINT,
+      posted_at BIGINT NOT NULL,
       updated_at BIGINT,
+      permalink TEXT NOT NULL,
+      video_url TEXT,
+      video_url_md TEXT,
+      thumbnail_url TEXT,
+      gif_url TEXT,
+      width INTEGER,
+      height INTEGER,
+      generation_id TEXT,
+      task_id TEXT,
       like_count INTEGER DEFAULT 0,
       view_count INTEGER DEFAULT 0,
       remix_count INTEGER DEFAULT 0,
-      permalink TEXT,
       indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(id)
+      last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `);
   
@@ -152,7 +183,7 @@ try {
     CREATE INDEX IF NOT EXISTS idx_sora_posts_text ON sora_posts USING gin(to_tsvector('english', COALESCE(text, '')));
   `);
   
-  // Create scanner_stats table
+  // Create scanner_stats table with full schema
   await client.query(`
     CREATE TABLE IF NOT EXISTS scanner_stats (
       id SERIAL PRIMARY KEY,
@@ -163,7 +194,15 @@ try {
       last_scan_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       scan_duration_ms INTEGER DEFAULT 0,
       status TEXT DEFAULT 'idle',
-      error_message TEXT
+      error_message TEXT,
+      last_scan_count INTEGER DEFAULT 0,
+      previous_scan_count INTEGER DEFAULT 0,
+      last_scan_duplicates INTEGER DEFAULT 0,
+      last_scan_unique INTEGER DEFAULT 0,
+      avg_videos_per_second DECIMAL(10,2) DEFAULT 0,
+      avg_unique_videos_per_second DECIMAL(10,2) DEFAULT 0,
+      current_poll_interval INTEGER DEFAULT 10000,
+      previous_poll_interval INTEGER DEFAULT 10000
     );
   `);
   
@@ -251,10 +290,10 @@ log('\n📊 Quick Start:', 'cyan');
 log('===============\n', 'cyan');
 log('Start the scanner:', 'yellow');
 log('  npm run scanner\n', 'cyan');
-log('Start the app:', 'yellow');
-log('  npm run dev\n', 'cyan');
-log('View dashboard:', 'yellow');
-log('  http://localhost:3000/scanner-debug\n', 'cyan');
+log('Start with PM2 (persistent):', 'yellow');
+log('  pm2 start ecosystem.config.js\n', 'cyan');
+log('Monitor scanner logs:', 'yellow');
+log('  pm2 logs sora-feed-scanner\n', 'cyan');
 
 log('📚 Documentation:', 'cyan');
 log('=================\n', 'cyan');
