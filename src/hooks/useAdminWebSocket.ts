@@ -149,6 +149,11 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
             newMap.set(message.displayId!, {
               ...existing,
               currentVideo: message.data.currentVideo,
+              playlistProgress: {
+                ...existing.playlistProgress,
+                videoProgress: 0, // Reset video progress when video changes
+                enhancedPosition: existing.playlistProgress?.enhancedPosition || 0
+              },
               lastUpdate: Date.now()
             });
             

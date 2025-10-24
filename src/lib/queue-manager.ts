@@ -319,6 +319,12 @@ export class QueueManager {
 
       console.log(`🎯 Found video to mark as played: ${video.video_id.slice(-6)} (timeline: ${timelineVideoId.slice(-6)}, status: ${video.status})`);
 
+      // Don't mark as played if it's already played (prevents duplicate position increments)
+      if (video.status === 'played') {
+        console.log(`⚠️ Video already marked as played, skipping`);
+        return;
+      }
+
       // Mark as played
       const updateStmt = queueDb.prepare(`
         UPDATE timeline_videos 
@@ -382,6 +388,13 @@ export class QueueManager {
     `);
     clearStmt.run(displayId);
 
+    // Reset timeline position to 0 for new loop
+    const resetPositionStmt = queueDb.prepare(`
+      UPDATE displays SET timeline_position = 0 WHERE id = ?
+    `);
+    resetPositionStmt.run(displayId);
+    console.log(`🔄 Reset timeline_position to 0 for display ${displayId}`);
+
     // Populate new timeline with next loop iteration
     await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count + 1);
 
@@ -426,33 +439,47 @@ export class QueueManager {
     `);
     const currentPosition = (positionStmt.get(displayId) as any)?.timeline_position || 0;
 
+    console.log(`📊 Progress calc START: currentPosition=${currentPosition}, totalBlocks=${blocks.length}`);
+    console.log(`📊 Block breakdown:`, blocks.map((b, i) => `Block ${i}: ${b.video_count} videos (${b.search_term})`));
+
     // Calculate which block we're in
     let blockIndex = 0;
-    let positionInBlock = currentPosition;
+    let positionInBlock = 0;
     let totalVideosProcessed = 0;
+    let totalVideosInPlaylist = blocks.reduce((sum, b) => sum + b.video_count, 0);
     
     for (let i = 0; i < blocks.length; i++) {
-      if (positionInBlock < totalVideosProcessed + blocks[i].video_count) {
+      const blockEnd = totalVideosProcessed + blocks[i].video_count;
+      console.log(`📊 Checking block ${i}: totalProcessed=${totalVideosProcessed}, blockEnd=${blockEnd}, condition: ${currentPosition} < ${blockEnd} = ${currentPosition < blockEnd}`);
+      if (currentPosition < blockEnd) {
         blockIndex = i;
-        positionInBlock = positionInBlock - totalVideosProcessed;
+        positionInBlock = currentPosition - totalVideosProcessed;
+        console.log(`📊 ✅ Found block ${blockIndex}, positionInBlock=${positionInBlock}`);
         break;
       }
       totalVideosProcessed += blocks[i].video_count;
     }
 
     // Handle overflow - if position is beyond all blocks, use last block
-    if (blockIndex >= blocks.length) {
+    if (currentPosition >= totalVideosInPlaylist && blocks.length > 0) {
+      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, using last block`);
       blockIndex = blocks.length - 1;
       positionInBlock = blocks[blockIndex]?.video_count || 0;
     }
 
     const currentBlock = blocks[blockIndex] || blocks[0];
     
+    // Clamp positionInBlock to not exceed block size
+    const clampedPositionInBlock = currentBlock ? Math.min(positionInBlock, currentBlock.video_count - 1) : 0;
+    const blockProgress = currentBlock ? (clampedPositionInBlock / currentBlock.video_count) * 100 : 0;
+    
+    console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
+    
     return {
       currentBlock: {
         name: currentBlock?.search_term || '',
-        progress: currentBlock ? (positionInBlock / currentBlock.video_count) * 100 : 0,
-        currentVideo: positionInBlock + 1,
+        progress: blockProgress,
+        currentVideo: Math.min(clampedPositionInBlock + 1, currentBlock?.video_count || 0),
         totalVideos: currentBlock?.video_count || 0
       },
       blocks: blocks.map((block, index) => ({

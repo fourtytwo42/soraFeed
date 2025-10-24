@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, List, Trash2, ChevronDown, Wifi, WifiOff } from 'lucide-react';
 import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
 import PlaylistBuilder from '@/components/admin/PlaylistBuilder';
@@ -49,6 +49,9 @@ export default function AdminDashboard() {
 
   // Initialize WebSocket connection
   const { isConnected: wsConnected, displayStatuses, registerDisplays, requestDisplayStatus } = useAdminWebSocket(adminId);
+  
+  // Track previous video IDs to detect changes
+  const previousVideoIdsRef = useRef<Map<string, string>>(new Map());
 
   // Get owned display codes from localStorage
   const getOwnedDisplayCodes = (): string[] => {
@@ -427,6 +430,25 @@ export default function AdminDashboard() {
       );
     }
   }, [displayStatuses, displays.length, wsConnected]);
+
+  // Detect video changes and refresh display data from API
+  useEffect(() => {
+    displayStatuses.forEach((status, displayId) => {
+      const currentVideoId = status.currentVideo?.id;
+      const previousVideoId = previousVideoIdsRef.current.get(displayId);
+      
+      // If video changed, refresh display data from API to get updated position
+      if (currentVideoId && previousVideoId && currentVideoId !== previousVideoId) {
+        console.log(`🎬 Video changed for ${displayId}, refreshing display data...`);
+        fetchDisplays();
+      }
+      
+      // Update tracking
+      if (currentVideoId) {
+        previousVideoIdsRef.current.set(displayId, currentVideoId);
+      }
+    });
+  }, [displayStatuses]);
 
   // Register displays when WebSocket connects (only once per connection)
   useEffect(() => {
