@@ -68,7 +68,17 @@ export class QueueManager {
       params = [`%${searchTerm}%`, ...excludeVideoIds, count];
     }
 
+    console.log(`🔍 SQL Query Debug:`, {
+      searchTerm,
+      requestedCount: count,
+      excludeCount: excludeVideoIds.length,
+      finalQuery: query.replace(/\s+/g, ' ').trim(),
+      params: params.map((p, i) => `$${i+1}=${p}`).join(', ')
+    });
+
     const result = await client.query(query, params);
+    
+    console.log(`📊 SQL Result: Found ${result.rows.length} rows (requested ${count})`);
     
       // Transform to SoraFeedItem format
       return result.rows.map((row: any) => ({
@@ -192,6 +202,7 @@ export class QueueManager {
       console.log(`🚫 Excluding ${playedVideos.length} already played videos from current loop ${loopIteration}`);
 
       // Search for new videos
+      console.log(`🔍 Searching for videos: term="${block.search_term}", count=${block.video_count}, mode=${block.fetch_mode}, format=${block.format}, excluding=${playedVideos.length} videos`);
       const videos = await this.searchVideos(
         block.search_term,
         block.video_count,
@@ -200,7 +211,7 @@ export class QueueManager {
         playedVideos
       );
 
-      console.log(`✅ Found ${videos.length} new videos for "${block.search_term}"`);
+      console.log(`✅ Found ${videos.length} new videos for "${block.search_term}" (requested ${block.video_count})`);
 
       // Add videos to timeline using transaction
       const transaction = queueDb.transaction(() => {
@@ -212,7 +223,11 @@ export class QueueManager {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
         `);
 
-        videos.forEach((video, index) => {
+        // Ensure we don't add more videos than requested for this block
+        const videosToAdd = videos.slice(0, block.video_count);
+        console.log(`📝 Adding ${videosToAdd.length} videos to timeline (limited from ${videos.length} found)`);
+        
+        videosToAdd.forEach((video, index) => {
           const videoId = uuidv4();
           
           // Store only essential video data to reduce memory usage
@@ -474,5 +489,14 @@ export class QueueManager {
       video_data: row.video_data,
       created_at: row.created_at
     }));
+  }
+
+  // Get total videos in a specific block
+  static getTotalVideosInBlock(blockId: string): number {
+    const stmt = queueDb.prepare(`
+      SELECT video_count FROM playlist_blocks WHERE id = ?
+    `);
+    const result = stmt.get(blockId) as any;
+    return result?.video_count || 1;
   }
 }

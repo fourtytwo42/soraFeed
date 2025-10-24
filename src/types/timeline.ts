@@ -50,6 +50,7 @@ export interface TimelineVideo {
   played_at?: string;
   video_data?: string; // JSON string of cached video metadata
   created_at: string;
+  totalVideosInBlock?: number; // Total videos in the current block
 }
 
 export interface VideoHistory {

@@ -50,7 +50,7 @@ export default function VMPlayer() {
     isConnected: false,
     hasActivePlaylist: false
   });
-  const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
+  const [needsUserInteraction, setNeedsUserInteraction] = useState(true); // Start with true to handle refresh
   const [videoProgress, setVideoProgress] = useState({ currentTime: 0, duration: 0 });
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -88,14 +88,18 @@ export default function VMPlayer() {
           if (wsConnected && vmState.currentTimelineVideo) {
             const videoProgressPercent = (currentTime / duration) * 100;
             
+            // Get the actual total videos from the current block
+            // We'll get this from the poll response data
+            const totalVideosInBlock = vmState.currentTimelineVideo.totalVideosInBlock || 1;
+            
             sendProgressUpdate({
               currentIndex: vmState.currentTimelineVideo.timeline_position,
-              totalVideos: 4, // Keep it simple for now - will be updated by API data
+              totalVideos: totalVideosInBlock,
               playlistName: 'Current Block',
               videoProgress: videoProgressPercent,
               // Send additional context for better progress calculation
               timelinePosition: vmState.currentTimelineVideo.timeline_position,
-              blockPosition: vmState.currentTimelineVideo.block_position
+              blockPosition: vmState.currentTimelineVideo.block_position // This is the static position of this specific video
             });
           }
         }
@@ -255,12 +259,22 @@ export default function VMPlayer() {
     event.preventDefault();
     event.stopPropagation();
     
-    console.log('👆 User interaction detected, enabling autoplay');
+    console.log('👆 User interaction detected, enabling autoplay for session');
     setNeedsUserInteraction(false);
+    
+    // Store in sessionStorage that user has interacted (persists until tab close)
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('sorafeed-user-interacted', 'true');
+    }
+    
     setVMState(prev => ({
       ...prev,
-      isPlaying: true
+      isPlaying: true,
+      status: 'playing'
     }));
+    
+    // Start video progress tracking
+    startVideoProgressTracking();
     
     // Immediately try to play the video to establish user interaction
     const video = document.querySelector('video');
@@ -273,7 +287,7 @@ export default function VMPlayer() {
         // If it still fails, the video component will handle it
       });
     }
-  }, []);
+  }, [startVideoProgressTracking]);
 
   // Process commands from admin
   const processCommands = useCallback((commands: DisplayCommand[]) => {
@@ -310,14 +324,16 @@ export default function VMPlayer() {
 
   // Handle video ready
   const handleVideoReady = useCallback(() => {
-    console.log('✅ Video ready, attempting to start playback');
+    console.log('✅ Video ready');
 
-    // Don't auto-start if user interaction is needed
+    // Always wait for user interaction on first load or after refresh
     if (needsUserInteraction) {
-      console.log('⏸️ User interaction required, waiting for click');
+      console.log('⏸️ User interaction required, showing click to play overlay');
       return;
     }
 
+    // Only auto-start if user has already interacted
+    console.log('🎬 Auto-starting playback (user has already interacted)');
     setVMState(prev => ({
       ...prev,
       status: 'playing',
@@ -335,6 +351,18 @@ export default function VMPlayer() {
     codeInitialized.current = true;
 
     const initializeCode = () => {
+      // Check if user has already interacted in this session
+      if (typeof window !== 'undefined') {
+        const hasInteracted = sessionStorage.getItem('sorafeed-user-interacted') === 'true';
+        if (hasInteracted) {
+          console.log('✅ User has already interacted in this session, autoplay enabled');
+          setNeedsUserInteraction(false);
+        } else {
+          console.log('⏸️ New session, user interaction required');
+          setNeedsUserInteraction(true);
+        }
+      }
+
       // Check if we have a stored code in localStorage
       const storedCode = localStorage.getItem('sorafeed-display-code');
       
@@ -468,16 +496,18 @@ export default function VMPlayer() {
             onAutoplayBlocked={handleAutoplayBlocked}
           />
           {needsUserInteraction && (
-            <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
               <button
                 onClick={handleUserInteraction}
-                className="text-center text-white bg-transparent border-none cursor-pointer focus:outline-none"
+                className="text-center text-white bg-transparent border-none cursor-pointer focus:outline-none hover:scale-105 transition-transform duration-200"
               >
-                <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                  <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
+                <div className="w-24 h-24 mx-auto mb-6 bg-white bg-opacity-20 rounded-full flex items-center justify-center hover:bg-opacity-30 transition-all duration-200">
+                  <div className="w-0 h-0 border-l-10 border-l-white border-t-8 border-t-transparent border-b-8 border-b-transparent ml-1"></div>
                 </div>
-                <div className="text-xl font-semibold mb-2">Click to Play</div>
-                <div className="text-sm opacity-75">Browser requires interaction to start video</div>
+                <div className="text-2xl font-bold mb-3">Click to Play</div>
+                <div className="text-base opacity-90 max-w-xs">
+                  Tap anywhere to start watching videos
+                </div>
               </button>
             </div>
           )}

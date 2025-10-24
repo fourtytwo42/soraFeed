@@ -34,9 +34,12 @@ export async function POST(
     if (status === 'idle' || !currentVideoId) {
       const timelineVideo = QueueManager.getNextTimelineVideo(code);
       if (timelineVideo) {
+        // Get the total videos in the current block
+        const totalVideosInBlock = QueueManager.getTotalVideosInBlock(timelineVideo.block_id);
         nextVideo = {
           ...timelineVideo,
-          video_data: timelineVideo.video_data ? JSON.parse(timelineVideo.video_data) : null
+          video_data: timelineVideo.video_data ? JSON.parse(timelineVideo.video_data) : null,
+          totalVideosInBlock
         };
       } else {
         // Check if we need to start a new loop
@@ -44,9 +47,12 @@ export async function POST(
         if (newLoopStarted) {
           const newTimelineVideo = QueueManager.getNextTimelineVideo(code);
           if (newTimelineVideo) {
+            // Get the total videos in the current block
+            const totalVideosInBlock = QueueManager.getTotalVideosInBlock(newTimelineVideo.block_id);
             nextVideo = {
               ...newTimelineVideo,
-              video_data: newTimelineVideo.video_data ? JSON.parse(newTimelineVideo.video_data) : null
+              video_data: newTimelineVideo.video_data ? JSON.parse(newTimelineVideo.video_data) : null,
+              totalVideosInBlock
             };
           }
         }

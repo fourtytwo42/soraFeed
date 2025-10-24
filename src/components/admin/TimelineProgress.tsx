@@ -49,43 +49,53 @@ export default function TimelineProgressComponent({ progress, className = '' }: 
       </div>
 
       {/* Blocks timeline */}
-      <div className="space-y-2">
-        <div className="text-xs font-medium text-gray-600 mb-2">Timeline Blocks</div>
+      <div className="space-y-3">
+        <div className="text-xs font-medium text-gray-600 mb-3">Timeline Blocks</div>
         {progress.blocks.map((block, index) => (
-          <div key={index} className="flex items-center gap-3">
-            {/* Block status indicator */}
-            <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-              block.isActive ? 'bg-blue-500' : 
-              block.isCompleted ? 'bg-green-500' : 
-              'bg-gray-300'
-            }`}></div>
-            
-            {/* Block info */}
-            <div className="flex-1 min-w-0">
-              <div className={`text-sm truncate ${
-                block.isActive ? 'font-medium text-blue-700' : 
-                block.isCompleted ? 'text-green-700' : 
-                'text-gray-600'
-              }`}>
-                {block.name}
+          <div key={index} className={`p-3 rounded-lg border-l-4 transition-all duration-200 ${
+            block.isActive ? 'bg-blue-50 border-l-blue-500 shadow-sm' : 
+            block.isCompleted ? 'bg-green-50 border-l-green-500' : 
+            'bg-gray-50 border-l-gray-300'
+          }`}>
+            <div className="flex items-center gap-3">
+              {/* Block status indicator */}
+              <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
+                block.isActive ? 'bg-blue-500' : 
+                block.isCompleted ? 'bg-green-500' : 
+                'bg-gray-300'
+              }`}></div>
+              
+              {/* Block info */}
+              <div className="flex-1 min-w-0">
+                <div className={`text-sm truncate ${
+                  block.isActive ? 'font-semibold text-blue-800' : 
+                  block.isCompleted ? 'font-medium text-green-800' : 
+                  'text-gray-700'
+                }`}>
+                  {block.name}
+                </div>
+                <div className={`text-xs mt-1 ${
+                  block.isActive ? 'text-blue-600' : 
+                  block.isCompleted ? 'text-green-600' : 
+                  'text-gray-500'
+                }`}>
+                  {block.videoCount} videos
+                  {block.timesPlayed > 0 && ` • Played ${block.timesPlayed} times`}
+                </div>
               </div>
-              <div className="text-xs text-gray-500">
-                {block.videoCount} videos
-                {block.timesPlayed > 0 && ` • Played ${block.timesPlayed} times`}
-              </div>
-            </div>
 
-            {/* Block progress indicator */}
-            {block.isActive && (
-              <div className="text-xs text-blue-600 font-medium">
-                Playing
-              </div>
-            )}
-            {block.isCompleted && (
-              <div className="text-xs text-green-600">
-                ✓
-              </div>
-            )}
+              {/* Block progress indicator */}
+              {block.isActive && (
+                <div className="text-xs text-blue-700 font-semibold bg-blue-100 px-2 py-1 rounded-full">
+                  Playing
+                </div>
+              )}
+              {block.isCompleted && (
+                <div className="text-xs text-green-700 font-medium bg-green-100 px-2 py-1 rounded-full">
+                  ✓ Done
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>

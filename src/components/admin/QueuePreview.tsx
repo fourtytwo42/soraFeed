@@ -90,7 +90,7 @@ export default function QueuePreview({ displayId }: QueuePreviewProps) {
     <div className="p-4 bg-green-50 border-l-4 border-green-400">
       <div className="flex items-center gap-2 mb-3">
         <Clock className="w-4 h-4 text-green-600" />
-        <div className="text-sm font-medium text-green-900">Coming Up Next</div>
+        <div className="text-sm font-semibold text-gray-900">Coming Up Next</div>
         <div className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
           {upcomingVideos.length} videos
         </div>

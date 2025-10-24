@@ -121,27 +121,30 @@ export default function AdminDashboard() {
               const timelineData = await timelineResponse.json();
               progress = timelineData.progress;
               
-              // Enhance with WebSocket video progress if available
-              if (wsStatus?.playlistProgress?.videoProgress && progress) {
-                // Calculate smooth block progress using block position and video progress
-                const blockPosition = wsStatus.playlistProgress.blockPosition || 0;
-                const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
-                const totalVideosInBlock = progress.currentBlock.totalVideos;
-                
-                // Calculate progress: (completed videos + current video progress) / total videos in block
-                const smoothBlockProgress = ((blockPosition + videoProgressFraction) / totalVideosInBlock) * 100;
-                
-                // Debug logging
-                console.log(`📊 Block Progress Debug:`, {
-                  blockPosition,
-                  videoProgress: wsStatus.playlistProgress.videoProgress,
-                  totalVideosInBlock,
-                  smoothBlockProgress: Math.round(smoothBlockProgress * 100) / 100
-                });
-                
-                progress.currentBlock.progress = Math.min(smoothBlockProgress, 100);
-                progress.currentBlock.currentVideo = blockPosition + 1; // Update current video number
-              }
+                  // Enhance with WebSocket video progress if available
+                  if (wsStatus?.playlistProgress?.videoProgress && progress) {
+                    // Use the API-calculated position as the source of truth, not WebSocket blockPosition
+                    // The API already calculated the correct position within the current block
+                    const currentVideoInBlock = progress.currentBlock.currentVideo; // This is already correct from API
+                    const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
+                    const totalVideosInBlock = progress.currentBlock.totalVideos;
+                    
+                    // Calculate smooth progress: (current video - 1 + video progress) / total videos
+                    // Subtract 1 because currentVideo is 1-based, but we need 0-based for calculation
+                    const smoothBlockProgress = (((currentVideoInBlock - 1) + videoProgressFraction) / totalVideosInBlock) * 100;
+                    
+                    // Debug logging
+                    console.log(`📊 Block Progress Debug (Initial Fetch):`, {
+                      currentVideoInBlock,
+                      videoProgress: wsStatus.playlistProgress.videoProgress,
+                      totalVideosInBlock,
+                      smoothBlockProgress: Math.round(smoothBlockProgress * 100) / 100,
+                      calculation: `((${currentVideoInBlock - 1} + ${videoProgressFraction}) / ${totalVideosInBlock}) * 100`
+                    });
+                    
+                    progress.currentBlock.progress = Math.min(smoothBlockProgress, 100);
+                    // Keep the API-calculated currentVideo as it's already correct
+                  }
             }
             
             return { ...display, isOnline, progress };
@@ -382,33 +385,35 @@ export default function AdminDashboard() {
               updatedDisplay.status = 'playing';
             }
             
-            // Update progress with WebSocket video progress (smooth block progression)
-            if (wsStatus.playlistProgress?.videoProgress && display.progress) {
-              // Calculate smooth block progress using block position and video progress
-              const blockPosition = wsStatus.playlistProgress.blockPosition || 0;
-              const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
-              const totalVideosInBlock = display.progress.currentBlock.totalVideos;
-              
-              // Calculate progress: (completed videos + current video progress) / total videos in block
-              const smoothBlockProgress = ((blockPosition + videoProgressFraction) / totalVideosInBlock) * 100;
-              
-              // Debug logging for real-time updates
-              console.log(`📊 Real-time Block Progress Debug:`, {
-                blockPosition,
-                videoProgress: wsStatus.playlistProgress.videoProgress,
-                totalVideosInBlock,
-                smoothBlockProgress: Math.round(smoothBlockProgress * 100) / 100
-              });
-              
-              updatedDisplay.progress = {
-                ...display.progress,
-                currentBlock: {
-                  ...display.progress.currentBlock,
-                  progress: Math.min(smoothBlockProgress, 100),
-                  currentVideo: blockPosition + 1 // Update current video number
+                // Update progress with WebSocket video progress (smooth block progression)
+                if (wsStatus.playlistProgress?.videoProgress && display.progress) {
+                  // Use the existing API-calculated position as the source of truth
+                  const currentVideoInBlock = display.progress.currentBlock.currentVideo; // Already correct from API
+                  const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
+                  const totalVideosInBlock = display.progress.currentBlock.totalVideos;
+                  
+                  // Calculate smooth progress: (current video - 1 + video progress) / total videos
+                  // Subtract 1 because currentVideo is 1-based, but we need 0-based for calculation
+                  const smoothBlockProgress = (((currentVideoInBlock - 1) + videoProgressFraction) / totalVideosInBlock) * 100;
+                  
+                  // Debug logging for real-time updates
+                  console.log(`📊 Real-time Block Progress Debug:`, {
+                    currentVideoInBlock,
+                    videoProgress: wsStatus.playlistProgress.videoProgress,
+                    totalVideosInBlock,
+                    smoothBlockProgress: Math.round(smoothBlockProgress * 100) / 100,
+                    calculation: `((${currentVideoInBlock - 1} + ${videoProgressFraction}) / ${totalVideosInBlock}) * 100`
+                  });
+                  
+                  updatedDisplay.progress = {
+                    ...display.progress,
+                    currentBlock: {
+                      ...display.progress.currentBlock,
+                      progress: Math.min(smoothBlockProgress, 100)
+                      // Keep the existing currentVideo as it's already correct from API
+                    }
+                  };
                 }
-              };
-            }
             
             return updatedDisplay;
           }
