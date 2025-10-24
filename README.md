@@ -87,6 +87,12 @@ npm run dev
 | `npm run build` | Build for production |
 | `npm start` | Start production server |
 | `npm run lint` | Run ESLint |
+| **Database Migration** | |
+| `npm run db:backup` | Export database to SQL dump (recommended) |
+| `npm run db:restore <file>` | Restore database from SQL dump |
+| `npm run db:export` | Export database to JSON files |
+| `npm run db:import` | Import database from JSON files |
+| `npm run db:list` | List available database backups |
 
 ## 🗂️ Project Structure
 
@@ -112,11 +118,16 @@ soraFeed/
 ├── scripts/                   # Setup and utility scripts
 │   ├── scanner.js            # PostgreSQL scanner
 │   ├── setup.js              # Automated setup script
+│   ├── export-database.js    # Database export to JSON
+│   ├── import-database.js    # Database import from JSON
+│   ├── pg-dump-migrate.sh    # PostgreSQL backup/restore
 │   └── test-*.js             # Test utilities
 ├── docs/                      # Documentation
 │   ├── DATABASE_SETUP.md     # Detailed database guide
 │   ├── README_SCANNER.md     # Scanner documentation
 │   └── INSTALLATION_COMPLETE.md
+├── MIGRATION_GUIDE.md         # Complete database migration guide
+├── MIGRATION_QUICKSTART.md    # Quick migration reference
 ├── public/                    # Static assets
 ├── .env                       # Environment variables (create from env.example)
 └── package.json
@@ -187,6 +198,8 @@ Edit `scripts/scanner.js` to customize:
 - **[Database Setup](docs/DATABASE_SETUP.md)** - Detailed PostgreSQL setup guide
 - **[Scanner Guide](docs/README_SCANNER.md)** - Scanner system documentation
 - **[API Documentation](API-Doc.md)** - Sora API reference
+- **[Migration Guide](MIGRATION_GUIDE.md)** - Complete database migration guide
+- **[Migration Quick Start](MIGRATION_QUICKSTART.md)** - 5-minute migration tutorial
 
 ## 🐛 Troubleshooting
 

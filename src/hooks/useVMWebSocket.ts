@@ -25,7 +25,7 @@ export interface VMWebSocketHook {
 export function useVMWebSocket(displayId: string): VMWebSocketHook {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const reconnectAttempts = useRef(0);
 
   const connect = useCallback(() => {

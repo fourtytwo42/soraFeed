@@ -5,6 +5,9 @@ import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
 import { v4 as uuidv4 } from 'uuid';
 
+// Track displays currently starting a new loop to prevent race conditions
+const loopStartInProgress = new Set<string>();
+
 export class QueueManager {
   // Search for videos in PostgreSQL database
   static async searchVideos(
@@ -125,34 +128,6 @@ export class QueueManager {
     `);
     const rows = stmt.all(blockId, loopIteration) as any[];
     return rows.map(row => row.video_id);
-  }
-
-  // Get the next video in the timeline for a display
-  static getNextTimelineVideo(displayId: string): TimelineVideo | null {
-    const stmt = queueDb.prepare(`
-      SELECT * FROM timeline_videos 
-      WHERE display_id = ? AND status = 'queued'
-      ORDER BY timeline_position ASC 
-      LIMIT 1
-    `);
-    
-    const row = stmt.get(displayId) as any;
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      display_id: row.display_id,
-      playlist_id: row.playlist_id,
-      block_id: row.block_id,
-      video_id: row.video_id,
-      block_position: row.block_position,
-      timeline_position: row.timeline_position,
-      loop_iteration: row.loop_iteration,
-      status: row.status,
-      played_at: row.played_at,
-      video_data: row.video_data,
-      created_at: row.created_at
-    };
   }
 
   // Get upcoming videos in the queue for a display
@@ -279,14 +254,23 @@ export class QueueManager {
 
   // Get next video in timeline for display
   static getNextTimelineVideo(displayId: string): TimelineVideo | null {
+    // Get the display's current timeline position
+    const displayStmt = queueDb.prepare('SELECT timeline_position FROM displays WHERE id = ?');
+    const display = displayStmt.get(displayId) as any;
+    
+    if (!display) return null;
+    
+    const currentPosition = display.timeline_position || 0;
+    
+    // Get the next queued video at or after the current position
     const stmt = queueDb.prepare(`
       SELECT * FROM timeline_videos 
-      WHERE display_id = ? AND status = 'queued'
+      WHERE display_id = ? AND status = 'queued' AND timeline_position >= ?
       ORDER BY timeline_position ASC
       LIMIT 1
     `);
     
-    const row = stmt.get(displayId) as any;
+    const row = stmt.get(displayId, currentPosition) as any;
     if (!row) return null;
 
     return {
@@ -364,20 +348,38 @@ export class QueueManager {
 
   // Check if we need to start a new loop
   static async checkAndStartNewLoop(displayId: string): Promise<boolean> {
-    // Check if there are any queued videos left
+    // Prevent race condition: check if loop start is already in progress for this display
+    if (loopStartInProgress.has(displayId)) {
+      console.log(`⏳ Loop start already in progress for display ${displayId}, skipping`);
+      return false;
+    }
+    
+    // Get the display's current timeline position
+    const displayStmt = queueDb.prepare('SELECT timeline_position FROM displays WHERE id = ?');
+    const display = displayStmt.get(displayId) as any;
+    
+    if (!display) return false;
+    
+    const currentPosition = display.timeline_position || 0;
+    
+    // Check if there are any queued videos at or after the current position
     const queuedStmt = queueDb.prepare(`
       SELECT COUNT(*) as count FROM timeline_videos 
-      WHERE display_id = ? AND status = 'queued'
+      WHERE display_id = ? AND status = 'queued' AND timeline_position >= ?
     `);
-    const queuedCount = (queuedStmt.get(displayId) as any).count;
+    const queuedCount = (queuedStmt.get(displayId, currentPosition) as any).count;
 
-    if (queuedCount > 0) return false; // Still have videos in current loop
+    if (queuedCount > 0) return false; // Still have videos to play at current position
 
-    console.log(`🔄 Starting new loop for display ${displayId}`);
+    // Set flag to prevent concurrent loop starts
+    loopStartInProgress.add(displayId);
+    
+    try {
+      console.log(`🔄 Starting new loop for display ${displayId} (position ${currentPosition})`);
 
-    // Get active playlist
-    const playlist = PlaylistManager.getActivePlaylist(displayId);
-    if (!playlist) return false;
+      // Get active playlist
+      const playlist = PlaylistManager.getActivePlaylist(displayId);
+      if (!playlist) return false;
 
     // Increment loop count
     PlaylistManager.incrementLoopCount(playlist.id);
@@ -398,8 +400,12 @@ export class QueueManager {
     // Populate new timeline with next loop iteration
     await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count + 1);
 
-    // Check if we actually got any videos in the new loop
-    const newQueuedCount = (queuedStmt.get(displayId) as any).count;
+    // Check if we actually got any videos in the new loop (check from position 0 since we reset)
+    const newQueuedStmt = queueDb.prepare(`
+      SELECT COUNT(*) as count FROM timeline_videos 
+      WHERE display_id = ? AND status = 'queued' AND timeline_position >= 0
+    `);
+    const newQueuedCount = (newQueuedStmt.get(displayId) as any).count;
     if (newQueuedCount === 0) {
       console.log(`⚠️ No videos found for new loop ${playlist.loop_count + 1}, resetting video history for fresh start`);
       
@@ -412,7 +418,7 @@ export class QueueManager {
       // Try populating again with clean history
       await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count + 1);
       
-      const finalQueuedCount = (queuedStmt.get(displayId) as any).count;
+      const finalQueuedCount = (newQueuedStmt.get(displayId) as any).count;
       if (finalQueuedCount === 0) {
         console.log(`❌ Still no videos found after clearing history - playlist may have no matching videos`);
         return false;
@@ -422,6 +428,11 @@ export class QueueManager {
     }
 
     return true;
+    
+    } finally {
+      // Always remove the flag when done, even if there was an error
+      loopStartInProgress.delete(displayId);
+    }
   }
 
   // Get timeline progress for display

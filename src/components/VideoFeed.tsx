@@ -284,14 +284,14 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         // Skip if already preloaded
         if (!preloadedRemixFeeds.has(postId)) {
           const promise = remixCache.getRemixFeed(postId)
-            .then((remixes) => {
+            .then((remixes: any) => {
               setPreloadedRemixFeeds(prev => {
                 const newMap = new Map(prev);
                 newMap.set(postId, remixes);
                 return newMap;
               });
             })
-            .catch((error) => {
+            .catch((error: any) => {
               console.log(`Failed to preload remix feed for ${postId}:`, error);
             });
           

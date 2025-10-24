@@ -227,3 +227,4 @@ export function useVideoStateController(
     resetVideoElementState
   } as VideoStateController & { resetVideoElementState: () => void };
 }
+

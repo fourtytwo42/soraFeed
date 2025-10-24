@@ -41,3 +41,8 @@ scanner-output.log
 
 # test files
 test-*.js
+
+# Large database files
+database-export/
+hendo420@*
+data/*.db

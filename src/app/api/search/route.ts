@@ -261,7 +261,7 @@ export async function GET(request: NextRequest) {
     // Debug: Log some sample results to understand what's being returned
     if (result.rows.length > 0) {
       console.log(`🔍 Sample search results for "${query}":`);
-      result.rows.slice(0, 3).forEach((row, index) => {
+      result.rows.slice(0, 3).forEach((row: any, index: number) => {
         console.log(`   ${index + 1}. "${row.text}" (ID: ${row.id})`);
       });
     }

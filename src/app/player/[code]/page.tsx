@@ -67,6 +67,17 @@ export default function VMPlayer() {
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const codeInitialized = useRef(false);
 
+  // Check sessionStorage on mount to restore user interaction state
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const hasInteracted = sessionStorage.getItem('sorafeed-user-interacted') === 'true';
+      if (hasInteracted) {
+        console.log('✅ Restoring user interaction state from session');
+        setNeedsUserInteraction(false);
+      }
+    }
+  }, []);
+
   // Initialize WebSocket connection only when code is available
   const { isConnected: wsConnected, sendProgressUpdate, sendVideoChange } = useVMWebSocket(code || '');
 
@@ -189,7 +200,7 @@ export default function VMPlayer() {
       
       // Process non-playback commands (like 'next')
       if (data.commands && data.commands.length > 0) {
-        data.commands.forEach(command => {
+        data.commands.forEach((command: any) => {
           if (command.type === 'next') {
             console.log('⏭️ Next video command received');
             handleVideoEnd();
@@ -223,9 +234,9 @@ export default function VMPlayer() {
         }
       }
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('❌ Poll error:', error);
-      if (!error.message?.includes('404')) {
+      if (!(error instanceof Error) || !error.message?.includes('404')) {
         setVMState(prev => ({
           ...prev,
           error: error instanceof Error ? error.message : 'Connection error'
@@ -255,19 +266,28 @@ export default function VMPlayer() {
           })
         });
         
-        console.log('✅ Video marked as played, next video will be fetched automatically');
+        console.log('✅ Video marked as played, immediately fetching next video');
         
-        // The poll endpoint now always returns nextVideo when available
-        // No need to clear current video or force poll - it will happen automatically
+        // Immediately poll for the next video to avoid delay/restart
+        pollServer();
         
       } catch (error) {
         console.error('Failed to mark video as played:', error);
       }
     }
-  }, [vmState.currentTimelineVideo, stopVideoProgressTracking, code, pollServer]);
+  }, [vmState.currentTimelineVideo, stopVideoProgressTracking, pollServer]);
 
   // Handle autoplay failure
   const handleAutoplayBlocked = useCallback(() => {
+    // Check if user has already interacted in this session
+    const hasInteractedInSession = typeof window !== 'undefined' && 
+      sessionStorage.getItem('sorafeed-user-interacted') === 'true';
+    
+    if (hasInteractedInSession) {
+      console.log('✅ User already interacted in this session, not showing Click to Play');
+      return;
+    }
+    
     console.log('🚫 Video ready but needs user interaction to play');
     setNeedsUserInteraction(true);
   }, []);
@@ -449,7 +469,9 @@ export default function VMPlayer() {
             onAutoplayBlocked={handleAutoplayBlocked}
             onVideoClick={handleVideoClick}
           />
-          {needsUserInteraction && (
+          {needsUserInteraction && 
+           // Extra safeguard: never show if user has interacted in this session
+           !(typeof window !== 'undefined' && sessionStorage.getItem('sorafeed-user-interacted') === 'true') && (
             <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
               <button
                 onClick={handleUserInteraction}

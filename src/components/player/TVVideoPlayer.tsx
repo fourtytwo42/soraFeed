@@ -34,16 +34,16 @@ export default function TVVideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const y = useMotionValue(0);
 
-  // Check if user has interacted in this session
+  // Check if user has interacted in this session - on mount and when video changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const hasInteracted = sessionStorage.getItem('sorafeed-user-interacted') === 'true';
-      if (hasInteracted) {
-        console.log('✅ User has already interacted in this session');
+      if (hasInteracted && !userHasInteracted) {
+        console.log('✅ User has already interacted in this session, enabling autoplay');
         setUserHasInteracted(true);
       }
     }
-  }, []);
+  }, [userHasInteracted]); // Re-check if state somehow gets reset
 
   // Video management - simple replacement for playlist mode
   useEffect(() => {

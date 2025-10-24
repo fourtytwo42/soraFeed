@@ -15,6 +15,8 @@ export interface DisplayStatus {
     currentIndex: number;
     totalVideos: number;
     playlistName: string;
+    videoProgress?: number;
+    enhancedPosition?: number;
   };
   lastUpdate: number;
 }
@@ -31,7 +33,7 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [displayStatuses, setDisplayStatuses] = useState<Map<string, DisplayStatus>>(new Map());
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const reconnectAttempts = useRef(0);
 
   const connect = useCallback(() => {
@@ -150,7 +152,9 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
               ...existing,
               currentVideo: message.data.currentVideo,
               playlistProgress: {
-                ...existing.playlistProgress,
+                currentIndex: existing.playlistProgress?.currentIndex || 0,
+                totalVideos: existing.playlistProgress?.totalVideos || 0,
+                playlistName: existing.playlistProgress?.playlistName || '',
                 videoProgress: 0, // Reset video progress when video changes
                 enhancedPosition: existing.playlistProgress?.enhancedPosition || 0
               },

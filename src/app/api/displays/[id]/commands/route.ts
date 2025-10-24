@@ -59,7 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             { status: 400 }
           );
         }
-        const command: DisplayCommand = { type, payload };
+        const command: DisplayCommand = { type, payload, timestamp: Date.now() };
         DisplayManager.addCommand(id, command);
         break;
       default:

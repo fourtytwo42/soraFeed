@@ -107,7 +107,14 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
           video.pause();
         }
       } else if (!userHasInteracted && video.paused) {
-        onAutoplayBlocked?.();
+        // Double-check sessionStorage before triggering autoplay blocked
+        // This prevents showing "Click to Play" after user has already interacted
+        const hasInteractedInSession = typeof window !== 'undefined' && 
+          sessionStorage.getItem('sorafeed-user-interacted') === 'true';
+        
+        if (!hasInteractedInSession) {
+          onAutoplayBlocked?.();
+        }
       }
     };
 
@@ -200,7 +207,9 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
       />
 
       {/* Click to play overlay */}
-      {isActive && (!userHasInteracted || !isPlaying) && videoLoadedRef.current && (
+      {isActive && (!userHasInteracted || !isPlaying) && videoLoadedRef.current && 
+       // Extra check: never show if user has interacted in this session
+       !(typeof window !== 'undefined' && sessionStorage.getItem('sorafeed-user-interacted') === 'true') && (
         <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
           <div className="text-center text-white">
             <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
@@ -233,4 +242,5 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
 });
 
 export default SingleVideoPlayer;
+
 
