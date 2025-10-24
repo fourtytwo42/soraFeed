@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { SoraFeedItem } from '@/types/sora';
@@ -44,11 +44,14 @@ export default function TVVideoPlayer({
     }
   }, []);
 
-  // Video management - exactly like social branch
+  // Video management - prevent unnecessary reloads
   useEffect(() => {
     if (!video) {
-      setVideos([]);
-      setCurrentIndex(0);
+      if (videos.length > 0) {
+        console.log('🎬 Video cleared, resetting videos list');
+        setVideos([]);
+        setCurrentIndex(0);
+      }
       return;
     }
 
@@ -58,24 +61,30 @@ export default function TVVideoPlayer({
     if (existingIndex !== -1) {
       // Video already exists, just switch to it if needed
       if (existingIndex !== currentIndex) {
+        console.log('🎬 Switching to existing video at index:', existingIndex);
         goToVideo(existingIndex);
+      } else {
+        console.log('🎬 Video already active, no action needed');
       }
       return;
     }
 
     // New video - add it to the list and transition to it
+    console.log('🎬 Adding new video to list:', video.post.id.slice(-6));
     const newVideos = [...videos, video];
     setVideos(newVideos);
     
     if (videos.length === 0) {
       // First video - no animation needed
+      console.log('🎬 First video, setting index to 0');
       setCurrentIndex(0);
       onVideoReady();
     } else {
       // Transition to new video
+      console.log('🎬 Transitioning to new video');
       goToVideo(newVideos.length - 1);
     }
-  }, [video]);
+  }, [video?.post.id]); // Only depend on video ID, not the whole video object
 
   // Navigation functions from social VideoFeed
   const goToNext = useCallback((animated = true) => {
@@ -231,8 +240,8 @@ export default function TVVideoPlayer({
     onPlayStateChange?.(true);
   }, [onPlayStateChange]);
 
-  // Single Video Component - simplified from social VideoPost
-  const VideoComponent = ({ videoData, index }: { videoData: SoraFeedItem; index: number }) => {
+  // Single Video Component - memoized to prevent unnecessary re-renders
+  const VideoComponent = memo(({ videoData, index }: { videoData: SoraFeedItem; index: number }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [videoLoaded, setVideoLoaded] = useState(false);
     const playingRef = useRef(false); // Track if we're currently trying to play
@@ -320,6 +329,15 @@ export default function TVVideoPlayer({
       }
     };
 
+    // Cleanup effect
+    useEffect(() => {
+      return () => {
+        // Reset video loaded state when component unmounts
+        setVideoLoaded(false);
+        playingRef.current = false;
+      };
+    }, []);
+
     return (
       <div 
         className="absolute inset-0 w-full h-full cursor-pointer"
@@ -330,6 +348,7 @@ export default function TVVideoPlayer({
         onClick={handleVideoClick}
       >
         <video
+          key={videoData.post.id} // Stable key to prevent recreation
           ref={videoRef}
           className="w-full h-full object-cover"
           src={videoUrl}
@@ -384,7 +403,7 @@ export default function TVVideoPlayer({
         </div>
       </div>
     );
-  };
+  });
 
   if (videos.length === 0) {
     return (
