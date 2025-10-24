@@ -263,9 +263,9 @@ pm2 stop sora-feed-scanner
 
 ## 📚 Documentation
 
-- **[Scanner Guide](docs/README_SCANNER.md)** - Detailed scanner documentation
 - **[Database Setup](docs/DATABASE_SETUP.md)** - PostgreSQL setup guide
-- **[API Documentation](API-Doc.md)** - Sora API reference
+- **[Database Schema](docs/DATABASE_SCHEMA.md)** - Database structure and design
+- **[API Documentation](docs/API-Doc.md)** - Sora API reference
 
 ## 🤝 Contributing
 
