@@ -5,6 +5,98 @@ import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
 import { v4 as uuidv4 } from 'uuid';
 
+// Cache for database counts (1 hour TTL)
+const dbCountCache = new Map<string, { count: number; timestamp: number }>();
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+
+// Helper function to get cached database count
+async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
+  const cacheKey = `${searchTerm}:${format}`;
+  const cached = dbCountCache.get(cacheKey);
+  
+  // Return cached value if still valid
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    return cached.count;
+  }
+  
+  // Fetch from database and cache
+  try {
+    const client = await getClient();
+    
+    // Parse search query to separate include and exclude terms
+    const parseSearchQuery = (searchQuery: string) => {
+      const words = searchQuery.trim().split(/\s+/);
+      const includeTerms: string[] = [];
+      const excludeTerms: string[] = [];
+      
+      for (const word of words) {
+        if (word.startsWith('-') && word.length > 1) {
+          excludeTerms.push(word.substring(1));
+        } else if (word.length > 0) {
+          includeTerms.push(word);
+        }
+      }
+      
+      return { includeTerms, excludeTerms };
+    };
+
+    const { includeTerms, excludeTerms } = parseSearchQuery(searchTerm);
+    const includeQuery = includeTerms.join(' ');
+    
+    if (includeTerms.length === 0) {
+      return 0;
+    }
+
+    // Build format filtering conditions
+    let formatClause = '';
+    if (format === 'wide') {
+      formatClause = ' AND p.width > p.height';
+    } else if (format === 'tall') {
+      formatClause = ' AND p.height > p.width';
+    }
+
+    // Build exclude conditions
+    let excludeConditions = '';
+    if (excludeTerms.length > 0) {
+      excludeConditions = excludeTerms.map((term, index) => 
+        `AND LOWER(COALESCE(p.text, '')) NOT LIKE LOWER('%${term}%')`
+      ).join(' ');
+    }
+
+    // Count total matching videos
+    const countQuery = `
+      SELECT COUNT(*) as total_count
+      FROM sora_posts p
+      JOIN creators c ON p.creator_id = c.id
+      WHERE (
+        -- Full-text search match
+        to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
+        OR
+        -- Exact phrase match
+        LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
+        OR
+        -- Word boundary match for single words
+        (LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M') 
+         AND LENGTH($1) - LENGTH(REPLACE($1, ' ', '')) = 0)
+      )
+      ${formatClause}
+      ${excludeConditions}
+    `;
+
+    const countResult = await client.query(countQuery, [includeQuery]);
+    const totalCount = parseInt(countResult.rows[0].total_count);
+    
+    // Cache the result
+    dbCountCache.set(cacheKey, { count: totalCount, timestamp: Date.now() });
+    
+    return totalCount;
+  } catch (error) {
+    console.error(`Error fetching cached count for ${searchTerm}:`, error);
+    // Return cached value even if expired, or 0 if no cache
+    return cached ? cached.count : 0;
+  }
+}
+
 // Track displays currently starting a new loop to prevent race conditions
 const loopStartInProgress = new Set<string>();
 
@@ -579,7 +671,125 @@ export class QueueManager {
     }
   }
 
-  // Get timeline progress for display
+  // Get timeline progress for display with database counts
+  static async getTimelineProgressWithCounts(displayId: string) {
+    console.log(`🔍 Getting active playlist for display ${displayId}`);
+    const playlist = PlaylistManager.getActivePlaylist(displayId);
+    console.log(`🔍 Active playlist found:`, playlist ? playlist.id : 'None');
+    if (!playlist) return null;
+
+    const blocks = PlaylistManager.getPlaylistBlocks(playlist.id);
+    
+    // Get current position
+    const positionStmt = queueDb.prepare(`
+      SELECT timeline_position FROM displays WHERE id = ?
+    `);
+    const currentPosition = (positionStmt.get(displayId) as any)?.timeline_position || 0;
+
+    console.log(`📊 Progress calc START: currentPosition=${currentPosition}, totalBlocks=${blocks.length}`);
+    console.log(`📊 Block breakdown:`, blocks.map((b, i) => `Block ${i}: ${b.video_count} videos (${b.search_term})`));
+
+    // Calculate which block we're in
+    let blockIndex = 0;
+    let positionInBlock = 0;
+    let totalVideosProcessed = 0;
+    let totalVideosInPlaylist = blocks.reduce((sum, b) => sum + b.video_count, 0);
+    
+    for (let i = 0; i < blocks.length; i++) {
+      const blockEnd = totalVideosProcessed + blocks[i].video_count;
+      console.log(`📊 Checking block ${i}: totalProcessed=${totalVideosProcessed}, blockEnd=${blockEnd}, condition: ${currentPosition} < ${blockEnd} = ${currentPosition < blockEnd}`);
+      if (currentPosition < blockEnd) {
+        blockIndex = i;
+        positionInBlock = currentPosition - totalVideosProcessed;
+        console.log(`📊 ✅ Found block ${blockIndex}, positionInBlock=${positionInBlock}`);
+        break;
+      }
+      totalVideosProcessed += blocks[i].video_count;
+    }
+
+    // Handle overflow - if position is beyond all blocks, use last block
+    if (currentPosition >= totalVideosInPlaylist && blocks.length > 0) {
+      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, using last block`);
+      blockIndex = blocks.length - 1;
+      positionInBlock = blocks[blockIndex]?.video_count || 0;
+    }
+
+    const currentBlock = blocks[blockIndex] || blocks[0];
+    
+    // Clamp positionInBlock to not exceed block size
+    const clampedPositionInBlock = currentBlock ? Math.min(positionInBlock, currentBlock.video_count - 1) : 0;
+    const blockProgress = currentBlock ? (clampedPositionInBlock / currentBlock.video_count) * 100 : 0;
+    
+    console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
+    
+    // Fetch database counts for each block using cache
+    const blocksWithCounts = await Promise.all(
+      blocks.map(async (block, index) => {
+        try {
+          // Get cached total count from PostgreSQL
+          const totalCount = await getCachedDbCount(block.search_term, block.format);
+
+          // Query SQLite for watched videos count (always fresh)
+          let seenCount = 0;
+          try {
+            // Get watched video IDs for this search term from SQLite
+            const watchedVideosStmt = queueDb.prepare(`
+              SELECT DISTINCT vh.video_id 
+              FROM video_history vh
+              JOIN timeline_videos tv ON vh.video_id = tv.video_id
+              JOIN playlist_blocks pb ON tv.block_id = pb.id
+              WHERE pb.search_term = ?
+            `);
+            const watchedVideos = watchedVideosStmt.all(block.search_term);
+            seenCount = watchedVideos.length;
+          } catch (error) {
+            console.error(`Error querying SQLite for watched videos:`, error);
+            seenCount = 0;
+          }
+          
+          return {
+            name: block.search_term,
+            videoCount: block.video_count,
+            isActive: index === blockIndex,
+            isCompleted: index < blockIndex,
+            timesPlayed: block.times_played,
+            totalAvailable: totalCount,
+            seenCount: seenCount,
+            format: block.format
+          };
+        } catch (error) {
+          console.error(`Error fetching counts for block ${block.search_term}:`, error);
+          return {
+            name: block.search_term,
+            videoCount: block.video_count,
+            isActive: index === blockIndex,
+            isCompleted: index < blockIndex,
+            timesPlayed: block.times_played,
+            totalAvailable: 0,
+            seenCount: 0,
+            format: block.format
+          };
+        }
+      })
+    );
+    
+    return {
+      currentBlock: {
+        name: currentBlock?.search_term || '',
+        progress: blockProgress,
+        currentVideo: Math.min(clampedPositionInBlock + 1, currentBlock?.video_count || 0),
+        totalVideos: currentBlock?.video_count || 0
+      },
+      blocks: blocksWithCounts,
+      overallProgress: {
+        currentPosition,
+        totalInCurrentLoop: playlist.total_videos,
+        loopCount: playlist.loop_count
+      }
+    };
+  }
+
+  // Get timeline progress for display (original sync version)
   static getTimelineProgress(displayId: string) {
     console.log(`🔍 Getting active playlist for display ${displayId}`);
     const playlist = PlaylistManager.getActivePlaylist(displayId);

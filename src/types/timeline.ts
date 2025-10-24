@@ -81,6 +81,9 @@ export interface TimelineProgress {
     isActive: boolean;
     isCompleted: boolean;
     timesPlayed: number;
+    totalAvailable?: number;
+    seenCount?: number;
+    format?: string;
   }>;
   overallProgress: {
     currentPosition: number;

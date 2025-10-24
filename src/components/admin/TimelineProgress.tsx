@@ -81,6 +81,11 @@ export default function TimelineProgressComponent({ progress, className = '' }: 
                 }`}>
                   {block.videoCount} videos
                   {block.timesPlayed > 0 && ` • Played ${block.timesPlayed} times`}
+                  {block.totalAvailable && block.totalAvailable > 0 && (
+                    <div className="mt-1 text-xs opacity-75">
+                      DB: {block.seenCount || 0}/{block.totalAvailable} ({block.format || 'mixed'})
+                    </div>
+                  )}
                 </div>
               </div>
 
