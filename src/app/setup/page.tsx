@@ -33,9 +33,9 @@ export default function SetupPage() {
       icon: <Database className="text-purple-500" size={24} />
     },
     {
-      title: "Start the Scanner",
-      description: "Run the scanner to begin indexing posts",
-      command: "npm run scanner",
+      title: "Start the Application",
+      description: "Run the application to view the admin and player interfaces",
+      command: "npm run dev",
       icon: <Terminal className="text-orange-500" size={24} />
     }
   ];
@@ -49,8 +49,8 @@ export default function SetupPage() {
             Sora Feed Scanner Setup
           </h1>
           <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            Get your PostgreSQL scanner up and running in 4 simple steps. 
-            The scanner will continuously index Sora posts to your local database.
+            Get your Sora Feed application up and running in 4 simple steps. 
+            The application connects to a remote database that's populated by a separate scanner service.
           </p>
         </div>
 

@@ -23,30 +23,6 @@ module.exports = {
       time: true,
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
-    },
-    {
-      name: 'sora-feed-scanner',
-      script: 'scripts/scanner.js',
-      cwd: '/home/hendo420/soraFeed',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '512M',
-      restart_delay: 5000,
-      max_restarts: 10,
-      min_uptime: '10s',
-      env: {
-        NODE_ENV: 'production'
-      },
-      env_production: {
-        NODE_ENV: 'production'
-      },
-      error_file: './logs/scanner-error.log',
-      out_file: './logs/scanner-out.log',
-      log_file: './logs/scanner-combined.log',
-      time: true,
-      merge_logs: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
     }
   ],
 

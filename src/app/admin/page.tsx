@@ -788,7 +788,7 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span>Scanner Active</span>
+              <span>Database Connected</span>
             </div>
             <div>Auto-refresh: 5s</div>
           </div>

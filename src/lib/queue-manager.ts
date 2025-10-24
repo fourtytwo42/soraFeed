@@ -1,5 +1,5 @@
 import { queueDb } from './sqlite';
-import { getClient } from './db'; // PostgreSQL connection for scanner data
+import { getClient } from './db'; // PostgreSQL connection for database data
 import { TimelineVideo, VideoHistory } from '@/types/timeline';
 import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
@@ -130,6 +130,66 @@ export class QueueManager {
     return rows.map(row => row.video_id);
   }
 
+  // Get videos already used in the entire playlist (across all blocks and loops)
+  static getPlayedVideosForPlaylist(playlistId: string): string[] {
+    const stmt = queueDb.prepare(`
+      SELECT DISTINCT vh.video_id 
+      FROM video_history vh
+      JOIN playlist_blocks pb ON vh.block_id = pb.id
+      WHERE pb.playlist_id = ?
+    `);
+    const rows = stmt.all(playlistId) as any[];
+    return rows.map(row => row.video_id);
+  }
+
+  // Get videos already queued in the current timeline (to prevent duplicates within the same loop)
+  static getQueuedVideosForPlaylist(playlistId: string): string[] {
+    const stmt = queueDb.prepare(`
+      SELECT DISTINCT video_id FROM timeline_videos 
+      WHERE playlist_id = ?
+    `);
+    const rows = stmt.all(playlistId) as any[];
+    return rows.map(row => row.video_id);
+  }
+
+  // Reset exclusions for a specific search term by clearing video history
+  static resetExclusionsForSearchTerm(searchTerm: string, playlistId: string): void {
+    console.log(`🔄 Resetting exclusions for search term: "${searchTerm}"`);
+    
+    // Get all blocks with this search term
+    const blocksStmt = queueDb.prepare(`
+      SELECT id FROM playlist_blocks 
+      WHERE playlist_id = ? AND search_term = ?
+    `);
+    const blocks = blocksStmt.all(playlistId, searchTerm) as any[];
+    
+    if (blocks.length === 0) {
+      console.log(`⚠️ No blocks found for search term "${searchTerm}"`);
+      return;
+    }
+    
+    // Clear video history for all blocks with this search term
+    const blockIds = blocks.map(block => block.id);
+    const placeholders = blockIds.map(() => '?').join(',');
+    
+    const deleteStmt = queueDb.prepare(`
+      DELETE FROM video_history 
+      WHERE block_id IN (${placeholders})
+    `);
+    
+    const result = deleteStmt.run(...blockIds);
+    console.log(`🗑️ Cleared ${result.changes} video history entries for search term "${searchTerm}"`);
+    
+    // Also clear any queued videos for these blocks
+    const clearQueuedStmt = queueDb.prepare(`
+      DELETE FROM timeline_videos 
+      WHERE block_id IN (${placeholders})
+    `);
+    
+    const queuedResult = clearQueuedStmt.run(...blockIds);
+    console.log(`🗑️ Cleared ${queuedResult.changes} queued videos for search term "${searchTerm}"`);
+  }
+
   // Get upcoming videos in the queue for a display
   static getUpcomingVideos(displayId: string, limit: number = 10): TimelineVideo[] {
     const stmt = queueDb.prepare(`
@@ -168,25 +228,95 @@ export class QueueManager {
     const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
     let timelinePosition = 0;
 
+    // Get all videos that should be excluded from this entire playlist
+    const playedVideosForPlaylist = this.getPlayedVideosForPlaylist(playlistId);
+    const queuedVideosForPlaylist = this.getQueuedVideosForPlaylist(playlistId);
+    const allExcludedVideos = [...new Set([...playedVideosForPlaylist, ...queuedVideosForPlaylist])];
+    
+    console.log(`🚫 Global exclusions: ${playedVideosForPlaylist.length} played + ${queuedVideosForPlaylist.length} queued = ${allExcludedVideos.length} total excluded videos`);
+
     // Process each block sequentially (can't use async inside SQLite transaction)
     for (const block of blocks) {
       console.log(`📦 Processing block: "${block.search_term}" (${block.video_count} videos)`);
       
-      // Get videos already played for this block in the current loop
-      const playedVideos = this.getPlayedVideosForBlock(block.id, loopIteration);
-      console.log(`🚫 Excluding ${playedVideos.length} already played videos from current loop ${loopIteration}`);
+      // Get videos already played for this block in the current loop (for additional logging)
+      const playedVideosForBlock = this.getPlayedVideosForBlock(block.id, loopIteration);
+      console.log(`🚫 Block-specific exclusions: ${playedVideosForBlock.length} already played videos from current loop ${loopIteration}`);
 
-      // Search for new videos
-      console.log(`🔍 Searching for videos: term="${block.search_term}", count=${block.video_count}, mode=${block.fetch_mode}, format=${block.format}, excluding=${playedVideos.length} videos`);
-      const videos = await this.searchVideos(
+      // First, try to search with global exclusions
+      console.log(`🔍 Searching for videos: term="${block.search_term}", count=${block.video_count}, mode=${block.fetch_mode}, format=${block.format}, excluding=${allExcludedVideos.length} videos globally`);
+      let videos = await this.searchVideos(
         block.search_term,
         block.video_count,
         block.fetch_mode,
         block.format,
-        playedVideos
+        allExcludedVideos
       );
 
+      // If we didn't find enough videos, check if we should reset exclusions for this search term
+      if (videos.length < block.video_count) {
+        console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
+        
+        // Check if we've exhausted content for this search term
+        const totalAvailableVideos = await this.searchVideos(
+          block.search_term,
+          1000, // Get a large number to see total available
+          block.fetch_mode,
+          block.format,
+          [] // No exclusions to see total available
+        );
+        
+        console.log(`📊 Total available videos for "${block.search_term}": ${totalAvailableVideos.length}`);
+        
+        // If we have more total videos than we've excluded, we haven't exhausted content yet
+        if (totalAvailableVideos.length > allExcludedVideos.length) {
+          console.log(`⚠️ Content not exhausted yet - ${totalAvailableVideos.length} total available vs ${allExcludedVideos.length} excluded`);
+          console.log(`   This suggests the search term might be too specific or there's a database issue`);
+        } else {
+          console.log(`🔄 Content exhausted for "${block.search_term}" - resetting exclusions and starting fresh`);
+          
+          // Reset exclusions for this specific search term by clearing video history
+          this.resetExclusionsForSearchTerm(block.search_term, playlistId);
+          
+          // Search again without exclusions
+          videos = await this.searchVideos(
+            block.search_term,
+            block.video_count,
+            block.fetch_mode,
+            block.format,
+            [] // No exclusions after reset
+          );
+          
+          console.log(`✅ After reset: found ${videos.length} videos for "${block.search_term}"`);
+        }
+      }
+
       console.log(`✅ Found ${videos.length} new videos for "${block.search_term}" (requested ${block.video_count})`);
+
+      // Validate format filtering - ensure all videos match the requested format
+      const formatFilteredVideos = videos.filter(video => {
+        const attachment = video.post.attachments[0];
+        if (!attachment || !attachment.width || !attachment.height) {
+          console.log(`⚠️ Video ${video.post.id} missing dimensions, excluding`);
+          return false;
+        }
+        
+        const isWide = attachment.width > attachment.height;
+        const isTall = attachment.height > attachment.width;
+        
+        if (block.format === 'wide' && !isWide) {
+          console.log(`⚠️ Video ${video.post.id} is ${attachment.width}x${attachment.height} (tall) but block requires wide, excluding`);
+          return false;
+        }
+        if (block.format === 'tall' && !isTall) {
+          console.log(`⚠️ Video ${video.post.id} is ${attachment.width}x${attachment.height} (wide) but block requires tall, excluding`);
+          return false;
+        }
+        
+        return true;
+      });
+
+      console.log(`🎯 After format validation: ${formatFilteredVideos.length} videos match format "${block.format}" (requested ${block.video_count})`);
 
       // Add videos to timeline using transaction
       const transaction = queueDb.transaction(() => {
@@ -198,9 +328,23 @@ export class QueueManager {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
         `);
 
-        // Ensure we don't add more videos than requested for this block
-        const videosToAdd = videos.slice(0, block.video_count);
-        console.log(`📝 Adding ${videosToAdd.length} videos to timeline (limited from ${videos.length} found)`);
+        // Only add videos that match the format filter
+        const videosToAdd = formatFilteredVideos.slice(0, block.video_count);
+        console.log(`📝 Adding ${videosToAdd.length} videos to timeline (format-filtered from ${videos.length} found)`);
+        
+        // Add the new videos to the global exclusion list to prevent duplicates in subsequent blocks
+        // Only do this if we didn't reset exclusions (to avoid re-adding videos we just reset)
+        if (videos.length >= block.video_count || videos.length === formatFilteredVideos.length) {
+          videosToAdd.forEach(video => {
+            allExcludedVideos.push(video.post.id);
+          });
+        }
+        
+        // Warn if we couldn't find enough videos of the requested format
+        if (videosToAdd.length < block.video_count) {
+          console.log(`⚠️ WARNING: Only found ${videosToAdd.length} ${block.format} videos for "${block.search_term}" (requested ${block.video_count})`);
+          console.log(`   This may cause the playlist to have fewer videos than expected.`);
+        }
         
         videosToAdd.forEach((video, index) => {
           const videoId = uuidv4();

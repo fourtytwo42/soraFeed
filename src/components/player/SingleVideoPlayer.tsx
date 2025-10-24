@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, memo } from 'react';
+import { useRef, useEffect, memo, useState } from 'react';
 import { SoraFeedItem } from '@/types/sora';
 
 interface SingleVideoPlayerProps {
@@ -38,11 +38,57 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
   const isPlayingRef = useRef(isPlaying); // Ref to track isPlaying without causing re-renders
   const isActive = index === currentIndex;
   const offset = index - currentIndex;
+  
+  // Video sizing state
+  const [videoWidth, setVideoWidth] = useState<number | null>(null);
 
   // Update ref when isPlaying changes
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  // Handle video metadata to calculate proper sizing
+  const handleVideoMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (video.videoWidth && video.videoHeight) {
+      const aspectRatio = video.videoWidth / video.videoHeight;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      
+      // If landscape (wider than tall), fit to width
+      // If portrait (taller than wide), fit to height
+      if (aspectRatio > 1) {
+        // Landscape: fit to width
+        setVideoWidth(viewportWidth);
+      } else {
+        // Portrait: fit to height
+        const calculatedWidth = viewportHeight * aspectRatio;
+        setVideoWidth(calculatedWidth);
+      }
+    }
+  };
+
+  // Handle window resize to recalculate video sizing
+  useEffect(() => {
+    const handleResize = () => {
+      const video = videoRef.current;
+      if (video && video.videoWidth && video.videoHeight) {
+        const aspectRatio = video.videoWidth / video.videoHeight;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        if (aspectRatio > 1) {
+          setVideoWidth(viewportWidth);
+        } else {
+          const calculatedWidth = viewportHeight * aspectRatio;
+          setVideoWidth(calculatedWidth);
+        }
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const videoUrl = videoData.post.attachments?.[0]?.encodings?.md?.path || 
                    videoData.post.attachments?.[0]?.encodings?.source?.path;
@@ -169,42 +215,57 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
 
   return (
     <div 
-      className="absolute inset-0 w-full h-full cursor-pointer"
+      className="absolute inset-0 w-full h-full cursor-pointer flex items-center justify-center"
       style={{ 
         transform: `translateY(${offset * 100}%)`,
         zIndex: isActive ? 20 : 10
       }}
       onClick={handleVideoClick}
     >
-      <video
-        key={videoData.post.id} // Stable key to prevent recreation
-        ref={videoRef}
-        className="w-full h-full object-cover"
-        src={videoUrl}
-        loop={false}
-        playsInline
-        preload="auto"
-        muted={isMuted}
-        onLoadedMetadata={() => {
-          // Only mark as loaded when metadata is first loaded
-          // This fires ONCE per video, unlike onCanPlay/onLoadedData
-          if (!videoLoadedRef.current) {
-            console.log('🎬 Video metadata loaded:', videoData.post.id.slice(-6));
-            videoLoadedRef.current = true;
-          } else {
-            console.error('🚨 METADATA LOADED AGAIN - VIDEO ELEMENT RECREATED!', videoData.post.id.slice(-6));
-          }
+      <div 
+        className="relative h-full flex items-center justify-center"
+        style={{ 
+          width: videoWidth ? `${videoWidth}px` : '100%',
+          maxWidth: '100%'
         }}
-        onEnded={() => {
-          if (isActive) {
-            console.log('🎬 Video ended:', videoData.post.id);
-            onVideoEnd();
-          }
-        }}
-        onError={() => {
-          console.error('❌ Video error:', videoData.post.id);
-        }}
-      />
+      >
+        <video
+          key={videoData.post.id} // Stable key to prevent recreation
+          ref={videoRef}
+          className="object-contain block"
+          style={{
+            width: videoWidth ? `${videoWidth}px` : 'auto',
+            height: videoWidth ? 'auto' : '100%'
+          }}
+          src={videoUrl}
+          loop={false}
+          playsInline
+          preload="auto"
+          muted={isMuted}
+          onLoadedMetadata={(e) => {
+            // Handle video sizing first
+            handleVideoMetadata(e);
+            
+            // Only mark as loaded when metadata is first loaded
+            // This fires ONCE per video, unlike onCanPlay/onLoadedData
+            if (!videoLoadedRef.current) {
+              console.log('🎬 Video metadata loaded:', videoData.post.id.slice(-6));
+              videoLoadedRef.current = true;
+            } else {
+              console.error('🚨 METADATA LOADED AGAIN - VIDEO ELEMENT RECREATED!', videoData.post.id.slice(-6));
+            }
+          }}
+          onEnded={() => {
+            if (isActive) {
+              console.log('🎬 Video ended:', videoData.post.id);
+              onVideoEnd();
+            }
+          }}
+          onError={() => {
+            console.error('❌ Video error:', videoData.post.id);
+          }}
+        />
+      </div>
 
       {/* Click to play overlay */}
       {isActive && (!userHasInteracted || !isPlaying) && videoLoadedRef.current && 
@@ -221,9 +282,18 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
       )}
 
       {/* Video info overlay */}
-      <div className="absolute bottom-4 left-4 right-4 text-white pointer-events-none">
-        <div className="text-sm opacity-70 bg-black bg-opacity-50 p-2 rounded">
-          @{videoData.profile.username} • {videoData.post.text?.slice(0, 100)}
+      <div className="absolute bottom-4 left-4 text-white pointer-events-none" style={{ right: '120px' }}>
+        <div className="text-sm opacity-70 bg-black bg-opacity-50 px-3 py-2 rounded inline-block max-w-full">
+          <div className="truncate whitespace-nowrap">
+            @{videoData.profile.username} • {videoData.post.text || ''}
+          </div>
+        </div>
+      </div>
+
+      {/* CH 42 Watermark */}
+      <div className="absolute bottom-4 right-4 text-white pointer-events-none z-40">
+        <div className="text-2xl font-bold opacity-60 drop-shadow-lg">
+          CH 42
         </div>
       </div>
     </div>

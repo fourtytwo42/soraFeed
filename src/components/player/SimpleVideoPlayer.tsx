@@ -286,8 +286,10 @@ export default function SimpleVideoPlayer({
 
         {/* Video info overlay */}
         <div className="absolute bottom-4 left-4 right-4 text-white pointer-events-none">
-          <div className="text-sm opacity-70 bg-black bg-opacity-50 p-2 rounded">
-            @{videoData.profile.username} • {videoData.post.text?.slice(0, 100)}
+          <div className="text-sm opacity-70 bg-black bg-opacity-50 px-3 py-2 rounded inline-block max-w-full">
+            <div className="truncate whitespace-nowrap">
+              @{videoData.profile.username} • {videoData.post.text || ''}
+            </div>
           </div>
         </div>
       </div>
