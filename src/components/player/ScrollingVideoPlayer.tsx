@@ -12,6 +12,7 @@ interface ScrollingVideoPlayerProps {
   onVideoEnd: () => void;
   onVideoReady: () => void;
   onAutoplayBlocked?: () => void;
+  onPlayStateChange?: (isPlaying: boolean) => void;
 }
 
 export default function ScrollingVideoPlayer({ 
@@ -20,7 +21,8 @@ export default function ScrollingVideoPlayer({
   isMuted, 
   onVideoEnd, 
   onVideoReady,
-  onAutoplayBlocked
+  onAutoplayBlocked,
+  onPlayStateChange
 }: ScrollingVideoPlayerProps) {
   const [videos, setVideos] = useState<SoraFeedItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -269,8 +271,30 @@ export default function ScrollingVideoPlayer({
     };
 
     const handleVideoClick = () => {
-      if (isActive && !userHasInteracted) {
+      if (!isActive) return;
+      
+      const videoElement = videoRefs.current.get(videoData.post.id);
+      if (!videoElement) return;
+      
+      console.log('🎬 Video clicked:', {
+        videoId: videoData.post.id.slice(-6),
+        userHasInteracted,
+        isPlaying,
+        videoPaused: videoElement.paused
+      });
+      
+      if (!userHasInteracted) {
+        // First interaction - enable auto-play for future videos
         handleUserInteraction();
+      } else {
+        // Toggle play/pause
+        if (videoElement.paused) {
+          videoElement.play().catch(err => {
+            console.error('❌ Failed to play video:', err);
+          });
+        } else {
+          videoElement.pause();
+        }
       }
     };
 
@@ -301,11 +325,23 @@ export default function ScrollingVideoPlayer({
           onError={handleVideoError}
           onLoadedData={handleVideoLoaded}
           onCanPlayThrough={handleVideoLoaded}
+          onPlay={() => {
+            if (isActive) {
+              console.log('▶️ Video play event');
+              onPlayStateChange?.(true);
+            }
+          }}
+          onPause={() => {
+            if (isActive) {
+              console.log('⏸️ Video pause event');
+              onPlayStateChange?.(false);
+            }
+          }}
         />
 
-        {/* Click to play overlay - only show for first interaction */}
-        {isActive && !userHasInteracted && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        {/* Click to play overlay - show when video is paused and user needs to interact */}
+        {isActive && (!userHasInteracted || !isPlaying) && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
             <div className="text-center text-white">
               <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
                 <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
@@ -337,6 +373,7 @@ export default function ScrollingVideoPlayer({
     <div 
       ref={containerRef}
       className="relative w-full h-full bg-black overflow-hidden"
+      style={{ touchAction: 'none' }} // Fix @use-gesture warning
       tabIndex={0}
     >
       {/* Clipping container to prevent videos from showing outside viewport */}

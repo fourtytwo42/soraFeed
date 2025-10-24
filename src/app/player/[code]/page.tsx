@@ -311,6 +311,22 @@ export default function VMPlayer() {
     });
   }, [handleVideoEnd]);
 
+  // Handle play state changes from video player
+  const handlePlayStateChange = useCallback((playing: boolean) => {
+    console.log('🎮 Play state changed:', playing);
+    setVMState(prev => ({
+      ...prev,
+      isPlaying: playing,
+      status: playing ? 'playing' : 'idle'
+    }));
+    
+    if (playing) {
+      startVideoProgressTracking();
+    } else {
+      stopVideoProgressTracking();
+    }
+  }, [startVideoProgressTracking, stopVideoProgressTracking]);
+
   // Handle video ready
   const handleVideoReady = useCallback(() => {
     console.log('✅ Video ready');
@@ -434,6 +450,7 @@ export default function VMPlayer() {
             onVideoEnd={handleVideoEnd}
             onVideoReady={handleVideoReady}
             onAutoplayBlocked={handleAutoplayBlocked}
+            onPlayStateChange={handlePlayStateChange}
           />
           {needsUserInteraction && (
             <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
