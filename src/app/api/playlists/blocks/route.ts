@@ -119,3 +119,82 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// PUT /api/playlists/blocks/reorder - Update block order for a playlist
+export async function PUT(request: NextRequest) {
+  try {
+    const { playlistId, blockOrders } = await request.json();
+    
+    if (!playlistId || !blockOrders || !Array.isArray(blockOrders)) {
+      return NextResponse.json(
+        { error: 'playlistId and blockOrders array are required' },
+        { status: 400 }
+      );
+    }
+
+    // Validate blockOrders format
+    for (const item of blockOrders) {
+      if (!item.blockId || typeof item.order !== 'number' || item.order < 0) {
+        return NextResponse.json(
+          { error: 'Each block order item must have blockId (string) and order (number >= 0)' },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Check if playlist exists
+    const playlist = PlaylistManager.getPlaylist(playlistId);
+    if (!playlist) {
+      return NextResponse.json(
+        { error: 'Playlist not found' },
+        { status: 404 }
+      );
+    }
+
+    // Update block orders in a transaction
+    const transaction = queueDb.transaction(() => {
+      for (const { blockId, order } of blockOrders) {
+        const updateStmt = queueDb.prepare(`
+          UPDATE playlist_blocks 
+          SET block_order = ? 
+          WHERE id = ? AND playlist_id = ?
+        `);
+        const result = updateStmt.run(order, blockId, playlistId);
+        
+        if (result.changes === 0) {
+          throw new Error(`Block ${blockId} not found in playlist ${playlistId}`);
+        }
+      }
+      
+      // Update playlist timestamp
+      const updatePlaylistStmt = queueDb.prepare(`
+        UPDATE playlists 
+        SET updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      updatePlaylistStmt.run(playlistId);
+    });
+
+    transaction();
+
+    console.log(`✅ Updated block order for playlist ${playlistId}:`, blockOrders.map(b => `${b.blockId} -> ${b.order}`));
+
+    // If this is the active playlist, we need to repopulate timeline videos
+    const activePlaylist = PlaylistManager.getActivePlaylist(playlist.display_id);
+    if (activePlaylist && activePlaylist.id === playlistId) {
+      console.log(`🔄 Repopulating timeline videos after reorder for active playlist ${playlistId}`);
+      
+      // Clear existing timeline videos and repopulate
+      queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(playlist.display_id);
+      await QueueManager.populateTimelineVideos(playlist.display_id, playlistId, 0);
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error updating block order:', error);
+    return NextResponse.json(
+      { error: `Failed to update block order: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { status: 500 }
+    );
+  }
+}

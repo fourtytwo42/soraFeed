@@ -78,14 +78,15 @@ export class DisplayManager {
       is_playing: Boolean(row.is_playing),
       is_muted: Boolean(row.is_muted),
       video_position: row.video_position || 0,
-      last_state_change: row.last_state_change
+      last_state_change: row.last_state_change,
+      last_video_start_time: row.last_video_start_time
     }));
   }
 
   // Update display status (called by VM client)
   static updateDisplayStatus(
     id: string, 
-    updates: Partial<Pick<Display, 'status' | 'current_video_id' | 'current_position' | 'current_block_id' | 'timeline_position'>>
+    updates: Partial<Pick<Display, 'status' | 'current_video_id' | 'current_position' | 'current_block_id' | 'timeline_position' | 'last_video_start_time'>>
   ): void {
     const setParts: string[] = [];
     const values: any[] = [];
@@ -109,6 +110,10 @@ export class DisplayManager {
     if (updates.timeline_position !== undefined) {
       setParts.push('timeline_position = ?');
       values.push(updates.timeline_position);
+    }
+    if (updates.last_video_start_time !== undefined) {
+      setParts.push('last_video_start_time = ?');
+      values.push(updates.last_video_start_time);
     }
 
     // Always update last_ping

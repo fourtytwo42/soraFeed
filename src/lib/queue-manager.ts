@@ -216,24 +216,104 @@ export class QueueManager {
       `;
       params = [`%${searchTerm}%`, ...excludeVideoIds, count];
     } else {
-      // For random mode, fetch more results than needed and randomly select from them
-      // This provides better randomness than ORDER BY RANDOM()
-      const fetchCount = Math.min(count * 3, 100); // Fetch up to 3x what we need, max 100
-      query = `
-        SELECT 
-          p.id, p.text, p.posted_at, p.permalink,
-          p.video_url, p.video_url_md, p.thumbnail_url, p.gif_url,
-          p.width, p.height, p.generation_id, p.task_id,
-          c.id as creator_id, c.username, c.display_name,
-          c.profile_picture_url, c.permalink as creator_permalink,
-          c.follower_count, c.following_count, c.post_count, c.verified
+      // For random mode, use a completely different approach - multiple random queries
+      // This ensures we get different results each time by randomizing the database query itself
+      const crypto = require('crypto');
+      
+      // Get total count first to know our range
+      const countQuery = `
+        SELECT COUNT(*) as total_count
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
         WHERE p.text ILIKE $1 ${formatClause} ${excludeClause}
-        ORDER BY p.posted_at DESC
-        LIMIT $${excludeVideoIds.length + 2}
       `;
-      params = [`%${searchTerm}%`, ...excludeVideoIds, fetchCount];
+      const countResult = await client.query(countQuery, [`%${searchTerm}%`, ...excludeVideoIds]);
+      const totalAvailable = parseInt(countResult.rows[0].total_count);
+      
+      console.log(`🎲 Random mode: Found ${totalAvailable} total videos for "${searchTerm}"`);
+      
+      if (totalAvailable === 0) {
+        return [];
+      }
+      
+      // Generate multiple random offsets and fetch videos from different positions
+      const selectedVideos: any[] = [];
+      const attempts = Math.min(count * 3, 30); // Try up to 3x what we need, max 30 attempts
+      
+      for (let i = 0; i < attempts && selectedVideos.length < count; i++) {
+        // Generate cryptographically secure random offset
+        const randomBytes = crypto.randomBytes(4);
+        const randomOffset = randomBytes.readUInt32BE(0) % totalAvailable;
+        
+        const randomQuery = `
+          SELECT 
+            p.id, p.text, p.posted_at, p.permalink,
+            p.video_url, p.video_url_md, p.thumbnail_url, p.gif_url,
+            p.width, p.height, p.generation_id, p.task_id,
+            c.id as creator_id, c.username, c.display_name,
+            c.profile_picture_url, c.permalink as creator_permalink,
+            c.follower_count, c.following_count, c.post_count, c.verified
+          FROM sora_posts p
+          JOIN creators c ON p.creator_id = c.id
+          WHERE p.text ILIKE $1 ${formatClause} ${excludeClause}
+          ORDER BY p.posted_at DESC
+          LIMIT 1 OFFSET $${excludeVideoIds.length + 2}
+        `;
+        
+        const randomResult = await client.query(randomQuery, [`%${searchTerm}%`, ...excludeVideoIds, randomOffset]);
+        
+        if (randomResult.rows.length > 0) {
+          const video = randomResult.rows[0];
+          // Check if we already have this video (avoid duplicates)
+          if (!selectedVideos.some(v => v.id === video.id)) {
+            selectedVideos.push(video);
+          }
+        }
+      }
+      
+      console.log(`🎲 Random mode: Selected ${selectedVideos.length} unique videos from ${attempts} random queries`);
+      console.log(`🎲 Selected video IDs: ${selectedVideos.map((v: any) => v.id.slice(-6)).join(', ')}`);
+      
+      // Transform to SoraFeedItem format and return
+      return selectedVideos.map((row: any) => ({
+        post: {
+          id: row.id,
+          text: row.text,
+          posted_at: new Date(row.posted_at).getTime(),
+          updated_at: new Date(row.posted_at).getTime(),
+          posted_to_public: true,
+          preview_image_url: row.thumbnail_url,
+          permalink: row.permalink,
+          attachments: [{
+            id: row.generation_id,
+            kind: "sora" as const,
+            generation_id: row.generation_id,
+            generation_type: "video_gen" as const,
+            task_id: row.task_id,
+            width: row.width,
+            height: row.height,
+            output_blocked: false,
+            encodings: {
+              source: { path: row.video_url },
+              md: { path: row.video_url_md },
+              thumbnail: { path: row.thumbnail_url },
+              gif: { path: row.gif_url }
+            }
+          }]
+        },
+        profile: {
+          user_id: row.creator_id,
+          username: row.username,
+          display_name: row.display_name,
+          profile_picture_url: row.profile_picture_url,
+          is_default_profile_picture: false,
+          permalink: row.creator_permalink,
+          follower_count: row.follower_count,
+          following_count: row.following_count,
+          post_count: row.post_count,
+          verified: row.verified
+        }
+      }));
     }
 
     console.log(`🔍 SQL Query Debug:`, {
@@ -248,27 +328,8 @@ export class QueueManager {
     
     console.log(`📊 SQL Result: Found ${result.rows.length} rows (requested ${count})`);
     
-    // For random mode, randomly select from the fetched results
+    // For newest mode, just use the results as-is
     let selectedRows = result.rows;
-    if (mode === 'random' && result.rows.length > count) {
-      // Create a seeded random number generator for better randomness
-      const seed = Date.now() + searchTerm.length + Math.random();
-      const seededRandom = (seed: number) => {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-      };
-      
-      // Shuffle the array using Fisher-Yates algorithm with seeded random
-      const shuffled = [...result.rows];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(seededRandom(seed + i) * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      
-      // Take only the requested count
-      selectedRows = shuffled.slice(0, count);
-      console.log(`🎲 Random selection: Selected ${selectedRows.length} from ${result.rows.length} available videos`);
-    }
     
       // Transform to SoraFeedItem format
       return selectedRows.map((row: any) => ({
@@ -847,7 +908,7 @@ export class QueueManager {
             name: block.search_term,
             videoCount: block.video_count,
             isActive: index === blockIndex,
-            isCompleted: index < blockIndex,
+            isCompleted: block.times_played > 0, // Block is completed only if it has been played
             timesPlayed: block.times_played,
             totalAvailable: totalCount,
             seenCount: seenCount,
@@ -860,7 +921,7 @@ export class QueueManager {
             name: block.search_term,
             videoCount: block.video_count,
             isActive: index === blockIndex,
-            isCompleted: index < blockIndex,
+            isCompleted: block.times_played > 0, // Block is completed only if it has been played
             timesPlayed: block.times_played,
             totalAvailable: 0,
             seenCount: 0,
@@ -949,7 +1010,7 @@ export class QueueManager {
         name: block.search_term,
         videoCount: block.video_count,
         isActive: index === blockIndex,
-        isCompleted: index < blockIndex,
+        isCompleted: block.times_played > 0, // Block is completed only if it has been played
         timesPlayed: block.times_played
       })),
       overallProgress: {

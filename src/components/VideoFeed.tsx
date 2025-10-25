@@ -5,7 +5,7 @@ import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
-import { remixCache } from '@/lib/remixCache';
+// Remix cache removed - feature no longer used
 import VideoPost from './VideoPost';
 
 interface VideoFeedProps {
@@ -283,7 +283,8 @@ export default function VideoFeed({ items, onLoadMore, hasMore, loadingMore, onA
         
         // Skip if already preloaded
         if (!preloadedRemixFeeds.has(postId)) {
-          const promise = remixCache.getRemixFeed(postId)
+          // Remix functionality removed
+          const promise = Promise.resolve([])
             .then((remixes: any) => {
               setPreloadedRemixFeeds(prev => {
                 const newMap = new Map(prev);

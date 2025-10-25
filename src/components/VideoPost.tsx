@@ -5,7 +5,7 @@ import { motion, useMotionValue, animate } from 'framer-motion';
 import { useDrag } from '@use-gesture/react';
 import { Play, Pause, Volume2, VolumeX, Heart, User, CheckCircle, ChevronLeft, ChevronRight, Download, Facebook, Twitter, Monitor, Smartphone, Grid3X3 } from 'lucide-react';
 import { SoraFeedItem } from '@/types/sora';
-import { remixCache } from '@/lib/remixCache';
+// Remix cache removed - feature no longer used
 import { videoPreloadManager } from '@/lib/videoPreloadManager';
 
 interface VideoPostProps {
@@ -723,7 +723,8 @@ export default function VideoPost({
         const loadRemixFeed = async () => {
           setLoadingRemixes(true);
           try {
-            const remixes = await remixCache.getRemixFeed(item.post.id);
+            // Remix functionality removed
+            const remixes: any[] = [];
             console.log('✅ Loaded', remixes.length, 'remixes for', item.post.id);
             setRemixFeed(remixes);
           } catch (error) {

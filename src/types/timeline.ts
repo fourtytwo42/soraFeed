@@ -14,6 +14,7 @@ export interface Display {
   playback_state: 'idle' | 'playing' | 'paused' | 'loading';
   is_playing: boolean;
   is_muted: boolean;
+  last_video_start_time?: number; // Timestamp when current video started
   video_position: number;
   last_state_change: string;
 }

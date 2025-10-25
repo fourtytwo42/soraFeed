@@ -260,11 +260,12 @@ function BlockEditor({ block, onSave, onCancel }: {
 }
 
 // Inline Editable Block Component (when stopped)
-function InlineEditableBlock({ block, blockIndex, onSave, onDelete }: {
+function InlineEditableBlock({ block, blockIndex, displayId, onSave, onDelete }: {
   block: any;
   blockIndex: number;
+  displayId: string;
   onSave: (blockIndex: number, updatedBlock: any) => void;
-  onDelete: (blockIndex: number) => void;
+  onDelete: (blockIndex: number, displayId: string) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -272,6 +273,22 @@ function InlineEditableBlock({ block, blockIndex, onSave, onDelete }: {
     videoCount: block.videoCount || block.video_count || 10,
     format: block.format || 'mixed'
   });
+
+  // Add drag and drop functionality
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: `${block.name}-${blockIndex}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   // Update form data when block changes
   useEffect(() => {
@@ -367,6 +384,8 @@ function InlineEditableBlock({ block, blockIndex, onSave, onDelete }: {
 
   return (
     <motion.div
+      ref={setNodeRef}
+      style={style}
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -374,7 +393,11 @@ function InlineEditableBlock({ block, blockIndex, onSave, onDelete }: {
       className="relative group bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
     >
       {/* Drag Handle */}
-      <div className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1">
+      <div 
+        {...attributes} 
+        {...listeners}
+        className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1"
+      >
         <GripVertical className="w-3 h-3 text-gray-400" />
       </div>
 
@@ -402,7 +425,7 @@ function InlineEditableBlock({ block, blockIndex, onSave, onDelete }: {
               <Edit3 className="w-3 h-3 text-gray-600" />
             </button>
             <button
-              onClick={() => onDelete(blockIndex)}
+              onClick={() => onDelete(blockIndex, displayId)}
               className="p-1 hover:bg-red-100 rounded transition-colors"
               title="Delete Block"
             >
@@ -648,9 +671,8 @@ export default function AdminDashboard() {
             
             if (wsStatus) {
               isOnline = wsStatus.isConnected;
-              if (wsStatus.currentVideo) {
-                display.status = 'playing';
-              }
+              // Don't override display.status with WebSocket status - use the database playback_state as source of truth
+              // The WebSocket status is just for real-time updates, not for determining playback state
             } else {
               // Fallback to last_ping check
               isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
@@ -664,6 +686,10 @@ export default function AdminDashboard() {
               const timelineData = await timelineResponse.json();
               progress = timelineData.progress;
               queuedVideos = timelineData.queuedVideos || [];
+              
+              // Ensure display status reflects the database playback_state
+              display.status = display.playback_state === 'playing' ? 'playing' : 
+                              display.playback_state === 'paused' ? 'paused' : 'idle';
               
               // Enhance with WebSocket video progress if available
               if (wsStatus?.playlistProgress?.videoProgress && progress) {
@@ -867,7 +893,7 @@ export default function AdminDashboard() {
   };
 
   // Handle drag end for playlist blocks
-  const handleDragEnd = (event: any, displayId: string) => {
+  const handleDragEnd = async (event: any, displayId: string) => {
     const { active, over } = event;
     
     if (active.id !== over.id) {
@@ -889,8 +915,48 @@ export default function AdminDashboard() {
             : d
         ));
         
-        // TODO: Save the new order to the server
-        console.log('New block order for display', displayId, ':', newBlocks.map((b: any, index: number) => `${index}: ${b.name}`));
+        // Save the new order to the server
+        try {
+          // Get the playlist ID from the display's progress
+          const playlistId = display.progress.playlistId;
+          if (!playlistId) {
+            console.error('No playlist ID found for display:', displayId);
+            return;
+          }
+
+          // Prepare block orders for the API
+          const blockOrders = newBlocks.map((block: any, index: number) => ({
+            blockId: block.id,
+            order: index
+          }));
+
+          console.log('Saving new block order for display', displayId, ':', blockOrders.map(b => `${b.blockId} -> ${b.order}`));
+
+          // Make API call to update block order
+          const response = await fetch('/api/playlists/blocks/reorder', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              playlistId,
+              blockOrders
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to update block order');
+          }
+
+          console.log('✅ Block order updated successfully');
+        } catch (error) {
+          console.error('❌ Error updating block order:', error);
+          setError(`Failed to save block order: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          
+          // Revert the local state change on error
+          await fetchDisplays();
+        }
       }
     }
   };
@@ -953,12 +1019,43 @@ export default function AdminDashboard() {
   };
 
   // Handle block delete
-  const handleBlockDelete = (blockIndex: number) => {
-    // TODO: Implement API call to delete block
-    console.log('Deleted block at index:', blockIndex);
-    
-    // Refresh displays to get updated data
-    fetchDisplays();
+  const handleBlockDelete = async (blockIndex: number, displayId: string) => {
+    const display = displays.find(d => d.id === displayId);
+    if (!display?.progress?.blocks) {
+      console.error('Display or blocks not found');
+      return;
+    }
+
+    const block = display.progress.blocks[blockIndex];
+    if (!block.id) {
+      console.error('Block ID not found for block:', block);
+      return;
+    }
+
+    try {
+      console.log('Deleting block:', block.id, 'at index:', blockIndex);
+      
+      // Make API call to delete the block
+      const response = await fetch(`/api/playlists/blocks/${block.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete block');
+      }
+
+      console.log('✅ Block deleted successfully');
+      
+      // Refresh displays to get updated data
+      await fetchDisplays();
+    } catch (error) {
+      console.error('❌ Error deleting block:', error);
+      setError(`Failed to delete block: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   // Handle adding new block
@@ -1050,13 +1147,12 @@ export default function AdminDashboard() {
       return;
     }
 
-    // Create CSV content
-    const headers = ['Search Term', 'Video Count', 'Format', 'Block Order'];
-    const rows = display.progress.blocks.map((block, index) => [
+    // Create CSV content - order is determined by line number in CSV
+    const headers = ['Search Term', 'Video Count', 'Format'];
+    const rows = display.progress.blocks.map((block) => [
       block.name, // search term
       block.videoCount || 0,
-      block.format || 'mixed',
-      index + 1
+      block.format || 'mixed'
     ]);
 
     const csvContent = [
@@ -1106,7 +1202,7 @@ export default function AdminDashboard() {
         throw new Error('CSV file must have at least a header row and one data row');
       }
 
-      // Parse CSV
+      // Parse CSV - order is determined by line number (no Block Order column needed)
       const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
       const blocks: BlockDefinition[] = [];
 
@@ -1116,10 +1212,10 @@ export default function AdminDashboard() {
         if (values.length < 2) continue; // Skip incomplete rows
 
         const block: BlockDefinition = {
-          searchTerm: values[0] || '',
-          videoCount: parseInt(values[1]) || 10,
+          searchTerm: values[0] || '', // Search Term
+          videoCount: parseInt(values[1]) || 10, // Video Count
           fetchMode: 'random', // Default fetch mode
-          format: (values[2] as 'mixed' | 'wide' | 'tall') || 'mixed'
+          format: (values[2] as 'mixed' | 'wide' | 'tall') || 'mixed' // Format
         };
 
         if (block.searchTerm) {
@@ -1210,10 +1306,8 @@ export default function AdminDashboard() {
             // Update online status
             updatedDisplay.isOnline = wsStatus.isConnected;
             
-            // Update playing status
-            if (wsStatus.currentVideo) {
-              updatedDisplay.status = 'playing';
-            }
+            // Don't override display.status with WebSocket status - use the database playback_state as source of truth
+            // The WebSocket status is just for real-time updates, not for determining playback state
             
             // Update progress with WebSocket video progress (smooth block progression)
             if (wsStatus.playlistProgress?.videoProgress && display.progress) {
@@ -1503,7 +1597,11 @@ export default function AdminDashboard() {
                 {/* Current Video Info */}
                 {(() => {
                   const wsStatus = displayStatuses.get(display.id);
-                  return wsStatus?.currentVideo ? (
+                  // Only show "Now Playing" if display is actually playing/paused AND has a current video
+                  const shouldShowNowPlaying = wsStatus?.currentVideo && 
+                    (display.playback_state === 'playing' || display.playback_state === 'paused');
+                  
+                  return shouldShowNowPlaying ? (
                     <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-400">
                       <div className="text-sm font-medium text-blue-900 mb-1">Now Playing</div>
                       <div className="text-sm text-blue-800">
@@ -1655,6 +1753,7 @@ export default function AdminDashboard() {
                                         <InlineEditableBlock
                                           block={block}
                                           blockIndex={blockIndex}
+                                          displayId={display.id}
                                           onSave={handleBlockSave}
                                           onDelete={handleBlockDelete}
                                         />

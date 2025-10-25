@@ -221,4 +221,56 @@ export class PlaylistManager {
     // Clear any potential caches that might be affected
     // This ensures fresh data on next read
   }
+
+  // Get a block by its ID
+  static getBlockById(blockId: string): PlaylistBlock | null {
+    const stmt = queueDb.prepare('SELECT * FROM playlist_blocks WHERE id = ?');
+    const row = stmt.get(blockId) as any;
+    
+    if (!row) return null;
+    
+    return {
+      id: row.id,
+      playlist_id: row.playlist_id,
+      search_term: row.search_term,
+      video_count: row.video_count,
+      fetch_mode: row.fetch_mode,
+      format: row.format,
+      block_order: row.block_order,
+      created_at: row.created_at,
+      times_played: row.times_played,
+      last_played_at: row.last_played_at
+    };
+  }
+
+  // Delete a block
+  static deleteBlock(blockId: string): void {
+    // Get the block first to update playlist totals
+    const block = this.getBlockById(blockId);
+    if (!block) {
+      console.error(`Block ${blockId} not found for deletion`);
+      return;
+    }
+
+    // Use transaction to ensure atomicity
+    const transaction = queueDb.transaction(() => {
+      // Delete the block
+      const deleteStmt = queueDb.prepare('DELETE FROM playlist_blocks WHERE id = ?');
+      deleteStmt.run(blockId);
+
+      // Update playlist totals
+      const updateStmt = queueDb.prepare(`
+        UPDATE playlists 
+        SET total_blocks = total_blocks - 1, 
+            total_videos = total_videos - ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      updateStmt.run(block.video_count, block.playlist_id);
+    });
+
+    transaction();
+    
+    console.log(`🗑️ Deleted block ${blockId} from playlist ${block.playlist_id}`);
+  }
 }

@@ -52,7 +52,8 @@ export function initQueueDatabase() {
       is_playing BOOLEAN DEFAULT false,
       is_muted BOOLEAN DEFAULT true,
       video_position REAL DEFAULT 0,
-      last_state_change DATETIME DEFAULT CURRENT_TIMESTAMP
+      last_state_change DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_video_start_time INTEGER
     )
   `);
 
@@ -145,7 +146,7 @@ export function initQueueDatabase() {
   }
 
   // Migration: Add playback state columns to displays table if they don't exist
-  const playbackColumns = ['playback_state', 'is_playing', 'is_muted', 'video_position', 'last_state_change'];
+  const playbackColumns = ['playback_state', 'is_playing', 'is_muted', 'video_position', 'last_state_change', 'last_video_start_time'];
   
   for (const column of playbackColumns) {
     const columnExists = queueDb.prepare(`
@@ -170,6 +171,9 @@ export function initQueueDatabase() {
         case 'last_state_change':
           // SQLite doesn't support CURRENT_TIMESTAMP in ALTER TABLE, so just add without default
           columnDef = 'DATETIME';
+          break;
+        case 'last_video_start_time':
+          columnDef = 'INTEGER';
           break;
       }
       

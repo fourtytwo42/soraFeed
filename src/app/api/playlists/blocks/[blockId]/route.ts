@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PlaylistManager } from '@/lib/playlist-manager';
+import { QueueManager } from '@/lib/queue-manager';
 
 // PUT /api/playlists/blocks/[blockId] - Update block properties
 export async function PUT(
@@ -47,6 +48,57 @@ export async function PUT(
     console.error('Error updating block:', error);
     return NextResponse.json(
       { error: 'Failed to update block' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/playlists/blocks/[blockId] - Delete a block
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ blockId: string }> }
+) {
+  try {
+    const { blockId } = await params;
+    
+    if (!blockId) {
+      return NextResponse.json(
+        { error: 'Block ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get the block to find its playlist
+    const block = PlaylistManager.getBlockById(blockId);
+    if (!block) {
+      return NextResponse.json(
+        { error: 'Block not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete the block
+    PlaylistManager.deleteBlock(blockId);
+    
+    // If this is an active playlist, we need to repopulate timeline videos
+    const playlist = PlaylistManager.getPlaylist(block.playlist_id);
+    if (playlist) {
+      const activePlaylist = PlaylistManager.getActivePlaylist(playlist.display_id);
+      if (activePlaylist && activePlaylist.id === playlist.id) {
+        console.log(`🔄 Repopulating timeline videos after block deletion for active playlist ${playlist.id}`);
+        
+        // Clear existing timeline videos and repopulate
+        const { queueDb } = await import('@/lib/sqlite');
+        queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(playlist.display_id);
+        await QueueManager.populateTimelineVideos(playlist.display_id, playlist.id, 0);
+      }
+    }
+    
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting block:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete block' },
       { status: 500 }
     );
   }
