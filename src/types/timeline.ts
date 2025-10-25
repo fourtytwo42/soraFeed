@@ -69,6 +69,7 @@ export interface VideoHistory {
 }
 
 export interface TimelineProgress {
+  playlistId?: string; // Include playlist ID in timeline progress
   currentBlock: {
     name: string;
     progress: number; // 0-100%

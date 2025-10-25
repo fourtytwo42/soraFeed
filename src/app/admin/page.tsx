@@ -979,12 +979,26 @@ export default function AdminDashboard() {
         return;
       }
 
-      // Get the active playlist ID from the timeline progress
-      const timelineResponse = await fetch(`/api/timeline/${display.id}?t=${Date.now()}`);
-      const timelineData = await timelineResponse.json();
+      // Get the active playlist ID from the display's progress data
+      let playlistId = null;
       
-      if (!timelineData.playlistId) {
+      // Try to get playlist ID from display progress first
+      if (display.progress && display.progress.playlistId) {
+        playlistId = display.progress.playlistId;
+      } else {
+        // Fallback: get from timeline API
+        try {
+          const timelineResponse = await fetch(`/api/timeline/${display.id}?t=${Date.now()}`);
+          const timelineData = await timelineResponse.json();
+          playlistId = timelineData.playlistId;
+        } catch (error) {
+          console.error('Failed to get timeline data:', error);
+        }
+      }
+      
+      if (!playlistId) {
         console.error('No active playlist found for display');
+        setError('No active playlist found. Please ensure the display has an active playlist.');
         return;
       }
 
@@ -993,7 +1007,7 @@ export default function AdminDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          playlistId: timelineData.playlistId,
+          playlistId: playlistId,
           searchTerm: blockData.searchTerm,
           videoCount: blockData.videoCount,
           format: blockData.format,
@@ -1508,27 +1522,32 @@ export default function AdminDashboard() {
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="font-semibold text-gray-900">Playlist Blocks</h4>
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleExportPlaylist(display)}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
-                          title="Export Playlist as CSV"
-                        >
-                          <Download className="w-3 h-3" />
-                          Export
-                        </button>
-                        <button
-                          onClick={() => handleImportPlaylist(display.id)}
-                          disabled={importingToDisplay === display.id}
-                          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                            importingToDisplay === display.id
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
-                          }`}
-                          title="Import Playlist from CSV"
-                        >
-                          <Upload className={`w-3 h-3 ${importingToDisplay === display.id ? 'animate-pulse' : ''}`} />
-                          {importingToDisplay === display.id ? 'Importing...' : 'Import'}
-                        </button>
+                        {/* Only show Export/Import buttons when display is stopped */}
+                        {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
+                          <>
+                            <button
+                              onClick={() => handleExportPlaylist(display)}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
+                              title="Export Playlist as CSV"
+                            >
+                              <Download className="w-3 h-3" />
+                              Export
+                            </button>
+                            <button
+                              onClick={() => handleImportPlaylist(display.id)}
+                              disabled={importingToDisplay === display.id}
+                              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                                importingToDisplay === display.id
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                              }`}
+                              title="Import Playlist from CSV"
+                            >
+                              <Upload className={`w-3 h-3 ${importingToDisplay === display.id ? 'animate-pulse' : ''}`} />
+                              {importingToDisplay === display.id ? 'Importing...' : 'Import'}
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={() => toggleSection(`playlist-${display.id}`)}
                           className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"

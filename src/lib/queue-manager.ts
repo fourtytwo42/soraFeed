@@ -845,6 +845,7 @@ export class QueueManager {
     );
     
     return {
+      playlistId: playlist.id, // Include playlist ID in the response
       currentBlock: {
         name: currentBlock?.search_term || '',
         progress: blockProgress,

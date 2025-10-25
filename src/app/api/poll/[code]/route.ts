@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DisplayManager } from '@/lib/display-manager';
 import { QueueManager } from '@/lib/queue-manager';
+import { PlaylistManager } from '@/lib/playlist-manager';
 
 // POST /api/poll/[code] - VM client polling endpoint
 export async function POST(
@@ -31,9 +32,21 @@ export async function POST(
     
     // Get next video - always check for next video to enable seamless transitions
     let nextVideo = null;
-    const timelineVideo = QueueManager.getNextTimelineVideo(code);
+    let timelineVideo = QueueManager.getNextTimelineVideo(code);
     
     console.log(`📊 Poll check - currentTimelineVideoId: ${currentTimelineVideoId?.slice(-6)}, nextTimelineVideo.id: ${timelineVideo?.id.slice(-6)}`);
+    
+    // If no timeline video found, check if we need to repopulate timeline from playlist
+    if (!timelineVideo) {
+      console.log(`🔄 No timeline videos found, checking if we need to repopulate from playlist`);
+      const playlist = PlaylistManager.getActivePlaylist(code);
+      if (playlist) {
+        console.log(`📋 Found active playlist ${playlist.id}, repopulating timeline videos`);
+        await QueueManager.populateTimelineVideos(code, playlist.id, 0);
+        timelineVideo = QueueManager.getNextTimelineVideo(code);
+        console.log(`✅ Timeline repopulated, next video: ${timelineVideo?.video_id.slice(-6)}`);
+      }
+    }
     
     if (timelineVideo) {
       // Only return nextVideo if it's different from current timeline video (by timeline ID, not video_id)
