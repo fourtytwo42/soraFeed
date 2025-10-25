@@ -216,6 +216,9 @@ export class QueueManager {
       `;
       params = [`%${searchTerm}%`, ...excludeVideoIds, count];
     } else {
+      // For random mode, fetch more results than needed and randomly select from them
+      // This provides better randomness than ORDER BY RANDOM()
+      const fetchCount = Math.min(count * 3, 100); // Fetch up to 3x what we need, max 100
       query = `
         SELECT 
           p.id, p.text, p.posted_at, p.permalink,
@@ -227,10 +230,10 @@ export class QueueManager {
         FROM sora_posts p
         JOIN creators c ON p.creator_id = c.id
         WHERE p.text ILIKE $1 ${formatClause} ${excludeClause}
-        ORDER BY RANDOM()
+        ORDER BY p.posted_at DESC
         LIMIT $${excludeVideoIds.length + 2}
       `;
-      params = [`%${searchTerm}%`, ...excludeVideoIds, count];
+      params = [`%${searchTerm}%`, ...excludeVideoIds, fetchCount];
     }
 
     console.log(`🔍 SQL Query Debug:`, {
@@ -245,8 +248,30 @@ export class QueueManager {
     
     console.log(`📊 SQL Result: Found ${result.rows.length} rows (requested ${count})`);
     
+    // For random mode, randomly select from the fetched results
+    let selectedRows = result.rows;
+    if (mode === 'random' && result.rows.length > count) {
+      // Create a seeded random number generator for better randomness
+      const seed = Date.now() + searchTerm.length + Math.random();
+      const seededRandom = (seed: number) => {
+        const x = Math.sin(seed) * 10000;
+        return x - Math.floor(x);
+      };
+      
+      // Shuffle the array using Fisher-Yates algorithm with seeded random
+      const shuffled = [...result.rows];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(seededRandom(seed + i) * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      
+      // Take only the requested count
+      selectedRows = shuffled.slice(0, count);
+      console.log(`🎲 Random selection: Selected ${selectedRows.length} from ${result.rows.length} available videos`);
+    }
+    
       // Transform to SoraFeedItem format
-      return result.rows.map((row: any) => ({
+      return selectedRows.map((row: any) => ({
         post: {
           id: row.id,
           text: row.text,
@@ -430,12 +455,10 @@ export class QueueManager {
         
         console.log(`📊 Total available videos for "${block.search_term}": ${totalAvailableVideos.length}`);
         
-        // If we have more total videos than we've excluded, we haven't exhausted content yet
-        if (totalAvailableVideos.length > allExcludedVideos.length) {
-          console.log(`⚠️ Content not exhausted yet - ${totalAvailableVideos.length} total available vs ${allExcludedVideos.length} excluded`);
-          console.log(`   This suggests the search term might be too specific or there's a database issue`);
-        } else {
-          console.log(`🔄 Content exhausted for "${block.search_term}" - resetting exclusions and starting fresh`);
+        // Check if we've exhausted videos for this specific search term
+        // We should reset if we can't find enough videos for this block
+        if (videos.length === 0) {
+          console.log(`🔄 No videos found for "${block.search_term}" - resetting exclusions and starting fresh`);
           
           // Reset exclusions for this specific search term by clearing video history
           this.resetExclusionsForSearchTerm(block.search_term, playlistId);
@@ -450,6 +473,9 @@ export class QueueManager {
           );
           
           console.log(`✅ After reset: found ${videos.length} videos for "${block.search_term}"`);
+        } else {
+          console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
+          console.log(`   This suggests the search term might be too specific or there's a database issue`);
         }
       }
 
