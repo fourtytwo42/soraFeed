@@ -135,7 +135,7 @@ export default function PlaylistBuilder({ onSave, onCancel, initialName = '', in
   const [blocks, setBlocks] = useState<BlockWithId[]>(() => 
     initialBlocks.length > 0 
       ? initialBlocks.map((block, index) => ({ ...block, id: `block-${index}` }))
-      : [{ id: 'block-0', searchTerm: '', videoCount: 5, fetchMode: 'newest' as const, format: 'mixed' as const }]
+      : [{ id: 'block-0', searchTerm: '', videoCount: 5, fetchMode: 'random' as const, format: 'mixed' as const }]
   );
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
 
@@ -151,7 +151,7 @@ export default function PlaylistBuilder({ onSave, onCancel, initialName = '', in
       id: `block-${Date.now()}`,
       searchTerm: '',
       videoCount: 5,
-      fetchMode: 'newest',
+      fetchMode: 'random',
       format: 'mixed'
     };
     setBlocks([...blocks, newBlock]);

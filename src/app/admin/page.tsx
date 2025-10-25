@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Plus, Monitor, Play, Pause, SkipForward, Volume2, VolumeX, Settings, Eye, 
+  Plus, Monitor, Play, Pause, Square, Settings, 
   List, Trash2, ChevronDown, Wifi, WifiOff, Edit3, Save, X, GripVertical,
-  BarChart3, Clock, Users, Zap, MoreVertical, Copy, RefreshCw, ChevronRight
+  BarChart3, Clock, Users, Zap, MoreVertical, Copy, RefreshCw, ChevronRight,
+  Download, Upload
 } from 'lucide-react';
 import { Display, TimelineProgress, BlockDefinition } from '@/types/timeline';
 import { useAdminWebSocket } from '@/hooks/useAdminWebSocket';
@@ -27,12 +28,13 @@ interface DashboardStats {
 }
 
 // Sortable Block Component
-function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete }: {
+function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEditButtons = true }: {
   block: any;
   isActive: boolean;
   isCompleted: boolean;
   onEdit: (block: any) => void;
   onDelete: (block: any) => void;
+  showEditButtons?: boolean;
 }) {
   const {
     attributes,
@@ -96,22 +98,24 @@ function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete }: {
             </span>
           </div>
           
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={() => onEdit(block)}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
-              title="Edit Block"
-            >
-              <Edit3 className="w-3 h-3 text-gray-600" />
-            </button>
-            <button
-              onClick={() => onDelete(block)}
-              className="p-1 hover:bg-red-100 rounded transition-colors"
-              title="Delete Block"
-            >
-              <Trash2 className="w-3 h-3 text-red-600" />
-            </button>
-          </div>
+          {showEditButtons && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => onEdit(block)}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                title="Edit Block"
+              >
+                <Edit3 className="w-3 h-3 text-gray-600" />
+              </button>
+              <button
+                onClick={() => onDelete(block)}
+                className="p-1 hover:bg-red-100 rounded transition-colors"
+                title="Delete Block"
+              >
+                <Trash2 className="w-3 h-3 text-red-600" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Progress Bar - Full Width */}
@@ -136,7 +140,7 @@ function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete }: {
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-3">
             <span className="text-gray-600">
-              <span className="font-medium text-gray-900">{block.videoCount}</span> videos
+              <span className="font-medium text-gray-900">{block.videoCount || block.video_count || 0}</span> videos
             </span>
             <span className="text-gray-600">
               Played <span className="font-medium text-gray-900">{block.timesPlayed || 0}</span> times
@@ -255,106 +259,278 @@ function BlockEditor({ block, onSave, onCancel }: {
   );
 }
 
-// Add Block Form Component
-function AddBlockForm({ onSave, onCancel }: {
+// Inline Editable Block Component (when stopped)
+function InlineEditableBlock({ block, blockIndex, onSave, onDelete }: {
+  block: any;
+  blockIndex: number;
+  onSave: (blockIndex: number, updatedBlock: any) => void;
+  onDelete: (blockIndex: number) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    searchTerm: block.name || block.search_term || '',
+    videoCount: block.videoCount || block.video_count || 10,
+    format: block.format || 'mixed'
+  });
+
+  // Update form data when block changes
+  useEffect(() => {
+    setFormData({
+      searchTerm: block.name || block.search_term || '',
+      videoCount: block.videoCount || block.video_count || 10,
+      format: block.format || 'mixed'
+    });
+  }, [block]);
+
+  const handleSave = () => {
+    onSave(blockIndex, formData);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setFormData({
+      searchTerm: block.name || block.search_term || '',
+      videoCount: block.videoCount || block.video_count || 10,
+      format: block.format || 'mixed'
+    });
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-blue-50 rounded-lg border-2 border-blue-400 shadow-md p-3"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium text-gray-900 text-sm">Edit Block</h3>
+          <div className="flex gap-1">
+            <button
+              onClick={handleSave}
+              className="p-1.5 bg-green-100 hover:bg-green-200 rounded transition-colors"
+              title="Save Changes"
+            >
+              <Save className="w-3 h-3 text-green-600" />
+            </button>
+            <button
+              onClick={handleCancel}
+              className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+              title="Cancel"
+            >
+              <X className="w-3 h-3 text-gray-600" />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Search Term</label>
+              <input
+                type="text"
+                value={formData.searchTerm}
+                onChange={(e) => setFormData({ ...formData, searchTerm: e.target.value })}
+                className="w-full px-2 py-1.5 text-sm text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="e.g., 'cute cats -dogs'"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Videos</label>
+              <input
+                type="number"
+                value={formData.videoCount}
+                onChange={(e) => setFormData({ ...formData, videoCount: parseInt(e.target.value) || 10 })}
+                className="w-full px-2 py-1.5 text-sm text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Format</label>
+            <select
+              value={formData.format}
+              onChange={(e) => setFormData({ ...formData, format: e.target.value })}
+              className="w-full px-2 py-1.5 text-sm text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="mixed">Mixed</option>
+              <option value="wide">Wide</option>
+              <option value="tall">Tall</option>
+            </select>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="relative group bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
+    >
+      {/* Drag Handle */}
+      <div className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1">
+        <GripVertical className="w-3 h-3 text-gray-400" />
+      </div>
+
+      <div className="p-3 pl-6">
+        {/* Block Header - Compact */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+            <h3 className="font-medium text-gray-900 truncate text-sm">{block.name}</h3>
+            <span className={`px-1.5 py-0.5 text-xs rounded-full flex-shrink-0 ${
+              block.format === 'wide' ? 'bg-blue-100 text-blue-700' :
+              block.format === 'tall' ? 'bg-purple-100 text-purple-700' :
+              'bg-gray-100 text-gray-700'
+            }`}>
+              {block.format || 'mixed'}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => setIsEditing(true)}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              title="Edit Block"
+            >
+              <Edit3 className="w-3 h-3 text-gray-600" />
+            </button>
+            <button
+              onClick={() => onDelete(blockIndex)}
+              className="p-1 hover:bg-red-100 rounded transition-colors"
+              title="Delete Block"
+            >
+              <Trash2 className="w-3 h-3 text-red-600" />
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Row - Compact */}
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3">
+            <span className="text-gray-600">
+              <span className="font-medium text-gray-900">{block.video_count || block.videoCount || 0}</span> videos
+            </span>
+            <span className="text-gray-600">
+              Played <span className="font-medium text-gray-900">{block.times_played || 0}</span> times
+            </span>
+          </div>
+          
+          {/* Database Stats - Compact */}
+          {block.totalAvailable && block.totalAvailable > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-600">
+                DB: <span className="font-medium text-gray-900">{block.seenCount || 0}/{block.totalAvailable}</span>
+              </span>
+              <div className="w-12 bg-gray-200 rounded-full h-1">
+                <div 
+                  className="bg-green-500 h-1 rounded-full"
+                  style={{ width: `${((block.seenCount || 0) / block.totalAvailable) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// Inline Add Block Component
+function InlineAddBlock({ onSave, onCancel }: {
   onSave: (blockData: any) => void;
   onCancel: () => void;
 }) {
   const [formData, setFormData] = useState({
-    name: '',
     searchTerm: '',
     videoCount: 10,
     format: 'mixed'
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (formData.name.trim() && formData.searchTerm.trim()) {
+  const handleSave = () => {
+    if (formData.searchTerm.trim()) {
       onSave(formData);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Block Name
-        </label>
-        <input
-          type="text"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          placeholder="e.g., Music Videos"
-          required
-        />
-      </div>
-      
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Search Term
-        </label>
-        <input
-          type="text"
-          value={formData.searchTerm}
-          onChange={(e) => setFormData({ ...formData, searchTerm: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          placeholder="e.g., 'music video -live'"
-          required
-        />
-        <div className="text-xs text-gray-500 mt-1">
-          Use -word to exclude terms (e.g., 'cats -dogs')
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-dashed border-green-300 rounded-xl p-4"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <h3 className="font-medium text-gray-900 text-sm">Add New Block</h3>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleSave}
+            className="p-1.5 bg-green-100 hover:bg-green-200 rounded transition-colors"
+            title="Save Block"
+            disabled={!formData.searchTerm.trim()}
+          >
+            <Save className="w-3 h-3 text-green-600" />
+          </button>
+          <button
+            onClick={onCancel}
+            className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+            title="Cancel"
+          >
+            <X className="w-3 h-3 text-gray-600" />
+          </button>
         </div>
       </div>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Video Count
-          </label>
-          <input
-            type="number"
-            value={formData.videoCount}
-            onChange={(e) => setFormData({ ...formData, videoCount: parseInt(e.target.value) || 10 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            min="1"
-            max="100"
-          />
+
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Search Term</label>
+            <input
+              type="text"
+              value={formData.searchTerm}
+              onChange={(e) => setFormData({ ...formData, searchTerm: e.target.value })}
+              className="w-full px-2 py-1.5 text-sm text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+              placeholder="e.g., 'cute cats -dogs'"
+              autoFocus
+            />
+          </div>
+          
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Videos</label>
+            <input
+              type="number"
+              value={formData.videoCount}
+              onChange={(e) => setFormData({ ...formData, videoCount: parseInt(e.target.value) || 10 })}
+              className="w-full px-2 py-1.5 text-sm text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+              min="1"
+            />
+          </div>
         </div>
         
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Format
-          </label>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Format</label>
           <select
             value={formData.format}
             onChange={(e) => setFormData({ ...formData, format: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="w-full px-2 py-1.5 text-sm text-gray-900 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
           >
             <option value="mixed">Mixed</option>
-            <option value="wide">Wide (Landscape)</option>
-            <option value="tall">Tall (Portrait)</option>
+            <option value="wide">Wide</option>
+            <option value="tall">Tall</option>
           </select>
         </div>
       </div>
-      
-      <div className="flex gap-3 pt-4">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="flex-1 px-4 py-2 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg hover:from-green-700 hover:to-blue-700 transition-all duration-200"
-          disabled={!formData.name.trim() || !formData.searchTerm.trim()}
-        >
-          Add Block
-        </button>
-      </div>
-    </form>
+    </motion.div>
   );
 }
 
@@ -375,8 +551,12 @@ export default function AdminDashboard() {
   const [selectedDisplay, setSelectedDisplay] = useState<DisplayWithProgress | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({});
-  const [showAddBlockModal, setShowAddBlockModal] = useState(false);
-  const [selectedDisplayForBlock, setSelectedDisplayForBlock] = useState<string | null>(null);
+  const [addingBlockToDisplay, setAddingBlockToDisplay] = useState<string | null>(null);
+  const [addingBlockAtPosition, setAddingBlockAtPosition] = useState<number | null>(null);
+  const [stoppedDisplays, setStoppedDisplays] = useState<Set<string>>(new Set());
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [displayToStop, setDisplayToStop] = useState<DisplayWithProgress | null>(null);
+  const [importingToDisplay, setImportingToDisplay] = useState<string | null>(null);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -456,7 +636,7 @@ export default function AdminDashboard() {
         try {
           const [displayResponse, timelineResponse] = await Promise.all([
             fetch(`/api/displays/${code}`),
-            fetch(`/api/timeline/${code}`)
+            fetch(`/api/timeline/${code}?t=${Date.now()}`) // Cache busting
           ]);
           
           if (displayResponse.ok) {
@@ -637,6 +817,19 @@ export default function AdminDashboard() {
         throw new Error(`Failed to send command: ${errorMsg}`);
       }
       
+      // Handle stop command - mark display as stopped
+      if (type === 'stop') {
+        setStoppedDisplays(prev => new Set(prev).add(displayId));
+        console.log(`🛑 Display ${displayId} stopped and reset`);
+      } else if (type === 'play') {
+        // Remove from stopped state when playing
+        setStoppedDisplays(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(displayId);
+          return newSet;
+        });
+      }
+      
       console.log(`✅ Command sent: ${type} to ${displayId}`);
     } catch (err) {
       console.error('Error sending command:', err);
@@ -674,27 +867,30 @@ export default function AdminDashboard() {
   };
 
   // Handle drag end for playlist blocks
-  const handleDragEnd = (event: any) => {
+  const handleDragEnd = (event: any, displayId: string) => {
     const { active, over } = event;
     
-    if (active.id !== over.id && selectedDisplay?.progress) {
+    if (active.id !== over.id) {
+      // Find the display
+      const display = displays.find(d => d.id === displayId);
+      if (!display?.progress) return;
+      
       // Extract index from the unique key format "name-index"
       const activeIndex = parseInt(active.id.split('-').pop() || '0');
       const overIndex = parseInt(over.id.split('-').pop() || '0');
       
       if (activeIndex !== -1 && overIndex !== -1) {
-        const newBlocks = arrayMove(selectedDisplay.progress.blocks, activeIndex, overIndex);
+        const newBlocks = arrayMove(display.progress.blocks, activeIndex, overIndex);
         
-        setSelectedDisplay({
-          ...selectedDisplay,
-          progress: {
-            ...selectedDisplay.progress,
-            blocks: newBlocks
-          }
-        });
+        // Update local state for immediate UI feedback
+        setDisplays(prev => prev.map(d => 
+          d.id === displayId && d.progress
+            ? { ...d, progress: { ...d.progress, blocks: newBlocks } }
+            : d
+        ));
         
         // TODO: Save the new order to the server
-        console.log('New block order:', newBlocks.map((b: any, index: number) => `${index}: ${b.name}`));
+        console.log('New block order for display', displayId, ':', newBlocks.map((b: any, index: number) => `${index}: ${b.name}`));
       }
     }
   };
@@ -705,68 +901,270 @@ export default function AdminDashboard() {
   };
 
   // Handle block save
-  const handleBlockSave = (updatedBlock: any) => {
-    if (selectedDisplay?.progress && editingBlock?.blockIndex !== undefined) {
-      const newBlocks = selectedDisplay.progress.blocks.map((block: any, index: number) => 
-        index === editingBlock.blockIndex ? { ...block, ...updatedBlock } : block
-      );
+  const handleBlockSave = async (blockIndex: number, updatedBlock: any) => {
+    try {
+      // Find the display and block to get the block ID
+      const display = displays.find(d => d.progress?.blocks?.[blockIndex]);
+      if (!display?.progress?.blocks?.[blockIndex]) {
+        console.error('Block not found at index:', blockIndex);
+        return;
+      }
       
-      setSelectedDisplay({
-        ...selectedDisplay,
-        progress: {
-          ...selectedDisplay.progress,
-          blocks: newBlocks
-        }
+      const block = display.progress.blocks[blockIndex];
+      if (!block.id) {
+        console.error('Block ID not found for block:', block);
+        return;
+      }
+      
+      console.log('Saving block changes:', {
+        blockId: block.id,
+        blockIndex,
+        updates: updatedBlock
       });
       
-      // TODO: Save to server
-      console.log('Updated block:', updatedBlock);
+      // Make API call to update the block
+      const response = await fetch(`/api/playlists/blocks/${block.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          search_term: updatedBlock.searchTerm,
+          video_count: updatedBlock.videoCount,
+          format: updatedBlock.format
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Failed to save block:', errorData);
+        return;
+      }
+      
+      console.log('Block saved successfully');
+      
+      // Refresh displays immediately to show updated data
+      console.log('Refreshing displays to show updated block...');
+      await fetchDisplays();
+      console.log('Displays refreshed - block changes should now be visible');
+    } catch (error) {
+      console.error('Error saving block:', error);
     }
-    
-    setEditingBlock(null);
   };
 
   // Handle block delete
-  const handleBlockDelete = (block: any, blockIndex: number) => {
-    if (selectedDisplay?.progress) {
-      const newBlocks = selectedDisplay.progress.blocks.filter((b: any, index: number) => index !== blockIndex);
-      
-      setSelectedDisplay({
-        ...selectedDisplay,
-        progress: {
-          ...selectedDisplay.progress,
-          blocks: newBlocks
-        }
-      });
-      
-      // TODO: Save to server
-      console.log('Deleted block:', block.name, 'at index:', editingBlock.blockIndex);
-    }
+  const handleBlockDelete = (blockIndex: number) => {
+    // TODO: Implement API call to delete block
+    console.log('Deleted block at index:', blockIndex);
+    
+    // Refresh displays to get updated data
+    fetchDisplays();
   };
 
   // Handle adding new block
-  const handleAddBlock = (displayId: string) => {
-    setSelectedDisplayForBlock(displayId);
-    setShowAddBlockModal(true);
+  const handleAddBlock = (displayId: string, position?: number) => {
+    setAddingBlockToDisplay(displayId);
+    setAddingBlockAtPosition(position || null);
   };
 
   // Handle saving new block
   const handleSaveNewBlock = async (blockData: any) => {
-    if (!selectedDisplayForBlock) return;
+    if (!addingBlockToDisplay) return;
     
     try {
-      // TODO: Implement API call to add block to playlist
-      console.log('Adding new block:', blockData, 'to display:', selectedDisplayForBlock);
+      // Find the display to get its active playlist
+      const display = displays.find(d => d.id === addingBlockToDisplay);
+      if (!display || !display.progress) {
+        console.error('Display or progress not found');
+        return;
+      }
+
+      // Get the active playlist ID from the timeline progress
+      const timelineResponse = await fetch(`/api/timeline/${display.id}?t=${Date.now()}`);
+      const timelineData = await timelineResponse.json();
       
-      // For now, just close the modal
-      setShowAddBlockModal(false);
-      setSelectedDisplayForBlock(null);
+      if (!timelineData.playlistId) {
+        console.error('No active playlist found for display');
+        return;
+      }
+
+      // Call the API to add the block
+      const response = await fetch('/api/playlists/blocks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          playlistId: timelineData.playlistId,
+          searchTerm: blockData.searchTerm,
+          videoCount: blockData.videoCount,
+          format: blockData.format,
+          position: addingBlockAtPosition || 0
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add block');
+      }
+
+      console.log('✅ Successfully added new block:', blockData);
       
-      // Refresh displays to get updated data
-      fetchDisplays();
+      // Close the inline form
+      setAddingBlockToDisplay(null);
+      setAddingBlockAtPosition(null);
+      
+      // Refresh displays to show the new block
+      await fetchDisplays();
     } catch (err) {
       console.error('Error adding block:', err);
       setError(err instanceof Error ? err.message : 'Failed to add block');
+      // Still close the form even if there was an error
+      setAddingBlockToDisplay(null);
+      setAddingBlockAtPosition(null);
+    }
+  };
+
+  // Handle canceling new block
+  const handleCancelNewBlock = () => {
+    setAddingBlockToDisplay(null);
+    setAddingBlockAtPosition(null);
+  };
+
+  // Handle exporting playlist as CSV
+  const handleExportPlaylist = (display: DisplayWithProgress) => {
+    if (!display.progress?.blocks) {
+      console.error('No blocks to export');
+      return;
+    }
+
+    // Create CSV content
+    const headers = ['Search Term', 'Video Count', 'Format', 'Block Order'];
+    const rows = display.progress.blocks.map((block, index) => [
+      block.name, // search term
+      block.videoCount || 0,
+      block.format || 'mixed',
+      index + 1
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${display.name}_playlist_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    console.log(`Exported playlist for ${display.name} with ${display.progress.blocks.length} blocks`);
+  };
+
+  // Handle importing playlist from CSV
+  const handleImportPlaylist = (displayId: string) => {
+    setImportingToDisplay(displayId);
+    
+    // Create file input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        handleFileImport(file, displayId);
+      }
+      setImportingToDisplay(null);
+    };
+    input.click();
+  };
+
+  // Handle file import
+  const handleFileImport = async (file: File, displayId: string) => {
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        throw new Error('CSV file must have at least a header row and one data row');
+      }
+
+      // Parse CSV
+      const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+      const blocks: BlockDefinition[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.replace(/"/g, '').trim());
+        
+        if (values.length < 2) continue; // Skip incomplete rows
+
+        const block: BlockDefinition = {
+          searchTerm: values[0] || '',
+          videoCount: parseInt(values[1]) || 10,
+          fetchMode: 'random', // Default fetch mode
+          format: (values[2] as 'mixed' | 'wide' | 'tall') || 'mixed'
+        };
+
+        if (block.searchTerm) {
+          blocks.push(block);
+        }
+      }
+
+      if (blocks.length === 0) {
+        throw new Error('No valid blocks found in CSV file');
+      }
+
+      console.log(`Importing ${blocks.length} blocks for display ${displayId}:`, blocks);
+
+      // Call API to import playlist
+      const response = await fetch('/api/playlists/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          displayId,
+          blocks,
+          playlistName: `Imported Playlist ${new Date().toLocaleDateString()}`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to import playlist');
+      }
+
+      const result = await response.json();
+      console.log('Import successful:', result);
+      
+      // Refresh displays to show the new playlist
+      await fetchDisplays();
+      
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      setError(error instanceof Error ? error.message : 'Failed to import CSV');
+    }
+  };
+
+  // Handle stop confirmation
+  const handleStopConfirm = async () => {
+    if (!displayToStop) return;
+    
+    try {
+      await sendCommand(displayToStop.id, 'stop');
+      setShowStopModal(false);
+      setDisplayToStop(null);
+      
+      // Refresh displays to get updated counts after stop
+      setTimeout(() => {
+        fetchDisplays();
+      }, 500); // Small delay to ensure database changes are committed
+    } catch (err) {
+      console.error('Error stopping display:', err);
+      setError(err instanceof Error ? err.message : 'Failed to stop display');
     }
   };
 
@@ -781,8 +1179,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchDisplays();
     
-    // Refresh every 30 seconds (less frequent since WebSocket provides real-time updates)
-    const interval = setInterval(fetchDisplays, 30000);
+    // Refresh every 10 seconds (less frequent since WebSocket provides real-time updates)
+    const interval = setInterval(fetchDisplays, 10000);
     return () => clearInterval(interval);
   }, [wsConnected]);
 
@@ -916,6 +1314,26 @@ export default function AdminDashboard() {
               </div>
             </div>
             
+            {/* Consolidated Stats Widget */}
+            <div className="hidden md:flex items-center gap-6">
+              <div className="flex items-center gap-4 bg-white/80 backdrop-blur-sm rounded-xl px-4 py-2 shadow-sm border border-gray-200">
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-gray-700">{stats.total}</span>
+                </div>
+                <div className="w-px h-4 bg-gray-300"></div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-sm font-medium text-gray-700">{stats.online}</span>
+                </div>
+                <div className="w-px h-4 bg-gray-300"></div>
+                <div className="flex items-center gap-2">
+                  <Play className="w-4 h-4 text-purple-600" />
+                  <span className="text-sm font-medium text-gray-700">{stats.playing}</span>
+                </div>
+              </div>
+            </div>
+            
             <div className="relative">
               <button
                 onClick={() => setShowAddDropdown(!showAddDropdown)}
@@ -967,60 +1385,28 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/* Stats Cards - Mobile First */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"
-          >
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Monitor className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-3">
-                <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
-                <div className="text-sm text-gray-600">Total Displays</div>
-              </div>
-            </div>
-          </motion.div>
-          
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"
-          >
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              </div>
-              <div className="ml-3">
-                <div className="text-2xl font-bold text-gray-900">{stats.online}</div>
-                <div className="text-sm text-gray-600">Online</div>
-              </div>
-            </div>
-          </motion.div>
-          
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="bg-white rounded-xl shadow-sm border border-gray-200 p-4"
-          >
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Play className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="ml-3">
-                <div className="text-2xl font-bold text-gray-900">{stats.playing}</div>
-                <div className="text-sm text-gray-600">Playing</div>
-              </div>
-            </div>
-          </motion.div>
+      {/* Mobile Stats Widget */}
+      <div className="md:hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="flex items-center justify-center gap-6 bg-white/80 backdrop-blur-sm rounded-xl px-4 py-3 shadow-sm border border-gray-200">
+          <div className="flex items-center gap-2">
+            <Monitor className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-medium text-gray-700">{stats.total}</span>
+          </div>
+          <div className="w-px h-4 bg-gray-300"></div>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span className="text-sm font-medium text-gray-700">{stats.online}</span>
+          </div>
+          <div className="w-px h-4 bg-gray-300"></div>
+          <div className="flex items-center gap-2">
+            <Play className="w-4 h-4 text-purple-600" />
+            <span className="text-sm font-medium text-gray-700">{stats.playing}</span>
+          </div>
         </div>
+      </div>
 
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Error message */}
         {error && (
           <motion.div
@@ -1070,7 +1456,7 @@ export default function AdminDashboard() {
           </motion.div>
         ) : (
           /* Displays Grid - Mobile First */
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {displays.map((display, index) => (
               <motion.div
                 key={display.id}
@@ -1123,12 +1509,25 @@ export default function AdminDashboard() {
                       <h4 className="font-semibold text-gray-900">Playlist Blocks</h4>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleAddBlock(display.id)}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors"
-                          title="Add New Block"
+                          onClick={() => handleExportPlaylist(display)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
+                          title="Export Playlist as CSV"
                         >
-                          <Plus className="w-3 h-3" />
-                          Add Block
+                          <Download className="w-3 h-3" />
+                          Export
+                        </button>
+                        <button
+                          onClick={() => handleImportPlaylist(display.id)}
+                          disabled={importingToDisplay === display.id}
+                          className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                            importingToDisplay === display.id
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
+                          }`}
+                          title="Import Playlist from CSV"
+                        >
+                          <Upload className={`w-3 h-3 ${importingToDisplay === display.id ? 'animate-pulse' : ''}`} />
+                          {importingToDisplay === display.id ? 'Importing...' : 'Import'}
                         </button>
                         <button
                           onClick={() => toggleSection(`playlist-${display.id}`)}
@@ -1191,40 +1590,77 @@ export default function AdminDashboard() {
                           <DndContext
                             sensors={sensors}
                             collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
+                            onDragEnd={(event) => handleDragEnd(event, display.id)}
                           >
                             <SortableContext
                               items={display.progress.blocks.map((block: any, index: number) => `${block.name}-${index}`)}
                               strategy={verticalListSortingStrategy}
                             >
                               <div className="space-y-3">
-                                {display.progress.blocks.map((block: any, blockIndex: number) => (
-                                  <div key={`${block.name}-${blockIndex}`}>
-                                    {editingBlock?.blockIndex === blockIndex ? (
-                                      <BlockEditor
-                                        block={block}
-                                        onSave={handleBlockSave}
-                                        onCancel={() => setEditingBlock(null)}
+                                {/* Add Block Button/Form - Always first */}
+                                {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
+                                  <div>
+                                    {addingBlockToDisplay === display.id ? (
+                                      <InlineAddBlock
+                                        onSave={handleSaveNewBlock}
+                                        onCancel={handleCancelNewBlock}
                                       />
                                     ) : (
-                                      <SortableBlock
-                                        block={{
-                                          ...block,
-                                          id: `${block.name}-${blockIndex}`,
-                                          isActive: block.isActive, // Use the isActive value from the API
-                                          isCompleted: block.isCompleted, // Use the isCompleted value from the API
-                                          currentVideo: block.isActive ? display.progress?.currentBlock?.currentVideo : undefined,
-                                          totalVideos: block.videoCount,
-                                          progress: block.isActive ? display.progress?.currentBlock?.progress : undefined
-                                        }}
-                                        isActive={block.isActive} // Use the isActive value from the API
-                                        isCompleted={block.isCompleted} // Use the isCompleted value from the API
-                                        onEdit={(block) => handleBlockEdit(block, blockIndex)}
-                                        onDelete={(block) => handleBlockDelete(block, blockIndex)}
-                                      />
+                                      <button
+                                        onClick={() => handleAddBlock(display.id, 0)}
+                                        className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors group"
+                                      >
+                                        <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-gray-700">
+                                          <Plus className="w-4 h-4" />
+                                          <span className="text-sm font-medium">Add Block</span>
+                                        </div>
+                                      </button>
                                     )}
                                   </div>
-                                ))}
+                                )}
+
+                                {display.progress.blocks.map((block: any, blockIndex: number) => {
+                                  const isStopped = stoppedDisplays.has(display.id) || display.playback_state === 'idle';
+                                  
+                                  return (
+                                    <div key={`${block.name}-${blockIndex}`}>
+                                      {/* Show inline add block form at the specified position */}
+                                      {addingBlockToDisplay === display.id && addingBlockAtPosition === blockIndex + 1 && (
+                                        <InlineAddBlock
+                                          onSave={handleSaveNewBlock}
+                                          onCancel={handleCancelNewBlock}
+                                        />
+                                      )}
+                                      
+                                      {isStopped ? (
+                                        <InlineEditableBlock
+                                          block={block}
+                                          blockIndex={blockIndex}
+                                          onSave={handleBlockSave}
+                                          onDelete={handleBlockDelete}
+                                        />
+                                      ) : (
+                                        <SortableBlock
+                                          block={{
+                                            ...block,
+                                            id: `${block.name}-${blockIndex}`,
+                                            isActive: block.isActive, // Use the isActive value from the API
+                                            isCompleted: block.isCompleted, // Use the isCompleted value from the API
+                                            currentVideo: block.isActive ? display.progress?.currentBlock?.currentVideo : undefined,
+                                            totalVideos: block.videoCount || block.video_count,
+                                            videoCount: block.videoCount || block.video_count, // Ensure videoCount is available
+                                            progress: block.isActive ? display.progress?.currentBlock?.progress : undefined
+                                          }}
+                                          isActive={block.isActive} // Use the isActive value from the API
+                                          isCompleted={block.isCompleted} // Use the isCompleted value from the API
+                                          onEdit={() => {}} // Disabled when playing
+                                          onDelete={() => {}} // Disabled when playing
+                                          showEditButtons={false} // Hide edit buttons when playing
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </SortableContext>
                           </DndContext>
@@ -1282,7 +1718,8 @@ export default function AdminDashboard() {
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: index * 0.1 }}
-                                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group relative"
+                                title={videoData?.post?.text || 'No description available'}
                               >
                                 <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-sm font-medium text-blue-600">
                                   {index + 1}
@@ -1295,9 +1732,11 @@ export default function AdminDashboard() {
                                     {videoData?.post?.text || 'No description available'}
                                   </div>
                                 </div>
-                                <div className="text-xs text-gray-500">
-                                  {videoData?.post?.duration ? `${Math.round(videoData.post.duration)}s` : 'N/A'}
-                                </div>
+                                {videoData?.post?.duration && (
+                                  <div className="text-xs text-gray-500">
+                                    {Math.round(videoData.post.duration)}s
+                                  </div>
+                                )}
                               </motion.div>
                             );
                           });
@@ -1309,56 +1748,30 @@ export default function AdminDashboard() {
 
                 {/* Controls - Mobile Optimized */}
                 <div className="p-4 bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => sendCommand(display.id, display.is_playing ? 'pause' : 'play')}
-                        className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
-                        disabled={!display.isOnline}
-                      >
-                        {display.is_playing ? 
-                          <Pause className="w-4 h-4 text-blue-600" /> : 
-                          <Play className="w-4 h-4 text-blue-600" />
-                        }
-                      </button>
-                      
-                      <button
-                        onClick={() => sendCommand(display.id, 'next')}
-                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                        disabled={!display.isOnline}
-                      >
-                        <SkipForward className="w-4 h-4 text-gray-600" />
-                      </button>
-                      
-                      <button
-                        onClick={() => sendCommand(display.id, 'mute')}
-                        className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                        disabled={!display.isOnline}
-                      >
-                        <VolumeX className="w-4 h-4 text-gray-600" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => window.open(`/player/${display.id}`, '_blank')}
-                        className="p-2 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
-                        title="View Display"
-                      >
-                        <Eye className="w-4 h-4 text-green-600" />
-                      </button>
-                      
-                      <button
-                        onClick={() => {
-                          setDisplayToDelete(display);
-                          setShowDeleteModal(true);
-                        }}
-                        className="p-2 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
-                        title="Delete Display"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-600" />
-                      </button>
-                    </div>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={() => sendCommand(display.id, display.is_playing ? 'pause' : 'play')}
+                      className="p-2 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+                      disabled={!display.isOnline}
+                      title={display.is_playing ? 'Pause' : 'Play'}
+                    >
+                      {display.is_playing ? 
+                        <Pause className="w-4 h-4 text-blue-600" /> : 
+                        <Play className="w-4 h-4 text-blue-600" />
+                      }
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        setDisplayToStop(display);
+                        setShowStopModal(true);
+                      }}
+                      className="p-2 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+                      disabled={!display.isOnline}
+                      title="Stop & Reset"
+                    >
+                      <Square className="w-4 h-4 text-red-600" />
+                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -1367,21 +1780,6 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      {/* Footer */}
-      <footer className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 border-t border-gray-200 mt-12">
-        <div className="flex flex-col sm:flex-row items-center justify-between text-sm text-gray-500 gap-4">
-          <div>
-            SoraFeed Admin • Dual-sided video display management
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <span>Database Connected</span>
-            </div>
-            <div>Auto-refresh: 5s</div>
-          </div>
-        </div>
-      </footer>
 
       {/* Modals remain the same but with updated styling */}
       {/* Create Display Modal */}
@@ -1573,8 +1971,9 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Add Block Modal */}
-      {showAddBlockModal && (
+
+      {/* Stop Confirmation Modal */}
+      {showStopModal && displayToStop && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -1582,22 +1981,55 @@ export default function AdminDashboard() {
             className="bg-white rounded-xl p-6 w-full max-w-md"
           >
             <div className="flex items-center mb-4">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                <Plus className="w-5 h-5 text-green-600" />
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                <Square className="w-6 h-6 text-red-600" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Add New Block</h3>
-                <p className="text-sm text-gray-500">Add a new video block to the playlist</p>
+                <h3 className="text-lg font-semibold text-gray-900">Stop & Reset Display</h3>
+                <p className="text-sm text-gray-500">This will clear all playback data</p>
               </div>
             </div>
             
-            <AddBlockForm
-              onSave={handleSaveNewBlock}
-              onCancel={() => {
-                setShowAddBlockModal(false);
-                setSelectedDisplayForBlock(null);
-              }}
-            />
+            <div className="mb-6">
+              <p className="text-gray-700 mb-2">
+                Are you sure you want to stop <strong>{displayToStop.name}</strong>?
+              </p>
+              <p className="text-sm text-gray-500 mb-2">
+                Code: <code className="bg-gray-100 px-2 py-1 rounded font-mono">{displayToStop.id}</code>
+              </p>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-sm text-yellow-800">
+                  <strong>⚠️ This will reset:</strong>
+                </p>
+                <ul className="text-sm text-yellow-700 mt-1 ml-4 list-disc">
+                  <li>Current playback position</li>
+                  <li>Video queue and timeline</li>
+                  <li>Block play counters</li>
+                  <li>Watched video history</li>
+                </ul>
+                <p className="text-sm text-yellow-800 mt-2">
+                  You can then edit the playlist and start fresh.
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowStopModal(false);
+                  setDisplayToStop(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStopConfirm}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg hover:from-red-700 hover:to-pink-700 transition-all duration-200"
+              >
+                Stop & Reset
+              </button>
+            </div>
           </motion.div>
         </div>
       )}

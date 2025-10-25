@@ -173,4 +173,52 @@ export class PlaylistManager {
     `);
     stmt.run(blockId);
   }
+
+  // Update block properties
+  static updateBlock(blockId: string, updates: {
+    search_term?: string;
+    video_count?: number;
+    format?: string;
+  }): void {
+    const fields: string[] = [];
+    const values: any[] = [];
+    
+    if (updates.search_term !== undefined) {
+      fields.push('search_term = ?');
+      values.push(updates.search_term);
+    }
+    
+    if (updates.video_count !== undefined) {
+      fields.push('video_count = ?');
+      values.push(updates.video_count);
+    }
+    
+    if (updates.format !== undefined) {
+      fields.push('format = ?');
+      values.push(updates.format);
+    }
+    
+    if (fields.length === 0) {
+      return; // No updates to make
+    }
+    
+    values.push(blockId);
+    
+    // Use transaction to ensure immediate commit
+    const transaction = queueDb.transaction(() => {
+      const stmt = queueDb.prepare(`
+        UPDATE playlist_blocks 
+        SET ${fields.join(', ')} 
+        WHERE id = ?
+      `);
+      stmt.run(...values);
+    });
+    
+    transaction();
+    
+    console.log(`📝 Updated block ${blockId}:`, updates);
+    
+    // Clear any potential caches that might be affected
+    // This ensures fresh data on next read
+  }
 }

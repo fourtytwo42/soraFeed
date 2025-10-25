@@ -79,7 +79,7 @@ export function initQueueDatabase() {
       playlist_id TEXT NOT NULL,
       search_term TEXT NOT NULL,
       video_count INTEGER NOT NULL,
-      fetch_mode TEXT DEFAULT 'newest',
+      fetch_mode TEXT DEFAULT 'random',
       format TEXT DEFAULT 'mixed',
       block_order INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

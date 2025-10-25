@@ -5,9 +5,9 @@ import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
 import { v4 as uuidv4 } from 'uuid';
 
-// Cache for database counts (1 hour TTL)
+// Cache for database counts (2 hour TTL)
 const dbCountCache = new Map<string, { count: number; timestamp: number }>();
-const CACHE_TTL = 60 * 60 * 1000; // 1 hour in milliseconds
+const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds - longer cache to reduce DB load
 
 // Helper function to get cached database count
 async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
@@ -16,12 +16,50 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
   
   // Return cached value if still valid
   if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+    console.log(`💾 Using cached count for "${searchTerm}": ${cached.count} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s)`);
     return cached.count;
   }
+
+  if (cached) {
+    console.log(`⏰ Cache expired for "${searchTerm}" (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s), fetching fresh data`);
+  } else {
+    console.log(`🆕 No cache found for "${searchTerm}", fetching from database`);
+  }
+
+  // Add debugging for all search terms
+  console.log(`🔍 Processing search term: "${searchTerm}" (length: ${searchTerm.length})`);
+
+  // Only skip extremely short terms (1-2 characters)
+  if (searchTerm.length < 2) {
+    console.log(`⚠️ Skipping very short search term "${searchTerm}", using default count of 50`);
+    return 50;
+  }
+
+  // Only skip the most common single words that would be extremely expensive
+  const veryCommonWords = ['the', 'and', 'a', 'an'];
+  if (veryCommonWords.includes(searchTerm.toLowerCase()) && searchTerm.split(/\s+/).length === 1) {
+    console.log(`⚠️ Skipping very common word "${searchTerm}", using default count of 100`);
+    return 100;
+  }
+
+  // Only skip extremely complex queries (more than 10 words or very long)
+  const wordCount = searchTerm.trim().split(/\s+/).length;
+  if (wordCount > 10 || searchTerm.length > 200) {
+    console.log(`⚠️ Skipping extremely complex search term "${searchTerm}" (${wordCount} words), using default count of 200`);
+    return 200;
+  }
+
+  console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
   
   // Fetch from database and cache
   try {
-    const client = await getClient();
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Database query timeout')), 25000); // 25 second timeout
+    });
+    
+    const clientPromise = getClient();
+    const client = await Promise.race([clientPromise, timeoutPromise]);
     
     // Parse search query to separate include and exclude terms
     const parseSearchQuery = (searchQuery: string) => {
@@ -55,36 +93,59 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
       formatClause = ' AND p.height > p.width';
     }
 
-    // Build exclude conditions
+    // Build exclude conditions - optimized with ILIKE
     let excludeConditions = '';
     if (excludeTerms.length > 0) {
       excludeConditions = excludeTerms.map((term, index) => 
-        `AND LOWER(COALESCE(p.text, '')) NOT LIKE LOWER('%${term}%')`
+        `AND p.text NOT ILIKE '%${term}%'`
       ).join(' ');
     }
 
-    // Count total matching videos
+    // Comprehensive count query - multiple search methods with format filtering
     const countQuery = `
       SELECT COUNT(*) as total_count
       FROM sora_posts p
-      JOIN creators c ON p.creator_id = c.id
       WHERE (
-        -- Full-text search match
+        -- Exact phrase match (most common case)
+        p.text ILIKE '%' || $1 || '%'
+        OR
+        -- Full-text search for better matching
         to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
-        OR
-        -- Exact phrase match
-        LOWER(COALESCE(p.text, '')) LIKE LOWER('%' || $1 || '%')
-        OR
-        -- Word boundary match for single words
-        (LOWER(COALESCE(p.text, '')) ~ LOWER('\\m' || $1 || '\\M') 
-         AND LENGTH($1) - LENGTH(REPLACE($1, ' ', '')) = 0)
       )
       ${formatClause}
       ${excludeConditions}
     `;
 
-    const countResult = await client.query(countQuery, [includeQuery]);
+    // Add debugging
+    console.log(`🔍 Debug query for "${searchTerm}":`, {
+      includeQuery,
+      format,
+      formatClause,
+      excludeConditions,
+      fullQuery: countQuery
+    });
+
+    // Test query without format filtering to see if that's the issue
+    const testQuery = `
+      SELECT COUNT(*) as total_count
+      FROM sora_posts p
+      WHERE p.text ILIKE '%' || $1 || '%'
+    `;
+    const testResult = await client.query(testQuery, [includeQuery]);
+    const testCount = parseInt(testResult.rows[0].total_count);
+    console.log(`🧪 Test query (no format filter) for "${searchTerm}": ${testCount} videos found`);
+
+    // Add timeout to query execution
+    const queryPromise = client.query(countQuery, [includeQuery]);
+    const queryTimeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Query execution timeout')), 20000); // 20 second timeout
+    });
+    
+    const countResult = await Promise.race([queryPromise, queryTimeoutPromise]);
     const totalCount = parseInt(countResult.rows[0].total_count);
+    
+    console.log(`📊 Query result for "${searchTerm}": ${totalCount} videos found (with format: ${format})`);
+    console.log(`🧪 Test query (no format filter) for "${searchTerm}": ${testCount} videos found`);
     
     // Cache the result
     dbCountCache.set(cacheKey, { count: totalCount, timestamp: Date.now() });
@@ -92,8 +153,17 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     return totalCount;
   } catch (error) {
     console.error(`Error fetching cached count for ${searchTerm}:`, error);
-    // Return cached value even if expired, or 0 if no cache
-    return cached ? cached.count : 0;
+    
+    // If we have a cached value (even if expired), return it as fallback
+    const cached = dbCountCache.get(cacheKey);
+    if (cached) {
+      console.log(`🔄 Using expired cache for ${searchTerm}: ${cached.count}`);
+      return cached.count;
+    }
+    
+    // Return a reasonable default if no cache available
+    console.log(`⚠️ No cache available for ${searchTerm}, using default count of 100`);
+    return 100;
   }
 }
 
@@ -732,15 +802,14 @@ export class QueueManager {
           // Query SQLite for watched videos count (always fresh)
           let seenCount = 0;
           try {
-            // Get watched video IDs for this search term from SQLite
+            // Get watched video IDs for this search term and display from SQLite
             const watchedVideosStmt = queueDb.prepare(`
               SELECT DISTINCT vh.video_id 
               FROM video_history vh
-              JOIN timeline_videos tv ON vh.video_id = tv.video_id
-              JOIN playlist_blocks pb ON tv.block_id = pb.id
-              WHERE pb.search_term = ?
+              JOIN playlist_blocks pb ON vh.block_id = pb.id
+              WHERE pb.search_term = ? AND vh.display_id = ?
             `);
-            const watchedVideos = watchedVideosStmt.all(block.search_term);
+            const watchedVideos = watchedVideosStmt.all(block.search_term, displayId);
             seenCount = watchedVideos.length;
           } catch (error) {
             console.error(`Error querying SQLite for watched videos:`, error);
@@ -748,6 +817,7 @@ export class QueueManager {
           }
           
           return {
+            id: block.id,
             name: block.search_term,
             videoCount: block.video_count,
             isActive: index === blockIndex,
@@ -760,6 +830,7 @@ export class QueueManager {
         } catch (error) {
           console.error(`Error fetching counts for block ${block.search_term}:`, error);
           return {
+            id: block.id,
             name: block.search_term,
             videoCount: block.video_count,
             isActive: index === blockIndex,

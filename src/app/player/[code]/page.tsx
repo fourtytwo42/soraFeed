@@ -198,12 +198,32 @@ export default function VMPlayer() {
         });
       }
       
-      // Process non-playback commands (like 'next')
+      // Process non-playback commands (like 'next', 'stop')
       if (data.commands && data.commands.length > 0) {
         data.commands.forEach((command: any) => {
           if (command.type === 'next') {
             console.log('⏭️ Next video command received');
             handleVideoEnd();
+          } else if (command.type === 'stop') {
+            console.log('🛑 Stop command received - resetting display state');
+            // Reset all state
+            setVMState({
+              currentVideo: null,
+              currentTimelineVideo: null,
+              displayName: vmState.displayName,
+              error: null,
+              isConnected: vmState.isConnected,
+              hasActivePlaylist: false
+            });
+            setPlaybackState({
+              state: 'idle',
+              isPlaying: false,
+              isMuted: true,
+              videoPosition: 0,
+              lastStateChange: new Date().toISOString()
+            });
+            setVideoProgress({ currentTime: 0, duration: 0 });
+            stopVideoProgressTracking();
           }
         });
       }

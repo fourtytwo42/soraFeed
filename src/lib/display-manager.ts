@@ -194,6 +194,47 @@ export class DisplayManager {
     });
   }
 
+  static stopDisplay(displayId: string): void {
+    const transaction = queueDb.transaction(() => {
+      // Reset display playback state
+      const displayStmt = queueDb.prepare(`
+        UPDATE displays 
+        SET playback_state = 'idle', is_playing = false, current_position = 0, 
+            timeline_position = 0, current_video_id = NULL, current_block_id = NULL,
+            video_position = 0, last_state_change = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      displayStmt.run(displayId);
+
+      // Clear all timeline videos for this display
+      const timelineStmt = queueDb.prepare(`
+        DELETE FROM timeline_videos WHERE display_id = ?
+      `);
+      timelineStmt.run(displayId);
+
+      // Clear video history for this display
+      const historyStmt = queueDb.prepare(`
+        DELETE FROM video_history WHERE display_id = ?
+      `);
+      historyStmt.run(displayId);
+
+      // Reset block play statistics
+      const blockStatsStmt = queueDb.prepare(`
+        UPDATE playlist_blocks 
+        SET times_played = 0 
+        WHERE id IN (
+          SELECT pb.id FROM playlist_blocks pb
+          JOIN playlists p ON pb.playlist_id = p.id
+          WHERE p.display_id = ?
+        )
+      `);
+      blockStatsStmt.run(displayId);
+    });
+
+    transaction();
+    console.log(`🛑 Display ${displayId} stopped - all state reset`);
+  }
+
   static muteDisplay(displayId: string): void {
     this.updatePlaybackState(displayId, {
       is_muted: true

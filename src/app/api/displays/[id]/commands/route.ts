@@ -48,6 +48,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           );
         }
         break;
+      case 'stop':
+        // Stop command - clear queue and reset stats
+        DisplayManager.stopDisplay(id);
+        break;
       case 'next':
       case 'previous':
       case 'playVideo':

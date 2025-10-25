@@ -76,6 +76,7 @@ export interface TimelineProgress {
     totalVideos: number;
   };
   blocks: Array<{
+    id: string;
     name: string;
     videoCount: number;
     isActive: boolean;
@@ -93,7 +94,7 @@ export interface TimelineProgress {
 }
 
 export interface DisplayCommand {
-  type: 'play' | 'pause' | 'next' | 'previous' | 'seek' | 'playVideo' | 'mute' | 'unmute';
+  type: 'play' | 'pause' | 'next' | 'previous' | 'seek' | 'playVideo' | 'mute' | 'unmute' | 'stop';
   payload?: {
     position?: number;
     videoId?: string;

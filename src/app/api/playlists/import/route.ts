@@ -3,14 +3,14 @@ import { PlaylistManager } from '@/lib/playlist-manager';
 import { QueueManager } from '@/lib/queue-manager';
 import { BlockDefinition } from '@/types/timeline';
 
-// POST /api/playlists - Create new playlist
+// POST /api/playlists/import - Import playlist from CSV data
 export async function POST(request: NextRequest) {
   try {
-    const { displayId, name, blocks } = await request.json();
+    const { displayId, blocks, playlistName } = await request.json();
     
-    if (!displayId || !name || !blocks || !Array.isArray(blocks)) {
+    if (!displayId || !blocks || !Array.isArray(blocks)) {
       return NextResponse.json(
-        { error: 'displayId, name, and blocks are required' },
+        { error: 'displayId and blocks are required' },
         { status: 400 }
       );
     }
@@ -18,10 +18,8 @@ export async function POST(request: NextRequest) {
     // Validate blocks
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
-      console.log(`Validating block ${i}:`, block);
       
       if (!block.searchTerm || typeof block.searchTerm !== 'string' || block.searchTerm.trim() === '') {
-        console.log(`Block ${i} validation failed: invalid searchTerm`);
         return NextResponse.json(
           { error: `Block ${i + 1}: Search term is required and cannot be empty` },
           { status: 400 }
@@ -29,7 +27,6 @@ export async function POST(request: NextRequest) {
       }
       
       if (!block.videoCount || typeof block.videoCount !== 'number' || block.videoCount < 1) {
-        console.log(`Block ${i} validation failed: invalid videoCount`);
         return NextResponse.json(
           { error: `Block ${i + 1}: Video count must be a number greater than 0` },
           { status: 400 }
@@ -38,9 +35,7 @@ export async function POST(request: NextRequest) {
       
       if (!block.fetchMode) {
         block.fetchMode = 'random'; // Default to random
-        console.log(`Block ${i}: Set default fetchMode to 'random'`);
       } else if (!['newest', 'random'].includes(block.fetchMode)) {
-        console.log(`Block ${i} validation failed: invalid fetchMode`);
         return NextResponse.json(
           { error: `Block ${i + 1}: Fetch mode must be 'newest' or 'random'` },
           { status: 400 }
@@ -50,9 +45,7 @@ export async function POST(request: NextRequest) {
       // Set default format if not provided
       if (!block.format) {
         block.format = 'mixed';
-        console.log(`Block ${i}: Set default format to 'mixed'`);
       } else if (!['mixed', 'wide', 'tall'].includes(block.format)) {
-        console.log(`Block ${i} validation failed: invalid format`);
         return NextResponse.json(
           { error: `Block ${i + 1}: Format must be 'mixed', 'wide', or 'tall'` },
           { status: 400 }
@@ -60,16 +53,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const playlist = PlaylistManager.createPlaylist(displayId, name, blocks as BlockDefinition[]);
+    // Create new playlist (this will overwrite any existing active playlist)
+    const playlist = PlaylistManager.createPlaylist(
+      displayId, 
+      playlistName || `Imported Playlist ${new Date().toLocaleDateString()}`, 
+      blocks as BlockDefinition[]
+    );
+    
+    // Set as active playlist
+    PlaylistManager.setActivePlaylist(displayId, playlist.id);
     
     // Populate initial timeline videos
     await QueueManager.populateTimelineVideos(displayId, playlist.id, 0);
     
-    return NextResponse.json(playlist, { status: 201 });
+    console.log(`✅ Imported playlist for display ${displayId} with ${blocks.length} blocks`);
+    
+    return NextResponse.json({ 
+      success: true, 
+      playlist,
+      message: `Successfully imported ${blocks.length} blocks` 
+    });
   } catch (error) {
-    console.error('Error creating playlist:', error);
+    console.error('Error importing playlist:', error);
     return NextResponse.json(
-      { error: 'Failed to create playlist' },
+      { error: 'Failed to import playlist' },
       { status: 500 }
     );
   }

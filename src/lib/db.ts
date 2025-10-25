@@ -18,7 +18,9 @@ async function getPool() {
         password: process.env.DB_PASSWORD || '',
         max: 20,
         idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
+        connectionTimeoutMillis: 20000, // Increased to 20 seconds
+        query_timeout: 30000, // 30 second query timeout
+        statement_timeout: 30000, // 30 second statement timeout
       });
     } catch (error) {
       console.error('Failed to load pg module:', error);
