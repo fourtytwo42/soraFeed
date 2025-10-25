@@ -14,6 +14,7 @@ interface SingleVideoPlayerProps {
   onAutoplayBlocked?: () => void;
   onVideoClick?: () => void;
   onUserInteraction: () => void;
+  onMuteToggle?: () => void;
 }
 
 // Single Video Component - memoized and OUTSIDE parent to prevent recreation
@@ -27,7 +28,8 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
   onVideoEnd,
   onAutoplayBlocked,
   onVideoClick,
-  onUserInteraction
+  onUserInteraction,
+  onMuteToggle
 }: SingleVideoPlayerProps) {
   console.log('🔄 SingleVideoPlayer rendering for:', videoData.post.id.slice(-6), 'index:', index);
   
@@ -101,7 +103,7 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
     );
   }
 
-  // Video control effect - poll-based instead of dependency-driven
+  // Video control effect - rely on autoplay attribute and poll-based for pause
   useEffect(() => {
     if (!isActive) return;
 
@@ -116,51 +118,9 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
       const shouldBePlaying = isPlayingRef.current;
       const isCurrentlyPlaying = !video.paused;
 
-      if (userHasInteracted) {
-        if (shouldBePlaying && !isCurrentlyPlaying && !playingRef.current) {
-          const now = Date.now();
-          const timeSinceLastPlay = now - lastPlayedTimeRef.current;
-          
-          // Only play if we haven't tried recently AND video isn't in a transient state
-          if (timeSinceLastPlay < 3000) {
-            // Don't try to play again within 3 seconds
-            return;
-          }
-
-          // Double-check the video isn't already playing or trying to play
-          if (video.currentTime > 0 && !video.paused && !video.ended && video.readyState > 2) {
-            // Video is actually playing, don't call play() again
-            return;
-          }
-          
-          console.log('▶️ Starting video playback:', videoData.post.id.slice(-6), {
-            currentTime: video.currentTime,
-            paused: video.paused,
-            readyState: video.readyState
-          });
-          lastPlayedTimeRef.current = now;
-          playingRef.current = true;
-          video.play().then(() => {
-            playingRef.current = false;
-            console.log('✅ Video playing successfully');
-          }).catch(err => {
-            console.error('❌ Failed to play video:', err);
-            playingRef.current = false;
-            onAutoplayBlocked?.();
-          });
-        } else if (!shouldBePlaying && isCurrentlyPlaying && !playingRef.current) {
-          console.log('⏸️ Pausing video:', videoData.post.id.slice(-6));
-          video.pause();
-        }
-      } else if (!userHasInteracted && video.paused) {
-        // Double-check sessionStorage before triggering autoplay blocked
-        // This prevents showing "Click to Play" after user has already interacted
-        const hasInteractedInSession = typeof window !== 'undefined' && 
-          sessionStorage.getItem('sorafeed-user-interacted') === 'true';
-        
-        if (!hasInteractedInSession) {
-          onAutoplayBlocked?.();
-        }
+      // Only handle pause - autoplay attribute handles playing
+      if (!shouldBePlaying && isCurrentlyPlaying && !playingRef.current) {
+        video.pause();
       }
     };
 
@@ -171,30 +131,45 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
     const interval = setInterval(checkVideoState, 500);
 
     return () => clearInterval(interval);
-  }, [isActive, userHasInteracted, videoData.post.id, onAutoplayBlocked]);
+  }, [isActive, videoData.post.id]);
 
-  // Mute control - only update if actually different
+  // Handle mute state changes - but only after initial autoplay and only when triggered by user
+  // This ref tracks if user has clicked the mute button
+  const userClickedMute = useRef(false);
+  
+  // Track when user clicks mute button
+  const handleMuteClick = () => {
+    userClickedMute.current = true;
+    onMuteToggle?.();
+  };
+  
   useEffect(() => {
     const video = videoRef.current;
-    if (video && video.muted !== isMuted) {
-      console.log('🔇 Changing mute state:', isMuted);
-      video.muted = isMuted;
+    if (video && isActive && videoLoadedRef.current) {
+      // Only apply mute state changes if user has clicked the mute button
+      if (userClickedMute.current && video.muted !== isMuted) {
+        video.muted = isMuted;
+        // If unmuting, try to play in case the video got paused
+        if (!isMuted && video.paused) {
+          video.play().catch(err => {
+            console.error('Unmuting failed:', err);
+          });
+        }
+      }
     }
-  }, [isMuted]);
+  }, [isMuted, isActive, onMuteToggle]);
+
+  // Note: Video is always muted for autoplay to work
+  // We handle unmuting when user clicks the mute button
 
   const handleVideoClick = () => {
     if (!isActive || !videoLoadedRef.current) return;
     
-    console.log('🎬 Video clicked - delegating to parent');
-    
-    if (!userHasInteracted) {
-      // First interaction
-      onUserInteraction();
-    } else {
-      // Delegate to parent component (which will update database)
-      onVideoClick?.();
-    }
+    // Just delegate to parent component (which will update database)
+    onVideoClick?.();
   };
+
+
 
   // Reset videoLoadedRef when video actually changes (not just re-renders)
   const videoIdRef = useRef(videoData.post.id);
@@ -238,6 +213,7 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
             height: videoWidth ? 'auto' : '100%'
           }}
           src={videoUrl}
+          autoPlay
           loop={false}
           playsInline
           preload="auto"
@@ -249,11 +225,15 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
             // Only mark as loaded when metadata is first loaded
             // This fires ONCE per video, unlike onCanPlay/onLoadedData
             if (!videoLoadedRef.current) {
-              console.log('🎬 Video metadata loaded:', videoData.post.id.slice(-6));
               videoLoadedRef.current = true;
-            } else {
-              console.error('🚨 METADATA LOADED AGAIN - VIDEO ELEMENT RECREATED!', videoData.post.id.slice(-6));
             }
+          }}
+          onPlay={() => {
+            // Mark user as interacted when video starts playing (due to autoplay)
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('sorafeed-user-interacted', 'true');
+            }
+            onUserInteraction();
           }}
           onEnded={() => {
             if (isActive) {
@@ -261,25 +241,13 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
               onVideoEnd();
             }
           }}
-          onError={() => {
-            console.error('❌ Video error:', videoData.post.id);
+          onError={(e) => {
+            console.error('❌ Video error:', videoData.post.id, e);
           }}
         />
       </div>
 
-      {/* Click to play overlay */}
-      {isActive && (!userHasInteracted || !isPlaying) && videoLoadedRef.current && 
-       // Extra check: never show if user has interacted in this session
-       !(typeof window !== 'undefined' && sessionStorage.getItem('sorafeed-user-interacted') === 'true') && (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30">
-          <div className="text-center text-white">
-            <div className="w-20 h-20 mx-auto mb-4 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-              <div className="w-0 h-0 border-l-8 border-l-white border-t-6 border-t-transparent border-b-6 border-b-transparent ml-1"></div>
-            </div>
-            <div className="text-xl font-semibold">Click to Play</div>
-          </div>
-        </div>
-      )}
+
 
       {/* Video info overlay */}
       <div className="absolute bottom-4 left-4 text-white pointer-events-none" style={{ right: '120px' }}>
@@ -296,6 +264,45 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
           CH 42
         </div>
       </div>
+
+      {/* Mute Overlay Button - only show when muted and active */}
+      {(() => {
+        const shouldShowMuteButton = isActive && isMuted && videoLoadedRef.current && onMuteToggle;
+        console.log('🔇 Mute button conditions:', {
+          isActive,
+          isMuted,
+          videoLoaded: videoLoadedRef.current,
+          hasOnMuteToggle: !!onMuteToggle,
+          shouldShow: shouldShowMuteButton
+        });
+        return shouldShowMuteButton;
+      })() && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center z-50"
+          onClick={(e) => {
+            e.stopPropagation();
+            console.log('🔇 Mute overlay clicked');
+            handleMuteClick();
+          }}
+        >
+          <button
+            className="bg-black/60 hover:bg-black/80 rounded-full p-6 transition-all cursor-pointer group"
+            title="Click to unmute"
+          >
+            <div className="relative w-16 h-16">
+              {/* Speaker icon */}
+              <svg className="w-16 h-16 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+              </svg>
+              {/* X overlay - diagonal cross */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="absolute w-16 h-1 bg-white transform rotate-45 origin-center"></div>
+                <div className="absolute w-16 h-1 bg-white transform -rotate-45 origin-center"></div>
+              </div>
+            </div>
+          </button>
+        </div>
+      )}
     </div>
   );
 }, (prevProps, nextProps) => {
@@ -307,7 +314,8 @@ const SingleVideoPlayer = memo(function SingleVideoPlayer({
     prevProps.currentIndex === nextProps.currentIndex &&
     prevProps.isPlaying === nextProps.isPlaying &&
     prevProps.isMuted === nextProps.isMuted &&
-    prevProps.userHasInteracted === nextProps.userHasInteracted
+    prevProps.userHasInteracted === nextProps.userHasInteracted &&
+    prevProps.onMuteToggle === nextProps.onMuteToggle
   );
 });
 

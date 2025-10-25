@@ -14,6 +14,7 @@ interface TVVideoPlayerProps {
   onVideoReady: () => void;
   onAutoplayBlocked?: () => void;
   onVideoClick?: () => void;
+  onMuteToggle?: () => void;
 }
 
 export default function TVVideoPlayer({ 
@@ -23,7 +24,8 @@ export default function TVVideoPlayer({
   onVideoEnd, 
   onVideoReady,
   onAutoplayBlocked,
-  onVideoClick
+  onVideoClick,
+  onMuteToggle
 }: TVVideoPlayerProps) {
   // State from social VideoFeed
   const [videos, setVideos] = useState<SoraFeedItem[]>([]);
@@ -267,6 +269,7 @@ export default function TVVideoPlayer({
                 onAutoplayBlocked={onAutoplayBlocked}
                 onVideoClick={onVideoClick}
                 onUserInteraction={handleUserInteraction}
+                onMuteToggle={onMuteToggle}
               />
             );
           })}

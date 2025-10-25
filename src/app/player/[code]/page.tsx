@@ -51,7 +51,7 @@ export default function VMPlayer() {
     hasActivePlaylist: false
   });
 
-  // Playback state from database (source of truth)
+  // Playback state from database (source of truth) - start with 'idle' until we get first video
   const [playbackState, setPlaybackState] = useState<PlaybackState>({
     state: 'idle',
     isPlaying: false,
@@ -184,15 +184,39 @@ export default function VMPlayer() {
       if (data.playbackState) {
         const newPlaybackState = data.playbackState;
         setPlaybackState(prev => {
+          // If this is the first time we're getting a video (was idle and now has video), start playing
+          if (prev.state === 'idle' && vmState.currentTimelineVideo === null && data.nextVideo) {
+            console.log('🚀 First video received, auto-starting playback');
+            // Update the database to reflect we're now playing
+            fetch(`/api/displays/${code}/commands`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: 'play' })
+            }).catch(err => console.error('Failed to auto-start playback:', err));
+            
+            // Always start muted for browser autoplay compliance, then respect server state
+            return {
+              ...newPlaybackState,
+              state: 'playing',
+              isPlaying: true,
+              isMuted: true  // Always start muted for browser autoplay
+            };
+          }
+          
           // Only update if something actually changed
+          // But never let server override our muted state - we control that locally
           if (
             prev.state !== newPlaybackState.state ||
             prev.isPlaying !== newPlaybackState.isPlaying ||
-            prev.isMuted !== newPlaybackState.isMuted ||
             Math.abs(prev.videoPosition - newPlaybackState.videoPosition) > 1
           ) {
             console.log('📊 Playback state updated from database:', newPlaybackState);
-            return newPlaybackState;
+            console.log('🔇 isMuted state:', newPlaybackState.isMuted);
+            // Keep our local mute state, don't let server override it
+            return {
+              ...newPlaybackState,
+              isMuted: prev.isMuted // Keep our local mute state
+            };
           }
           return prev;
         });
@@ -355,8 +379,15 @@ export default function VMPlayer() {
 
   // Handle manual video click (click and forget)
   const handleVideoClick = useCallback(async () => {
-    console.log('🖱️ Video clicked - toggling playback state in database');
+    console.log('🖱️ Video clicked');
     
+    // If unmuted, do nothing - we don't want to pause/mute on click
+    if (!playbackState.isMuted) {
+      console.log('🔇 Video is unmuted, ignoring click');
+      return;
+    }
+    
+    console.log('🖱️ Toggling playback state in database');
     try {
       // Toggle playback state in database
       const command = playbackState.isPlaying ? 'pause' : 'play';
@@ -370,7 +401,41 @@ export default function VMPlayer() {
     } catch (error) {
       console.error('Failed to toggle playback state:', error);
     }
-  }, [code, playbackState.isPlaying]);
+  }, [code, playbackState.isPlaying, playbackState.isMuted]);
+
+  // Handle mute toggle
+  const handleMuteToggle = useCallback(async () => {
+    console.log('🔇 Mute toggle clicked');
+    
+    // Immediately update local state for responsive UI
+    setPlaybackState(prev => {
+      const newMutedState = !prev.isMuted;
+      console.log('🔇 Toggling mute state:', prev.isMuted, '->', newMutedState);
+      return {
+        ...prev,
+        isMuted: newMutedState
+      };
+    });
+    
+    try {
+      // Toggle mute state in database
+      const command = playbackState.isMuted ? 'unmute' : 'mute';
+      await fetch(`/api/displays/${code}/commands`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ type: command })
+      });
+    } catch (error) {
+      console.error('Failed to toggle mute state:', error);
+      // Revert local state if database update failed
+      setPlaybackState(prev => ({
+        ...prev,
+        isMuted: !prev.isMuted
+      }));
+    }
+  }, [code, playbackState.isMuted]);
 
   // Start/stop progress tracking based on playback state
   useEffect(() => {
@@ -488,25 +553,8 @@ export default function VMPlayer() {
             onVideoReady={handleVideoReady}
             onAutoplayBlocked={handleAutoplayBlocked}
             onVideoClick={handleVideoClick}
+            onMuteToggle={handleMuteToggle}
           />
-          {needsUserInteraction && 
-           // Extra safeguard: never show if user has interacted in this session
-           !(typeof window !== 'undefined' && sessionStorage.getItem('sorafeed-user-interacted') === 'true') && (
-            <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-              <button
-                onClick={handleUserInteraction}
-                className="text-center text-white bg-transparent border-none cursor-pointer focus:outline-none hover:scale-105 transition-transform duration-200"
-              >
-                <div className="w-24 h-24 mx-auto mb-6 bg-white bg-opacity-20 rounded-full flex items-center justify-center hover:bg-opacity-30 transition-all duration-200">
-                  <div className="w-0 h-0 border-l-10 border-l-white border-t-8 border-t-transparent border-b-8 border-b-transparent ml-1"></div>
-                </div>
-                <div className="text-2xl font-bold mb-3">Click to Play</div>
-                <div className="text-base opacity-90 max-w-xs">
-                  Tap to start watching
-                </div>
-              </button>
-            </div>
-          )}
         </div>
       ) : vmState.isConnected ? (
         // Show black screen while waiting for next video (seamless transition)

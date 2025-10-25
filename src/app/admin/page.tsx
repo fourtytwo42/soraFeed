@@ -27,6 +27,168 @@ interface DashboardStats {
   playing: number;
 }
 
+// Refactored Playlist Block Component
+function PlaylistBlockCard({ 
+  block, 
+  isActive, 
+  isCompleted, 
+  onEdit, 
+  onDelete, 
+  showEditButtons = true,
+  isExpanded,
+  onToggle,
+  blockVideos = []
+}: {
+  block: any;
+  isActive: boolean;
+  isCompleted: boolean;
+  onEdit: (block: any) => void;
+  onDelete: (block: any) => void;
+  showEditButtons?: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  blockVideos?: any[];
+}) {
+  const getBlockColor = (blockName: string) => {
+    const colors = {
+      'commercial': 'bg-red-100 text-red-900 border-red-200',
+      'Interdimensional Cable Channel 42': 'bg-purple-100 text-purple-900 border-purple-200',
+      'show trailer': 'bg-blue-100 text-blue-900 border-blue-200',
+      'Music Video': 'bg-green-100 text-green-900 border-green-200',
+      'Movie Trailer': 'bg-orange-100 text-orange-900 border-orange-200',
+      'Stand Up': 'bg-yellow-100 text-yellow-900 border-yellow-200',
+    };
+    return colors[blockName as keyof typeof colors] || 'bg-gray-100 text-gray-900 border-gray-200';
+  };
+
+  const colorClasses = getBlockColor(block.name);
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`relative group rounded-lg border transition-all duration-200 ${
+        isActive ? 'border-blue-400 shadow-md shadow-blue-100' : 
+        isCompleted ? 'border-green-300 bg-green-50/50' : 
+        'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+      }`}
+    >
+      {/* Block Header */}
+      <div 
+        className={`p-3 cursor-pointer ${colorClasses} rounded-lg`}
+        onClick={onToggle}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
+              isActive ? 'bg-blue-500 animate-pulse' : 
+              isCompleted ? 'bg-green-500' : 
+              'bg-gray-300'
+            }`} />
+            <h3 className="font-semibold truncate">{block.name}</h3>
+            <span className="text-xs opacity-90">
+              {block.videoCount} videos • {block.format}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Progress indicator */}
+            <div className="text-xs opacity-90">
+              {block.timesPlayed || 0} played
+            </div>
+            
+            {/* Expand/Collapse button */}
+            <button className="p-1 hover:bg-black/10 rounded">
+              {isExpanded ? 
+                <ChevronDown className="w-4 h-4" /> : 
+                <ChevronRight className="w-4 h-4" />
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Content */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="border-t border-gray-200 bg-white"
+          >
+            <div className="p-3">
+              {/* Block Videos List */}
+              <div className="space-y-2 mb-3">
+                <h4 className="text-sm font-medium text-gray-700">Videos in this block:</h4>
+                {blockVideos.length > 0 ? (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {blockVideos.map((video, index) => {
+                      // Parse video data if it's a string
+                      let videoData = video.video_data;
+                      if (typeof videoData === 'string') {
+                        try {
+                          videoData = JSON.parse(videoData);
+                        } catch (e) {
+                          console.error('Error parsing video data:', e);
+                          videoData = null;
+                        }
+                      }
+                      
+                      const videoText = videoData?.post?.text || video.text || 'No description available';
+                      
+                      return (
+                        <div key={video.id || index} className="flex items-center gap-2 p-2 bg-gray-50 rounded text-xs">
+                          <span className="w-6 text-center text-gray-500">{index + 1}</span>
+                          <span className="flex-1 truncate" title={videoText}>
+                            {videoText.substring(0, 60)}...
+                          </span>
+                          <span className="text-gray-500">{video.video_id?.slice(-6)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 italic">No videos loaded yet</div>
+                )}
+              </div>
+
+              {/* Edit/Delete buttons */}
+              {showEditButtons && (
+                <div className="flex gap-2 pt-2 border-t border-gray-100">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(block);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded transition-colors"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(block);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 // Sortable Block Component
 function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEditButtons = true }: {
   block: any;
@@ -574,6 +736,8 @@ export default function AdminDashboard() {
   const [selectedDisplay, setSelectedDisplay] = useState<DisplayWithProgress | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({});
+  const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
+  const [blockVideos, setBlockVideos] = useState<{[key: string]: any[]}>({});
   const [addingBlockToDisplay, setAddingBlockToDisplay] = useState<string | null>(null);
   const [addingBlockAtPosition, setAddingBlockAtPosition] = useState<number | null>(null);
   const [stoppedDisplays, setStoppedDisplays] = useState<Set<string>>(new Set());
@@ -1286,6 +1450,72 @@ export default function AdminDashboard() {
     }));
   };
 
+  const toggleBlock = async (blockId: string, display: DisplayWithProgress) => {
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(blockId)) {
+        newSet.delete(blockId);
+      } else {
+        newSet.add(blockId);
+        // Load videos for this block when expanding
+        loadBlockVideos(display, blockId);
+      }
+      return newSet;
+    });
+  };
+
+  const loadBlockVideos = async (display: DisplayWithProgress, blockId: string) => {
+    try {
+      const videos = await getBlockVideos(display, blockId);
+      setBlockVideos(prev => ({
+        ...prev,
+        [blockId]: videos
+      }));
+    } catch (error) {
+      console.error('Error loading block videos:', error);
+    }
+  };
+
+  const getBlockColor = (blockName: string) => {
+    const colors = {
+      'commercial': 'bg-red-100 text-red-900 border-red-200',
+      'Interdimensional Cable Channel 42': 'bg-purple-100 text-purple-900 border-purple-200',
+      'show trailer': 'bg-blue-100 text-blue-900 border-blue-200',
+      'Music Video': 'bg-green-100 text-green-900 border-green-200',
+      'Movie Trailer': 'bg-orange-100 text-orange-900 border-orange-200',
+      'Stand Up': 'bg-yellow-100 text-yellow-900 border-yellow-200',
+    };
+    return colors[blockName as keyof typeof colors] || 'bg-gray-100 text-gray-900 border-gray-200';
+  };
+
+  const getBlockVideos = async (display: DisplayWithProgress, blockId: string) => {
+    try {
+      // First try to get videos from queuedVideos
+      if (display.queuedVideos) {
+        const blockVideos = display.queuedVideos.filter(video => video.block_id === blockId);
+        if (blockVideos.length > 0) {
+          console.log(`🔍 Block ${blockId.slice(-6)} has ${blockVideos.length} videos from queuedVideos`);
+          return blockVideos;
+        }
+      }
+      
+      // If no videos found in queuedVideos, fetch from timeline API
+      console.log(`🔍 No videos in queuedVideos for block ${blockId.slice(-6)}, fetching from timeline...`);
+      const response = await fetch(`/api/timeline/${display.id}?t=${Date.now()}`);
+      if (response.ok) {
+        const timelineData = await response.json();
+        const timelineVideos = timelineData.queuedVideos || [];
+        const blockVideos = timelineVideos.filter((video: any) => video.block_id === blockId);
+        console.log(`🔍 Block ${blockId.slice(-6)} has ${blockVideos.length} videos from timeline API`);
+        return blockVideos;
+      }
+    } catch (error) {
+      console.error('Error fetching block videos:', error);
+    }
+    
+    return [];
+  };
+
   useEffect(() => {
     fetchDisplays();
     
@@ -1694,7 +1924,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* Detailed View - Collapsible */}
+                    {/* Refactored Playlist Blocks - Color Coded and Expandable */}
                     <AnimatePresence>
                       {expandedSections[`playlist-${display.id}`] && (
                         <motion.div
@@ -1704,84 +1934,77 @@ export default function AdminDashboard() {
                           transition={{ duration: 0.3 }}
                           className="mt-4"
                         >
-                          <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={(event) => handleDragEnd(event, display.id)}
-                          >
-                            <SortableContext
-                              items={display.progress.blocks.map((block: any, index: number) => `${block.name}-${index}`)}
-                              strategy={verticalListSortingStrategy}
-                            >
-                              <div className="space-y-3">
-                                {/* Add Block Button/Form - Always first */}
-                                {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
-                                  <div>
-                                    {addingBlockToDisplay === display.id ? (
-                                      <InlineAddBlock
-                                        onSave={handleSaveNewBlock}
-                                        onCancel={handleCancelNewBlock}
-                                      />
-                                    ) : (
-                                      <button
-                                        onClick={() => handleAddBlock(display.id, 0)}
-                                        className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors group"
-                                      >
-                                        <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-gray-700">
-                                          <Plus className="w-4 h-4" />
-                                          <span className="text-sm font-medium">Add Block</span>
-                                        </div>
-                                      </button>
-                                    )}
-                                  </div>
-                                )}
-
-                                {display.progress.blocks.map((block: any, blockIndex: number) => {
-                                  const isStopped = stoppedDisplays.has(display.id) || display.playback_state === 'idle';
-                                  
-                                  return (
-                                    <div key={`${block.name}-${blockIndex}`}>
-                                      {/* Show inline add block form at the specified position */}
-                                      {addingBlockToDisplay === display.id && addingBlockAtPosition === blockIndex + 1 && (
-                                        <InlineAddBlock
-                                          onSave={handleSaveNewBlock}
-                                          onCancel={handleCancelNewBlock}
-                                        />
-                                      )}
-                                      
-                                      {isStopped ? (
-                                        <InlineEditableBlock
-                                          block={block}
-                                          blockIndex={blockIndex}
-                                          displayId={display.id}
-                                          onSave={handleBlockSave}
-                                          onDelete={handleBlockDelete}
-                                        />
-                                      ) : (
-                                        <SortableBlock
-                                          block={{
-                                            ...block,
-                                            id: `${block.name}-${blockIndex}`,
-                                            isActive: block.isActive, // Use the isActive value from the API
-                                            isCompleted: block.isCompleted, // Use the isCompleted value from the API
-                                            currentVideo: block.isActive ? display.progress?.currentBlock?.currentVideo : undefined,
-                                            totalVideos: block.videoCount || block.video_count,
-                                            videoCount: block.videoCount || block.video_count, // Ensure videoCount is available
-                                            progress: block.isActive ? display.progress?.currentBlock?.progress : undefined
-                                          }}
-                                          isActive={block.isActive} // Use the isActive value from the API
-                                          isCompleted={block.isCompleted} // Use the isCompleted value from the API
-                                          onEdit={() => {}} // Disabled when playing
-                                          onDelete={() => {}} // Disabled when playing
-                                          showEditButtons={false} // Hide edit buttons when playing
-                                        />
-                                      )}
+                          <div className="space-y-3">
+                            {/* Add Block Button/Form - Always first */}
+                            {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
+                              <div>
+                                {addingBlockToDisplay === display.id ? (
+                                  <InlineAddBlock
+                                    onSave={handleSaveNewBlock}
+                                    onCancel={handleCancelNewBlock}
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => handleAddBlock(display.id, 0)}
+                                    className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors group"
+                                  >
+                                    <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-gray-700">
+                                      <Plus className="w-4 h-4" />
+                                      <span className="text-sm font-medium">Add Block</span>
                                     </div>
-                                  );
-                                })}
+                                  </button>
+                                )}
                               </div>
-                            </SortableContext>
-                          </DndContext>
+                            )}
+
+                            {display.progress.blocks.map((block: any, blockIndex: number) => {
+                              const isStopped = stoppedDisplays.has(display.id) || display.playback_state === 'idle';
+                              const blockId = `${display.id}-${block.id}`;
+                              const isExpanded = expandedBlocks.has(blockId);
+                              
+                              // Auto-expand the currently active block
+                              const shouldAutoExpand = block.isActive;
+                              
+                              // Auto-load videos for the currently active block
+                              if (shouldAutoExpand && !blockVideos[blockId]) {
+                                loadBlockVideos(display, blockId);
+                              }
+                              
+                              return (
+                                <div key={`${block.name}-${blockIndex}`}>
+                                  {/* Show inline add block form at the specified position */}
+                                  {addingBlockToDisplay === display.id && addingBlockAtPosition === blockIndex + 1 && (
+                                    <InlineAddBlock
+                                      onSave={handleSaveNewBlock}
+                                      onCancel={handleCancelNewBlock}
+                                    />
+                                  )}
+                                  
+                                  <PlaylistBlockCard
+                                    block={{
+                                      ...block,
+                                      id: block.id,
+                                      name: block.name,
+                                      videoCount: block.videoCount || block.video_count,
+                                      format: block.format,
+                                      timesPlayed: block.timesPlayed || 0
+                                    }}
+                                    isActive={block.isActive}
+                                    isCompleted={block.isCompleted}
+                                    isExpanded={isExpanded || shouldAutoExpand}
+                                    onToggle={() => toggleBlock(blockId, display)}
+                                    blockVideos={blockVideos[blockId] || []}
+                                    onEdit={isStopped ? (block) => {
+                                      setEditingBlock(block);
+                                      setSelectedDisplay(display);
+                                    } : () => {}}
+                                    onDelete={isStopped ? (block) => handleBlockDelete(block, blockIndex, display.id) : () => {}}
+                                    showEditButtons={isStopped}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
                         </motion.div>
                       )}
                     </AnimatePresence>

@@ -34,9 +34,9 @@ export function useVideoStateController(
 ): VideoStateController {
   
   const [state, setState] = useState<VideoState>({
-    isPlaying: false,
+    isPlaying: true, // Start playing by default
     isMuted: true, // Start muted by default
-    status: 'idle',
+    status: 'playing',
     position: 0,
     ...initialState
   });

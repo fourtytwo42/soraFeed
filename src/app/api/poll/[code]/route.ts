@@ -28,6 +28,18 @@ export async function POST(
       last_video_start_time: currentVideoId !== display.current_video_id ? Date.now() : display.last_video_start_time
     });
 
+    // Trigger lazy population when display starts playing
+    if (status === 'playing' && display.playback_state !== 'playing') {
+      console.log(`🚀 Display ${code} started playing, triggering lazy population`);
+      const playlist = PlaylistManager.getActivePlaylist(code);
+      if (playlist) {
+        // Start lazy population in the background (don't await)
+        QueueManager.populateAllBlocksLazily(code, playlist.id).catch(error => {
+          console.error(`❌ Error in lazy population for ${code}:`, error);
+        });
+      }
+    }
+
     // Get pending commands
     const commands = DisplayManager.getAndClearCommands(code);
     

@@ -567,6 +567,17 @@ export class QueueManager {
 
       console.log(`🎯 After format validation: ${formatFilteredVideos.length} videos match format "${block.format}" (requested ${block.video_count})`);
 
+      // Check if timeline videos already exist for this specific block to prevent duplicates
+      const existingVideos = queueDb.prepare(`
+        SELECT COUNT(*) as count FROM timeline_videos 
+        WHERE display_id = ? AND block_id = ? AND loop_iteration = ?
+      `).get(displayId, block.id, loopIteration);
+      
+      if (existingVideos.count > 0) {
+        console.log(`⏭️ Skipping block "${block.search_term}" (${block.id.slice(-6)}) - already has ${existingVideos.count} timeline videos`);
+        continue;
+      }
+
       // Add videos to timeline using transaction
       const transaction = queueDb.transaction(() => {
         const stmt = queueDb.prepare(`
@@ -643,6 +654,123 @@ export class QueueManager {
     }
 
     console.log(`✅ Timeline populated with ${timelinePosition} videos`);
+  }
+
+  // Lazy population strategy - populate all blocks while first block plays
+  static async populateAllBlocksLazily(displayId: string, playlistId: string): Promise<void> {
+    console.log(`🚀 Starting lazy population for all blocks in playlist ${playlistId}`);
+    
+    try {
+      // Get all blocks for this playlist
+      const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
+      console.log(`📋 Found ${blocks.length} blocks to populate lazily`);
+      
+      // Populate each block in parallel (but with a small delay to avoid overwhelming the DB)
+      const populatePromises = blocks.map(async (block, index) => {
+        // Add a small delay between each block to avoid overwhelming the database
+        await new Promise(resolve => setTimeout(resolve, index * 100));
+        
+        try {
+          console.log(`🎯 Lazy populating block ${index + 1}/${blocks.length}: "${block.search_term}"`);
+          
+          // Check if this block already has timeline videos
+          const existingVideos = queueDb.prepare(`
+            SELECT COUNT(*) as count FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ?
+          `).get(displayId, block.id);
+          
+          if (existingVideos.count > 0) {
+            console.log(`⏭️ Block "${block.search_term}" already has ${existingVideos.count} videos, skipping`);
+            return;
+          }
+          
+          // Search for videos for this block
+          const videos = await this.searchVideos(block.search_term, block.video_count, block.format, block.fetch_mode);
+          
+          if (videos.length === 0) {
+            console.log(`⚠️ No videos found for block "${block.search_term}"`);
+            return;
+          }
+          
+          // Add videos to timeline
+          const transaction = queueDb.transaction(() => {
+            const stmt = queueDb.prepare(`
+              INSERT INTO timeline_videos (
+                id, display_id, playlist_id, block_id, video_id,
+                block_position, timeline_position, loop_iteration,
+                status, video_data
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
+            `);
+            
+            // Calculate timeline position for this block
+            let timelinePosition = 0;
+            const previousBlocks = blocks.slice(0, index);
+            for (const prevBlock of previousBlocks) {
+              const prevVideoCount = queueDb.prepare(`
+                SELECT COUNT(*) as count FROM timeline_videos 
+                WHERE display_id = ? AND block_id = ?
+              `).get(displayId, prevBlock.id);
+              timelinePosition += prevVideoCount.count;
+            }
+            
+            videos.forEach((video, videoIndex) => {
+              const videoId = uuidv4();
+              
+              // Store essential video data
+              const essentialVideoData = {
+                post: {
+                  id: video.post.id,
+                  text: video.post.text,
+                  permalink: video.post.permalink,
+                  attachments: video.post.attachments ? [{
+                    generation_id: video.post.attachments[0]?.generation_id,
+                    task_id: video.post.attachments[0]?.task_id,
+                    width: video.post.attachments[0]?.width,
+                    height: video.post.attachments[0]?.height,
+                    encodings: {
+                      source: { path: video.post.attachments[0]?.encodings?.source?.path },
+                      md: { path: video.post.attachments[0]?.encodings?.md?.path },
+                      thumbnail: { path: video.post.attachments[0]?.encodings?.thumbnail?.path }
+                    }
+                  }] : []
+                },
+                profile: {
+                  user_id: video.profile.user_id,
+                  username: video.profile.username,
+                  display_name: video.profile.display_name,
+                  profile_picture_url: video.profile.profile_picture_url
+                }
+              };
+              
+              stmt.run(
+                videoId,
+                displayId,
+                playlistId,
+                block.id,
+                video.post.id,
+                videoIndex,
+                timelinePosition + videoIndex,
+                0, // loop iteration
+                JSON.stringify(essentialVideoData)
+              );
+            });
+          });
+          
+          transaction();
+          console.log(`✅ Lazy populated block "${block.search_term}" with ${videos.length} videos`);
+          
+        } catch (error) {
+          console.error(`❌ Error lazy populating block "${block.search_term}":`, error);
+        }
+      });
+      
+      // Wait for all blocks to be populated
+      await Promise.all(populatePromises);
+      console.log(`🎉 Lazy population completed for all blocks`);
+      
+    } catch (error) {
+      console.error('❌ Error in lazy population:', error);
+    }
   }
 
   // Get next video in timeline for display
