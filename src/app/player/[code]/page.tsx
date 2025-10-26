@@ -444,6 +444,17 @@ export default function VMPlayer() {
     } else {
       stopVideoProgressTracking();
     }
+    
+    // If display is stopped, clear current video
+    if (playbackState.state === 'idle') {
+      console.log('🛑 Display stopped, clearing current video');
+      setVMState(prev => ({
+        ...prev,
+        currentVideo: null,
+        currentTimelineVideo: null,
+        hasActivePlaylist: false
+      }));
+    }
   }, [playbackState.isPlaying, playbackState.state, startVideoProgressTracking, stopVideoProgressTracking]);
 
   // Initialize code and display
