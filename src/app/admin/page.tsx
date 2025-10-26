@@ -38,7 +38,10 @@ function PlaylistBlockCard({
   isExpanded,
   onToggle,
   blockVideos = [],
-  currentVideoId = null
+  currentVideoId = null,
+  // Debug props
+  _debugDisplayId,
+  _debugCurrentVideoId
 }: {
   block: any;
   isActive: boolean;
@@ -142,6 +145,11 @@ function PlaylistBlockCard({
                       
                       const videoText = videoData?.post?.text || video.text || 'No description available';
                       const isCurrentVideo = currentVideoId && video.video_id === currentVideoId;
+                      
+                      // Debug logging for video highlighting - only log the first video or current video
+                      if (index === 0 || isCurrentVideo) {
+                        console.log(`🎬 Block "${block.name}" Video ${index + 1}: currentVideoId="${currentVideoId}", video.video_id="${video.video_id}", isCurrent=${isCurrentVideo}`);
+                      }
                       
                       return (
                         <div 
@@ -2008,6 +2016,7 @@ export default function AdminDashboard() {
                                   )}
                                   
                                   <PlaylistBlockCard
+                                    key={`${display.id}-${blockId}`}
                                     block={{
                                       ...block,
                                       id: block.id,
@@ -2024,6 +2033,9 @@ export default function AdminDashboard() {
                                     onToggle={() => toggleBlock(blockId, display)}
                                     blockVideos={blockVideos[blockId] || []}
                                     currentVideoId={display.current_video_id}
+                                    // Debug: Log when a block contains the current video
+                                    _debugDisplayId={display.id}
+                                    _debugCurrentVideoId={display.current_video_id}
                                     onEdit={isStopped ? (block) => {
                                       setEditingBlock(block);
                                       setSelectedDisplay(display);
