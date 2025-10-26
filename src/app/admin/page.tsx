@@ -1011,6 +1011,8 @@ export default function AdminDashboard() {
 
   // Send command to display
   const sendCommand = async (displayId: string, type: string, payload?: any) => {
+    console.log(`📤 Sending command: ${type} to ${displayId}`);
+    
     try {
       const response = await fetch(`/api/displays/${displayId}/commands`, {
         method: 'POST',
@@ -1019,6 +1021,8 @@ export default function AdminDashboard() {
         },
         body: JSON.stringify({ type, payload })
       });
+      
+      console.log(`📥 Response status: ${response.status} for ${type} to ${displayId}`);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1042,7 +1046,7 @@ export default function AdminDashboard() {
       
       console.log(`✅ Command sent: ${type} to ${displayId}`);
     } catch (err) {
-      console.error('Error sending command:', err);
+      console.error('❌ Error sending command:', err);
       setError(err instanceof Error ? err.message : 'Failed to send command');
     }
   };
@@ -1445,19 +1449,27 @@ export default function AdminDashboard() {
 
   // Handle stop confirmation
   const handleStopConfirm = async () => {
-    if (!displayToStop) return;
+    if (!displayToStop) {
+      console.error('❌ No display to stop');
+      return;
+    }
+    
+    console.log('🛑 Stopping display:', displayToStop.id);
     
     try {
       await sendCommand(displayToStop.id, 'stop');
+      console.log('✅ Stop command sent successfully');
+      
       setShowStopModal(false);
       setDisplayToStop(null);
       
       // Refresh displays to get updated counts after stop
       setTimeout(() => {
+        console.log('🔄 Refreshing displays after stop');
         fetchDisplays();
       }, 500); // Small delay to ensure database changes are committed
     } catch (err) {
-      console.error('Error stopping display:', err);
+      console.error('❌ Error stopping display:', err);
       setError(err instanceof Error ? err.message : 'Failed to stop display');
     }
   };
@@ -2039,6 +2051,7 @@ export default function AdminDashboard() {
                     
                     <button
                       onClick={() => {
+                        console.log('🛑 Stop button clicked for display:', display.id, 'online:', display.isOnline);
                         setDisplayToStop(display);
                         setShowStopModal(true);
                       }}
