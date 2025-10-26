@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DisplayManager } from '@/lib/display-manager';
 import { QueueManager } from '@/lib/queue-manager';
 import { PlaylistManager } from '@/lib/playlist-manager';
+import { queueDb } from '@/lib/sqlite';
 
 // POST /api/poll/[code] - VM client polling endpoint
 export async function POST(
@@ -47,6 +48,9 @@ export async function POST(
         const playlist = PlaylistManager.getActivePlaylist(code);
         if (playlist) {
           console.log(`📋 Found active playlist ${playlist.id}, repopulating timeline videos`);
+          // Clear existing timeline videos before repopulating
+          queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(code);
+          console.log(`🗑️ Cleared existing timeline videos for display ${code}`);
           await QueueManager.populateTimelineVideos(code, playlist.id, 0);
           timelineVideo = QueueManager.getNextTimelineVideo(code);
           console.log(`✅ Timeline repopulated, next video: ${timelineVideo?.video_id.slice(-6)}`);

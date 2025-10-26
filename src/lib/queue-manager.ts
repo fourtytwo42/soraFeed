@@ -69,9 +69,9 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
 
   console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
   
-  // TEMPORARY FIX: Skip ALL count queries to prevent admin page freezing
-  // The count queries are taking too long and blocking the admin page
-  console.log(`⚡ EMERGENCY FIX: Skipping count query for "${searchTerm}", using default estimate`);
+  // TEMPORARY: Skip count queries due to performance issues
+  // These queries take 3-5 seconds each and block the admin page
+  console.log(`⚡ Skipping slow count query for "${searchTerm}", using default estimate`);
   return 1000; // Return sensible default
   
   // Use a queue to prevent overwhelming the database

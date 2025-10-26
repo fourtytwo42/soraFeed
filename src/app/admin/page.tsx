@@ -142,14 +142,24 @@ function PlaylistBlockCard({
                       
                       const videoText = videoData?.post?.text || video.text || 'No description available';
                       const isCurrentVideo = currentVideoId && video.video_id === currentVideoId;
+                      const videoId = video.video_id || video.post?.id;
+                      const soraUrl = videoId ? `https://sora.chatgpt.com/p/s_${videoId}` : null;
                       
                       return (
-                        <div 
-                          key={video.id || index} 
-                          className={`flex items-center gap-2 p-2 rounded text-xs transition-colors ${
+                        <a
+                          key={video.id || index}
+                          href={soraUrl || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            if (!soraUrl) {
+                              e.preventDefault();
+                            }
+                          }}
+                          className={`flex items-center gap-2 p-2 rounded text-xs transition-colors cursor-pointer ${
                             isCurrentVideo 
-                              ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
-                              : 'bg-gray-50'
+                              ? 'bg-blue-100 border-2 border-blue-300 shadow-sm hover:bg-blue-200' 
+                              : 'bg-gray-50 hover:bg-gray-100'
                           }`}
                         >
                           <span className={`w-6 text-center font-medium ${
@@ -167,7 +177,7 @@ function PlaylistBlockCard({
                           }`}>
                             {video.video_id?.slice(-6)}
                           </span>
-                        </div>
+                        </a>
                       );
                     })}
                   </div>
@@ -742,7 +752,8 @@ function InlineAddBlock({ onSave, onCancel }: {
 export default function AdminDashboard() {
   const [displays, setDisplays] = useState<DisplayWithProgress[]>([]);
   const [stats, setStats] = useState<DashboardStats>({ total: 0, online: 0, playing: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start with false so page renders immediately
+  const [fetching, setFetching] = useState(false); // Track when we're actively fetching data
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAddExistingModal, setShowAddExistingModal] = useState(false);
@@ -830,21 +841,29 @@ export default function AdminDashboard() {
   // Fetch displays and their status (only owned displays)
   const fetchDisplays = async () => {
     try {
+      setFetching(true);
       const ownedCodes = getOwnedDisplayCodes();
       if (ownedCodes.length === 0) {
         setDisplays([]);
         setStats({ total: 0, online: 0, playing: 0 });
         setLoading(false);
+        setFetching(false);
         return;
       }
 
       // Fetch each owned display individually with progress
       const displayPromises = ownedCodes.map(async (code) => {
         try {
+          // Add timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
           const [displayResponse, timelineResponse] = await Promise.all([
-            fetch(`/api/displays/${code}`),
-            fetch(`/api/timeline/${code}?t=${Date.now()}`) // Cache busting
+            fetch(`/api/displays/${code}`, { signal: controller.signal }),
+            fetch(`/api/timeline/${code}?t=${Date.now()}`, { signal: controller.signal })
           ]);
+          
+          clearTimeout(timeoutId);
           
           if (displayResponse.ok) {
             const display = await displayResponse.json();
@@ -899,7 +918,11 @@ export default function AdminDashboard() {
             return null;
           }
         } catch (error) {
-          console.error(`Error fetching display ${code}:`, error);
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.error(`⏱️ Timeout fetching display ${code} after 10 seconds`);
+          } else {
+            console.error(`Error fetching display ${code}:`, error);
+          }
           return null;
         }
       });
@@ -920,6 +943,7 @@ export default function AdminDashboard() {
       setError(err instanceof Error ? err.message : 'Failed to fetch displays');
     } finally {
       setLoading(false);
+      setFetching(false);
     }
   };
 
@@ -1275,12 +1299,12 @@ export default function AdminDashboard() {
     try {
       // Find the display to get its active playlist
       const display = displays.find(d => d.id === addingBlockToDisplay);
-      if (!display || !display.progress) {
-        console.error('Display or progress not found');
+      if (!display) {
+        console.error('Display not found');
         return;
       }
 
-      // Get the active playlist ID from the display's progress data
+      // Get the active playlist ID from the display's progress data or timeline API
       let playlistId = null;
       
       // Try to get playlist ID from display progress first
@@ -1298,8 +1322,40 @@ export default function AdminDashboard() {
       }
       
       if (!playlistId) {
-        console.error('No active playlist found for display');
-        setError('No active playlist found. Please ensure the display has an active playlist.');
+        // If no playlist exists, we need to create one first
+        console.log('No playlist found, creating new playlist with first block');
+        
+        // Create a new playlist with this block as the first block
+        const response = await fetch('/api/playlists', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            displayId: display.id,
+            name: `${display.name} - Playlist`,
+            blocks: [{
+              searchTerm: blockData.searchTerm,
+              videoCount: blockData.videoCount,
+              format: blockData.format,
+              fetchMode: 'random' // or 'newest'
+            }]
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to create playlist');
+        }
+        
+        const newPlaylist = await response.json();
+        playlistId = newPlaylist.id;
+        console.log('✅ Created new playlist:', playlistId);
+        
+        // Refresh displays to show the new playlist and block
+        await fetchDisplays();
+        
+        // Close the form and return early since we already added the block
+        setAddingBlockToDisplay(null);
+        setAddingBlockAtPosition(null);
         return;
       }
 
@@ -1505,12 +1561,22 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchDisplays();
+    // IMMEDIATELY set loading to false so the page renders
+    setLoading(false);
+    
+    // THEN fetch data in the background (use setTimeout with longer delay to ensure page renders first)
+    const timeoutId = setTimeout(() => {
+      fetchDisplays();
+    }, 100); // 100ms delay to ensure page renders first
     
     // Refresh every 10 seconds (less frequent since WebSocket provides real-time updates)
     const interval = setInterval(fetchDisplays, 10000);
-    return () => clearInterval(interval);
-  }, [wsConnected]);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      clearInterval(interval);
+    };
+  }, []); // Empty dependency array - run once on mount
 
   // Update displays when WebSocket status changes
   useEffect(() => {
@@ -1671,6 +1737,12 @@ export default function AdminDashboard() {
                   <span className={`text-sm font-medium ${wsConnected ? 'text-green-600' : 'text-red-600'}`}>
                     {wsConnected ? 'Live' : 'Offline'}
                   </span>
+                  {fetching && (
+                    <div className="flex items-center gap-1 text-blue-600">
+                      <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-xs">Loading...</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1863,8 +1935,8 @@ export default function AdminDashboard() {
                   ) : null;
                 })()}
 
-                {/* Timeline Progress - Mobile Optimized */}
-                {display.progress && (
+                {/* Timeline Progress or Empty State */}
+                {display.progress ? (
                   <div className="p-4">
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="font-semibold text-gray-900">Playlist Blocks</h4>
@@ -2053,6 +2125,34 @@ export default function AdminDashboard() {
                         </motion.div>
                       )}
                     </AnimatePresence>
+                  </div>
+                ) : (
+                  /* No progress/playlist - show empty state */
+                  <div className="p-4">
+                    {addingBlockToDisplay === display.id ? (
+                      <InlineAddBlock
+                        onSave={handleSaveNewBlock}
+                        onCancel={handleCancelNewBlock}
+                      />
+                    ) : (
+                      <div className="bg-gray-50 rounded-lg p-8 text-center">
+                        <List className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">No playlist blocks yet</h4>
+                        <p className="text-xs text-gray-500 mb-4">
+                          This display doesn't have any playlist blocks yet. 
+                          You can add blocks to start playing videos.
+                        </p>
+                        {(stoppedDisplays.has(display.id) || !display.is_playing) && (
+                          <button
+                            onClick={() => handleAddBlock(display.id, 0)}
+                            className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            <Plus className="w-4 h-4 inline mr-2" />
+                            Add First Block
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
