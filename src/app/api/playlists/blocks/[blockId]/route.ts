@@ -40,10 +40,33 @@ export async function PUT(
       );
     }
 
+    const existingBlock = PlaylistManager.getBlockById(blockId);
+    if (!existingBlock) {
+      return NextResponse.json(
+        { error: 'Block not found' },
+        { status: 404 }
+      );
+    }
+
     // Update the block
-    PlaylistManager.updateBlock(blockId, updates);
+    const updatedBlock = PlaylistManager.updateBlock(blockId, updates);
+    if (!updatedBlock) {
+      return NextResponse.json(
+        { error: 'Failed to update block' },
+        { status: 500 }
+      );
+    }
+
+    const playlist = PlaylistManager.getPlaylist(updatedBlock.playlist_id);
+    if (playlist) {
+      const activePlaylist = PlaylistManager.getActivePlaylist(playlist.display_id);
+      if (activePlaylist && activePlaylist.id === playlist.id) {
+        console.log(`🔄 Block ${blockId} updated for active playlist ${playlist.id}; repopulating timeline for display ${playlist.display_id}`);
+        await QueueManager.populateTimelineVideos(playlist.display_id, playlist.id, 0);
+      }
+    }
     
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, block: updatedBlock });
   } catch (error) {
     console.error('Error updating block:', error);
     return NextResponse.json(

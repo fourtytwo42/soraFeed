@@ -179,9 +179,16 @@ export class PlaylistManager {
     search_term?: string;
     video_count?: number;
     format?: string;
-  }): void {
+  }): PlaylistBlock | null {
+    const existingBlock = this.getBlockById(blockId);
+    if (!existingBlock) {
+      console.error(`❌ Cannot update block ${blockId} because it was not found`);
+      return null;
+    }
+
     const fields: string[] = [];
     const values: any[] = [];
+    let videoCountDiff = 0;
     
     if (updates.search_term !== undefined) {
       fields.push('search_term = ?');
@@ -191,6 +198,7 @@ export class PlaylistManager {
     if (updates.video_count !== undefined) {
       fields.push('video_count = ?');
       values.push(updates.video_count);
+      videoCountDiff = updates.video_count - existingBlock.video_count;
     }
     
     if (updates.format !== undefined) {
@@ -199,7 +207,7 @@ export class PlaylistManager {
     }
     
     if (fields.length === 0) {
-      return; // No updates to make
+      return existingBlock; // No updates to make
     }
     
     values.push(blockId);
@@ -212,14 +220,30 @@ export class PlaylistManager {
         WHERE id = ?
       `);
       stmt.run(...values);
+
+      if (videoCountDiff !== 0) {
+        const playlistUpdateStmt = queueDb.prepare(`
+          UPDATE playlists 
+          SET total_videos = total_videos + ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `);
+        playlistUpdateStmt.run(videoCountDiff, existingBlock.playlist_id);
+      } else {
+        const playlistTimestampStmt = queueDb.prepare(`
+          UPDATE playlists 
+          SET updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `);
+        playlistTimestampStmt.run(existingBlock.playlist_id);
+      }
     });
     
     transaction();
     
     console.log(`📝 Updated block ${blockId}:`, updates);
     
-    // Clear any potential caches that might be affected
-    // This ensures fresh data on next read
+    const updatedBlock = this.getBlockById(blockId);
+    return updatedBlock;
   }
 
   // Get a block by its ID

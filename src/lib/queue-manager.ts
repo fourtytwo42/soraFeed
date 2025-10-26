@@ -20,6 +20,9 @@ const countQueryQueue: Array<{
 let activeCountQueries = 0;
 const MAX_CONCURRENT_COUNT_QUERIES = 2; // Match PostgreSQL client pool to stay responsive
 
+// Prevent concurrent timeline repopulation for the same display
+const timelinePopulationPromises = new Map<string, Promise<void>>();
+
 // Helper function to get cached database count
 async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
   const normalizedTerm = searchTerm.trim();
@@ -497,182 +500,219 @@ export class QueueManager {
     playlistId: string, 
     loopIteration: number = 0
   ): Promise<void> {
-    console.log(`🎵 Populating timeline videos for playlist ${playlistId}, loop ${loopIteration}`);
-    
-    // CRITICAL: Clear existing timeline videos to prevent duplicates
-    const deleteResult = queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(displayId);
-    console.log(`🗑️ Cleared ${deleteResult.changes} existing timeline videos for display ${displayId}`);
-    
-    const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
-    let timelinePosition = 0;
-
-    // Get all videos that should be excluded from this entire playlist
-    const playedVideosForPlaylist = this.getPlayedVideosForPlaylist(playlistId);
-    const queuedVideosForPlaylist = this.getQueuedVideosForPlaylist(playlistId);
-    const allExcludedVideos = [...new Set([...playedVideosForPlaylist, ...queuedVideosForPlaylist])];
-    
-    console.log(`🚫 Global exclusions: ${playedVideosForPlaylist.length} played + ${queuedVideosForPlaylist.length} queued = ${allExcludedVideos.length} total excluded videos`);
-
-    // Process each block sequentially (can't use async inside SQLite transaction)
-    for (const block of blocks) {
-      console.log(`📦 Processing block: "${block.search_term}" (${block.video_count} videos)`);
-      
-      // Get videos already played for this block in the current loop (for additional logging)
-      const playedVideosForBlock = this.getPlayedVideosForBlock(block.id, loopIteration);
-      console.log(`🚫 Block-specific exclusions: ${playedVideosForBlock.length} already played videos from current loop ${loopIteration}`);
-
-      // First, try to search with global exclusions
-      console.log(`🔍 Searching for videos: term="${block.search_term}", count=${block.video_count}, mode=${block.fetch_mode}, format=${block.format}, excluding=${allExcludedVideos.length} videos globally`);
-      let videos = await this.searchVideos(
-        block.search_term,
-        block.video_count,
-        block.fetch_mode,
-        block.format,
-        allExcludedVideos
-      );
-
-      // If we didn't find enough videos, check if we should reset exclusions for this search term
-      if (videos.length < block.video_count) {
-        console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
-        
-        // Check if we've exhausted content for this search term
-        const totalAvailableVideos = await this.searchVideos(
-          block.search_term,
-          1000, // Get a large number to see total available
-          block.fetch_mode,
-          block.format,
-          [] // No exclusions to see total available
-        );
-        
-        console.log(`📊 Total available videos for "${block.search_term}": ${totalAvailableVideos.length}`);
-        
-        // Check if we've exhausted videos for this specific search term
-        // We should reset if we can't find enough videos for this block
-        if (videos.length === 0) {
-          console.log(`🔄 No videos found for "${block.search_term}" - resetting exclusions and starting fresh`);
-          
-          // Reset exclusions for this specific search term by clearing video history
-          this.resetExclusionsForSearchTerm(block.search_term, playlistId);
-          
-          // Search again without exclusions
-          videos = await this.searchVideos(
-            block.search_term,
-            block.video_count,
-            block.fetch_mode,
-            block.format,
-            [] // No exclusions after reset
-          );
-          
-          console.log(`✅ After reset: found ${videos.length} videos for "${block.search_term}"`);
-        } else {
-          console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
-          console.log(`   This suggests the search term might be too specific or there's a database issue`);
-        }
+    const existingPopulation = timelinePopulationPromises.get(displayId);
+    if (existingPopulation) {
+      console.log(`⏳ Timeline population already running for display ${displayId}, waiting for it to finish before starting a new one.`);
+      try {
+        await existingPopulation;
+      } catch (error) {
+        console.warn(`⚠️ Previous population for display ${displayId} failed but continuing with new run:`, error);
       }
-
-      console.log(`✅ Found ${videos.length} new videos for "${block.search_term}" (requested ${block.video_count})`);
-
-      // Validate format filtering - ensure all videos match the requested format
-      const formatFilteredVideos = videos.filter(video => {
-        const attachment = video.post.attachments[0];
-        if (!attachment || !attachment.width || !attachment.height) {
-          console.log(`⚠️ Video ${video.post.id} missing dimensions, excluding`);
-          return false;
-        }
-        
-        const isWide = attachment.width > attachment.height;
-        const isTall = attachment.height > attachment.width;
-        
-        if (block.format === 'wide' && !isWide) {
-          console.log(`⚠️ Video ${video.post.id} is ${attachment.width}x${attachment.height} (tall) but block requires wide, excluding`);
-          return false;
-        }
-        if (block.format === 'tall' && !isTall) {
-          console.log(`⚠️ Video ${video.post.id} is ${attachment.width}x${attachment.height} (wide) but block requires tall, excluding`);
-          return false;
-        }
-        
-        return true;
-      });
-
-      console.log(`🎯 After format validation: ${formatFilteredVideos.length} videos match format "${block.format}" (requested ${block.video_count})`);
-
-      // Add videos to timeline using transaction
-      const transaction = queueDb.transaction(() => {
-        const stmt = queueDb.prepare(`
-          INSERT INTO timeline_videos (
-            id, display_id, playlist_id, block_id, video_id,
-            block_position, timeline_position, loop_iteration,
-            status, video_data
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
-        `);
-
-        // Only add videos that match the format filter
-        const videosToAdd = formatFilteredVideos.slice(0, block.video_count);
-        console.log(`📝 Adding ${videosToAdd.length} videos to timeline (format-filtered from ${videos.length} found)`);
-        
-        // Add the new videos to the global exclusion list to prevent duplicates in subsequent blocks
-        // Only do this if we didn't reset exclusions (to avoid re-adding videos we just reset)
-        if (videos.length >= block.video_count || videos.length === formatFilteredVideos.length) {
-          videosToAdd.forEach(video => {
-            allExcludedVideos.push(video.post.id);
-          });
-        }
-        
-        // Warn if we couldn't find enough videos of the requested format
-        if (videosToAdd.length < block.video_count) {
-          console.log(`⚠️ WARNING: Only found ${videosToAdd.length} ${block.format} videos for "${block.search_term}" (requested ${block.video_count})`);
-          console.log(`   This may cause the playlist to have fewer videos than expected.`);
-        }
-        
-        videosToAdd.forEach((video, index) => {
-          const videoId = uuidv4();
-          
-          // Store only essential video data to reduce memory usage
-          const essentialVideoData = {
-            post: {
-              id: video.post.id,
-              text: video.post.text,
-              permalink: video.post.permalink,
-              attachments: video.post.attachments ? [{
-                generation_id: video.post.attachments[0]?.generation_id,
-                task_id: video.post.attachments[0]?.task_id,
-                width: video.post.attachments[0]?.width,
-                height: video.post.attachments[0]?.height,
-                encodings: {
-                  source: { path: video.post.attachments[0]?.encodings?.source?.path },
-                  md: { path: video.post.attachments[0]?.encodings?.md?.path },
-                  thumbnail: { path: video.post.attachments[0]?.encodings?.thumbnail?.path }
-                }
-              }] : []
-            },
-            profile: {
-              user_id: video.profile.user_id,
-              username: video.profile.username,
-              display_name: video.profile.display_name,
-              profile_picture_url: video.profile.profile_picture_url
-            }
-          };
-          
-          stmt.run(
-            videoId,
-            displayId,
-            playlistId,
-            block.id,
-            video.post.id,
-            index,
-            timelinePosition,
-            loopIteration,
-            JSON.stringify(essentialVideoData) // Store only essential data
-          );
-          timelinePosition++;
-        });
-      });
-
-      transaction();
     }
 
-    console.log(`✅ Timeline populated with ${timelinePosition} videos`);
+    const populationTask = (async () => {
+      console.log(`🎵 Populating timeline videos for playlist ${playlistId}, loop ${loopIteration}`);
+      
+      // CRITICAL: Clear existing timeline videos to prevent duplicates
+      const deleteResult = queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(displayId);
+      console.log(`🗑️ Cleared ${deleteResult.changes} existing timeline videos for display ${displayId}`);
+      
+      const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
+      let timelinePosition = 0;
+
+      // Get all videos that should be excluded from this entire playlist
+      const playedVideosForPlaylist = this.getPlayedVideosForPlaylist(playlistId);
+      const queuedVideosForPlaylist = this.getQueuedVideosForPlaylist(playlistId);
+      const allExcludedVideos = [...new Set([...playedVideosForPlaylist, ...queuedVideosForPlaylist])];
+      
+      console.log(`🚫 Global exclusions: ${playedVideosForPlaylist.length} played + ${queuedVideosForPlaylist.length} queued = ${allExcludedVideos.length} total excluded videos`);
+
+      // Process each block sequentially (can't use async inside SQLite transaction)
+      for (const block of blocks) {
+        console.log(`📦 Processing block: "${block.search_term}" (${block.video_count} videos)`);
+        
+        // Get videos already played for this block in the current loop (for additional logging)
+        const playedVideosForBlock = this.getPlayedVideosForBlock(block.id, loopIteration);
+        console.log(`🚫 Block-specific exclusions: ${playedVideosForBlock.length} already played videos from current loop ${loopIteration}`);
+
+        // First, try to search with global exclusions
+        console.log(`🔍 Searching for videos: term="${block.search_term}", count=${block.video_count}, mode=${block.fetch_mode}, format=${block.format}, excluding=${allExcludedVideos.length} videos globally`);
+        let videos = await this.searchVideos(
+          block.search_term,
+          block.video_count,
+          block.fetch_mode,
+          block.format,
+          allExcludedVideos
+        );
+
+        // If we didn't find enough videos, check if we should reset exclusions for this search term
+        if (videos.length < block.video_count) {
+          console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
+          
+          // Check if we've exhausted content for this search term
+          const totalAvailableVideos = await this.searchVideos(
+            block.search_term,
+            1000, // Get a large number to see total available
+            block.fetch_mode,
+            block.format,
+            [] // No exclusions to see total available
+          );
+          
+          console.log(`📊 Total available videos for "${block.search_term}": ${totalAvailableVideos.length}`);
+          
+          // Check if we've exhausted videos for this specific search term
+          // We should reset if we can't find enough videos for this block
+          if (videos.length === 0) {
+            console.log(`🔄 No videos found for "${block.search_term}" - resetting exclusions and starting fresh`);
+            
+            // Reset exclusions for this specific search term by clearing video history
+            this.resetExclusionsForSearchTerm(block.search_term, playlistId);
+            
+            // Search again without exclusions
+            videos = await this.searchVideos(
+              block.search_term,
+              block.video_count,
+              block.fetch_mode,
+              block.format,
+              [] // No exclusions after reset
+            );
+            
+            console.log(`✅ After reset: found ${videos.length} videos for "${block.search_term}"`);
+          } else {
+            console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
+            console.log(`   This suggests the search term might be too specific or there's a database issue`);
+          }
+        }
+
+        console.log(`✅ Found ${videos.length} new videos for "${block.search_term}" (requested ${block.video_count})`);
+
+        // Validate format filtering - ensure all videos match the requested format
+        const formatFilteredVideos = videos.filter(video => {
+          const attachment = video.post.attachments[0];
+          if (!attachment || !attachment.width || !attachment.height) {
+            console.log(`⚠️ Video ${video.post.id} missing dimensions, excluding`);
+            return false;
+          }
+          
+          const isWide = attachment.width > attachment.height;
+          const isTall = attachment.height > attachment.width;
+          
+          if (block.format === 'wide' && !isWide) {
+            console.log(`⚠️ Video ${video.post.id} is ${attachment.width}x${attachment.height} (tall) but block requires wide, excluding`);
+            return false;
+          }
+          if (block.format === 'tall' && !isTall) {
+            console.log(`⚠️ Video ${video.post.id} is ${attachment.width}x${attachment.height} (wide) but block requires tall, excluding`);
+            return false;
+          }
+          
+          return true;
+        });
+
+        console.log(`🎯 After format validation: ${formatFilteredVideos.length} videos match format "${block.format}" (requested ${block.video_count})`);
+
+        // Add videos to timeline using transaction
+        const transaction = queueDb.transaction(() => {
+          const stmt = queueDb.prepare(`
+            INSERT INTO timeline_videos (
+              id, display_id, playlist_id, block_id, video_id,
+              block_position, timeline_position, loop_iteration,
+              status, video_data
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
+          `);
+
+          // Only add videos that match the format filter
+          const videosToAdd = formatFilteredVideos.slice(0, block.video_count);
+          console.log(`📝 Adding ${videosToAdd.length} videos to timeline (format-filtered from ${videos.length} found)`);
+          
+          // Add the new videos to the global exclusion list to prevent duplicates in subsequent blocks
+          // Only do this if we didn't reset exclusions (to avoid re-adding videos we just reset)
+          if (videos.length >= block.video_count || videos.length === formatFilteredVideos.length) {
+            videosToAdd.forEach(video => {
+              allExcludedVideos.push(video.post.id);
+            });
+          }
+          
+          // Warn if we couldn't find enough videos of the requested format
+          if (videosToAdd.length < block.video_count) {
+            console.log(`⚠️ WARNING: Only found ${videosToAdd.length} ${block.format} videos for "${block.search_term}" (requested ${block.video_count})`);
+            console.log(`   This may cause the playlist to have fewer videos than expected.`);
+          }
+          
+          videosToAdd.forEach((video, index) => {
+            const videoId = uuidv4();
+            
+            // Store only essential video data to reduce memory usage
+            const essentialVideoData = {
+              post: {
+                id: video.post.id,
+                text: video.post.text,
+                permalink: video.post.permalink,
+                attachments: video.post.attachments ? [{
+                  generation_id: video.post.attachments[0]?.generation_id,
+                  task_id: video.post.attachments[0]?.task_id,
+                  width: video.post.attachments[0]?.width,
+                  height: video.post.attachments[0]?.height,
+                  encodings: {
+                    source: { path: video.post.attachments[0]?.encodings?.source?.path },
+                    md: { path: video.post.attachments[0]?.encodings?.md?.path },
+                    thumbnail: { path: video.post.attachments[0]?.encodings?.thumbnail?.path }
+                  }
+                }] : []
+              },
+              profile: {
+                user_id: video.profile.user_id,
+                username: video.profile.username,
+                display_name: video.profile.display_name,
+                profile_picture_url: video.profile.profile_picture_url
+              }
+            };
+            
+            stmt.run(
+              videoId,
+              displayId,
+              playlistId,
+              block.id,
+              video.post.id,
+              index,
+              timelinePosition,
+              loopIteration,
+              JSON.stringify(essentialVideoData) // Store only essential data
+            );
+            timelinePosition++;
+          });
+        });
+
+        transaction();
+      }
+
+      console.log(`✅ Timeline populated with ${timelinePosition} videos`);
+
+      // Clamp the display's timeline position so it never points past the end of the refreshed queue
+      const displayRow = queueDb.prepare('SELECT timeline_position FROM displays WHERE id = ?').get(displayId) as any;
+      if (displayRow) {
+        const currentPosition = displayRow.timeline_position || 0;
+        if (timelinePosition === 0 && currentPosition !== 0) {
+          queueDb.prepare('UPDATE displays SET timeline_position = 0 WHERE id = ?').run(displayId);
+          console.log(`↩️ Reset timeline_position to 0 for display ${displayId} because no videos were queued`);
+        } else if (timelinePosition > 0 && currentPosition >= timelinePosition) {
+          const newPosition = Math.max(0, timelinePosition - 1);
+          queueDb.prepare('UPDATE displays SET timeline_position = ? WHERE id = ?').run(newPosition, displayId);
+          console.log(`↩️ Clamped timeline_position for display ${displayId} from ${currentPosition} to ${newPosition}`);
+        }
+      }
+    })();
+
+    timelinePopulationPromises.set(displayId, populationTask);
+
+    try {
+      await populationTask;
+    } finally {
+      const activePromise = timelinePopulationPromises.get(displayId);
+      if (activePromise === populationTask) {
+        timelinePopulationPromises.delete(displayId);
+      }
+    }
   }
 
   // Get next video in timeline for display
@@ -859,13 +899,34 @@ export class QueueManager {
   }
 
   // Get timeline progress for display with database counts
-  static async getTimelineProgressWithCounts(displayId: string) {
+  static async getTimelineProgressWithCounts(displayId: string, allowRebuild: boolean = true) {
     console.log(`🔍 Getting active playlist for display ${displayId}`);
     const playlist = PlaylistManager.getActivePlaylist(displayId);
     console.log(`🔍 Active playlist found:`, playlist ? playlist.id : 'None');
     if (!playlist) return null;
 
     const blocks = PlaylistManager.getPlaylistBlocks(playlist.id);
+
+    if (allowRebuild) {
+      const blockCounts = queueDb.prepare(`
+        SELECT block_id, COUNT(*) as count 
+        FROM timeline_videos 
+        WHERE display_id = ?
+        GROUP BY block_id
+      `).all(displayId) as Array<{ block_id: string; count: number }>;
+      
+      const blockMap = new Map(blocks.map(block => [block.id, block]));
+      const overflowBlock = blockCounts.find(row => {
+        const block = blockMap.get(row.block_id);
+        return block && row.count > block.video_count;
+      });
+      
+      if (overflowBlock) {
+        console.warn(`⚠️ Detected block ${overflowBlock.block_id} with ${overflowBlock.count} videos (limit ${blockMap.get(overflowBlock.block_id)?.video_count || 0}) on display ${displayId}. Rebuilding timeline to enforce limits.`);
+        await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count);
+        return this.getTimelineProgressWithCounts(displayId, false);
+      }
+    }
     
     // Get current position
     const positionStmt = queueDb.prepare(`

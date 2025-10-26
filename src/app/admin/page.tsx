@@ -143,7 +143,9 @@ function PlaylistBlockCard({
                       const videoText = videoData?.post?.text || video.text || 'No description available';
                       const isCurrentVideo = currentVideoId && video.video_id === currentVideoId;
                       const videoId = video.video_id || video.post?.id;
-                      const soraUrl = videoId ? `https://sora.chatgpt.com/p/s_${videoId}` : null;
+                      // Remove any existing s_ prefix to avoid double prefix
+                      const cleanVideoId = videoId?.startsWith('s_') ? videoId : `s_${videoId}`;
+                      const soraUrl = videoId ? `https://sora.chatgpt.com/p/${cleanVideoId}` : null;
                       
                       return (
                         <a
