@@ -146,11 +146,6 @@ function PlaylistBlockCard({
                       const videoText = videoData?.post?.text || video.text || 'No description available';
                       const isCurrentVideo = currentVideoId && video.video_id === currentVideoId;
                       
-                      // Debug logging for video highlighting - only log the first video or current video
-                      if (index === 0 || isCurrentVideo) {
-                        console.log(`🎬 Block "${block.name}" Video ${index + 1}: currentVideoId="${currentVideoId}", video.video_id="${video.video_id}", isCurrent=${isCurrentVideo}`);
-                      }
-                      
                       return (
                         <div 
                           key={video.id || index} 
@@ -2000,8 +1995,12 @@ export default function AdminDashboard() {
                               // Auto-expand the currently active block
                               const shouldAutoExpand = block.isActive;
                               
-                              // Auto-load videos for the currently active block
-                              if (shouldAutoExpand && !blockVideos[blockId]) {
+                              // Also auto-expand the block containing the current video
+                              const blockContainsCurrentVideo = display.current_video_id && blockVideos[blockId]?.some((v: any) => v.video_id === display.current_video_id);
+                              const shouldExpandForCurrentVideo = blockContainsCurrentVideo && display.playback_state === 'playing';
+                              
+                              // Auto-load videos for the currently active block OR block with current video
+                              if ((shouldAutoExpand || shouldExpandForCurrentVideo) && !blockVideos[blockId]) {
                                 loadBlockVideos(display, blockId);
                               }
                               
@@ -2029,7 +2028,7 @@ export default function AdminDashboard() {
                                     }}
                                     isActive={block.isActive}
                                     isCompleted={block.isCompleted}
-                                    isExpanded={isExpanded || shouldAutoExpand}
+                                    isExpanded={isExpanded || shouldAutoExpand || shouldExpandForCurrentVideo}
                                     onToggle={() => toggleBlock(blockId, display)}
                                     blockVideos={blockVideos[blockId] || []}
                                     currentVideoId={display.current_video_id}
