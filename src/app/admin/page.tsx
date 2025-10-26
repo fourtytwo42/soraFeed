@@ -72,8 +72,8 @@ function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEdi
     >
       {/* Drag Handle */}
       <div
-        {...attributes}
-        {...listeners}
+        {...(showEditButtons ? attributes : {})}
+        {...(showEditButtons ? listeners : {})}
         className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1"
       >
         <GripVertical className="w-3 h-3 text-gray-400" />
@@ -393,8 +393,8 @@ function InlineEditableBlock({ block, blockIndex, displayId, onSave, onDelete }:
       className="relative group bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
     >
       {/* Drag Handle */}
-      <div 
-        {...attributes} 
+      <div
+        {...attributes}
         {...listeners}
         className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1"
       >
