@@ -1056,4 +1056,18 @@ export class QueueManager {
     const result = stmt.get(blockId) as any;
     return result?.video_count || 1;
   }
+
+  // Force populate all blocks immediately - used when display starts
+  static async forcePopulateAllBlocks(displayId: string, playlistId: string): Promise<void> {
+    console.log(`🚀 Force populating all blocks for display ${displayId}`);
+    
+    try {
+      // Simply call populateTimelineVideos
+      await this.populateTimelineVideos(displayId, playlistId, 0);
+      console.log(`✅ Force population completed for display ${displayId}`);
+    } catch (error) {
+      console.error(`❌ Error force populating blocks for display ${displayId}:`, error);
+      throw error;
+    }
+  }
 }
