@@ -60,6 +60,13 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     return 200;
   }
 
+  // TEMPORARY FIX: Skip long search terms to prevent timeout
+  // Long terms like "Interdimensional Cable Channel 42" are causing 25+ second timeouts
+  if (searchTerm.length > 30 || wordCount > 5) {
+    console.log(`⚡ Using fast default count for long search term "${searchTerm}" (${wordCount} words), skipping slow DB query`);
+    return 500; // Return reasonable default instead of querying
+  }
+
   console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
   
   // Use a queue to prevent overwhelming the database
