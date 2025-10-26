@@ -27,191 +27,6 @@ interface DashboardStats {
   playing: number;
 }
 
-// Refactored Playlist Block Component
-function PlaylistBlockCard({ 
-  block, 
-  isActive, 
-  isCompleted, 
-  onEdit, 
-  onDelete, 
-  showEditButtons = true,
-  isExpanded,
-  onToggle,
-  blockVideos = [],
-  currentVideoId = null,
-  // Debug props
-  _debugDisplayId,
-  _debugCurrentVideoId
-}: {
-  block: any;
-  isActive: boolean;
-  isCompleted: boolean;
-  onEdit: (block: any) => void;
-  onDelete: (block: any) => void;
-  showEditButtons?: boolean;
-  isExpanded: boolean;
-  onToggle: () => void;
-  blockVideos?: any[];
-  currentVideoId?: string | null;
-}) {
-  const getBlockColor = (blockName: string) => {
-    const colors = {
-      'commercial': 'bg-red-100 text-gray-900 border-red-200',
-      'Interdimensional Cable Channel 42': 'bg-purple-100 text-gray-900 border-purple-200',
-      'show trailer': 'bg-blue-100 text-gray-900 border-blue-200',
-      'Music Video': 'bg-green-100 text-gray-900 border-green-200',
-      'Movie Trailer': 'bg-orange-100 text-gray-900 border-orange-200',
-      'Stand Up': 'bg-yellow-100 text-gray-900 border-yellow-200',
-    };
-    return colors[blockName as keyof typeof colors] || 'bg-gray-100 text-gray-900 border-gray-200';
-  };
-
-  const colorClasses = getBlockColor(block.name);
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className={`relative group rounded-lg border transition-all duration-200 ${
-        isActive ? 'border-blue-400 shadow-md shadow-blue-100' : 
-        isCompleted ? 'border-green-300 bg-green-50/50' : 
-        'border-gray-200 hover:border-gray-300 hover:shadow-sm'
-      }`}
-    >
-      {/* Block Header */}
-      <div 
-        className={`p-3 cursor-pointer ${colorClasses} rounded-lg`}
-        onClick={onToggle}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
-              isActive ? 'bg-blue-500 animate-pulse' : 
-              isCompleted ? 'bg-green-500' : 
-              'bg-gray-300'
-            }`} />
-            <h3 className="font-semibold truncate">{block.name}</h3>
-            <span className="text-xs opacity-90">
-              {block.format}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            {/* Progress indicator */}
-            <div className="text-xs opacity-90">
-              {block.seenCount || 0}/{block.totalAvailable || 0} watched
-            </div>
-            
-            {/* Expand/Collapse button */}
-            <button className="p-1 hover:bg-black/10 rounded">
-              {isExpanded ? 
-                <ChevronDown className="w-4 h-4" /> : 
-                <ChevronRight className="w-4 h-4" />
-              }
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Expanded Content */}
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3 }}
-            className="border-t border-gray-200 bg-white"
-          >
-            <div className="p-3">
-              {/* Block Videos List */}
-              <div className="space-y-2 mb-3">
-                <h4 className="text-sm font-medium text-gray-700">Videos in this block:</h4>
-                {blockVideos.length > 0 ? (
-                  <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {blockVideos.map((video, index) => {
-                      // Parse video data if it's a string
-                      let videoData = video.video_data;
-                      if (typeof videoData === 'string') {
-                        try {
-                          videoData = JSON.parse(videoData);
-                        } catch (e) {
-                          console.error('Error parsing video data:', e);
-                          videoData = null;
-                        }
-                      }
-                      
-                      const videoText = videoData?.post?.text || video.text || 'No description available';
-                      const isCurrentVideo = currentVideoId && video.video_id === currentVideoId;
-                      
-                      return (
-                        <div 
-                          key={video.id || index} 
-                          className={`flex items-center gap-2 p-2 rounded text-xs transition-colors ${
-                            isCurrentVideo 
-                              ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
-                              : 'bg-gray-50'
-                          }`}
-                        >
-                          <span className={`w-6 text-center font-medium ${
-                            isCurrentVideo ? 'text-blue-700' : 'text-gray-700'
-                          }`}>
-                            {isCurrentVideo ? '▶' : index + 1}
-                          </span>
-                          <span className={`flex-1 truncate font-medium ${
-                            isCurrentVideo ? 'text-blue-900' : 'text-gray-900'
-                          }`} title={videoText}>
-                            {videoText.substring(0, 60)}...
-                          </span>
-                          <span className={`font-mono text-xs ${
-                            isCurrentVideo ? 'text-blue-600' : 'text-gray-600'
-                          }`}>
-                            {video.video_id?.slice(-6)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-xs text-gray-700 italic">No videos loaded yet</div>
-                )}
-              </div>
-
-              {/* Edit/Delete buttons */}
-              {showEditButtons && (
-                <div className="flex gap-2 pt-2 border-t border-gray-100">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit(block);
-                    }}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-gray-900 rounded transition-colors"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(block);
-                    }}
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 hover:bg-red-200 text-gray-900 rounded transition-colors"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
 // Sortable Block Component
 function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEditButtons = true }: {
   block: any;
@@ -275,9 +90,9 @@ function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEdi
             }`} />
             <h3 className="font-medium text-gray-900 truncate text-sm">{block.name}</h3>
             <span className={`px-1.5 py-0.5 text-xs rounded-full flex-shrink-0 ${
-              block.format === 'wide' ? 'bg-blue-100 text-gray-900' :
-              block.format === 'tall' ? 'bg-purple-100 text-gray-900' :
-              'bg-gray-100 text-gray-900'
+              block.format === 'wide' ? 'bg-blue-100 text-blue-700' :
+              block.format === 'tall' ? 'bg-purple-100 text-purple-700' :
+              'bg-gray-100 text-gray-700'
             }`}>
               {block.format || 'mixed'}
             </span>
@@ -593,9 +408,9 @@ function InlineEditableBlock({ block, blockIndex, displayId, onSave, onDelete }:
             <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
             <h3 className="font-medium text-gray-900 truncate text-sm">{block.name}</h3>
             <span className={`px-1.5 py-0.5 text-xs rounded-full flex-shrink-0 ${
-              block.format === 'wide' ? 'bg-blue-100 text-gray-900' :
-              block.format === 'tall' ? 'bg-purple-100 text-gray-900' :
-              'bg-gray-100 text-gray-900'
+              block.format === 'wide' ? 'bg-blue-100 text-blue-700' :
+              block.format === 'tall' ? 'bg-purple-100 text-purple-700' :
+              'bg-gray-100 text-gray-700'
             }`}>
               {block.format || 'mixed'}
             </span>
@@ -623,7 +438,10 @@ function InlineEditableBlock({ block, blockIndex, displayId, onSave, onDelete }:
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-3">
             <span className="text-gray-600">
-              <span className="font-medium text-gray-900">{block.seenCount || 0}</span>/<span className="font-medium text-gray-900">{block.totalAvailable || 0}</span> watched
+              <span className="font-medium text-gray-900">{block.video_count || block.videoCount || 0}</span> videos
+            </span>
+            <span className="text-gray-600">
+              Played <span className="font-medium text-gray-900">{block.times_played || 0}</span> times
             </span>
           </div>
           
@@ -756,8 +574,6 @@ export default function AdminDashboard() {
   const [selectedDisplay, setSelectedDisplay] = useState<DisplayWithProgress | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({});
-  const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
-  const [blockVideos, setBlockVideos] = useState<{[key: string]: any[]}>({});
   const [addingBlockToDisplay, setAddingBlockToDisplay] = useState<string | null>(null);
   const [addingBlockAtPosition, setAddingBlockAtPosition] = useState<number | null>(null);
   const [stoppedDisplays, setStoppedDisplays] = useState<Set<string>>(new Set());
@@ -806,8 +622,7 @@ export default function AdminDashboard() {
     try {
       const stored = localStorage.getItem('sorafeed-owned-displays');
       return stored ? JSON.parse(stored) : [];
-    } catch (error) {
-      console.error('❌ Admin: Error reading owned display codes from localStorage:', error);
+    } catch {
       return [];
     }
   };
@@ -832,7 +647,6 @@ export default function AdminDashboard() {
   const fetchDisplays = async () => {
     try {
       const ownedCodes = getOwnedDisplayCodes();
-      
       if (ownedCodes.length === 0) {
         setDisplays([]);
         setStats({ total: 0, online: 0, playing: 0 });
@@ -857,8 +671,9 @@ export default function AdminDashboard() {
             
             if (wsStatus) {
               isOnline = wsStatus.isConnected;
-              // Don't override display.status with WebSocket status - use the database playback_state as source of truth
-              // The WebSocket status is just for real-time updates, not for determining playback state
+              if (wsStatus.currentVideo) {
+                display.status = 'playing';
+              }
             } else {
               // Fallback to last_ping check
               isOnline = display.last_ping ? (Date.now() - new Date(display.last_ping).getTime()) < 10000 : false;
@@ -872,10 +687,6 @@ export default function AdminDashboard() {
               const timelineData = await timelineResponse.json();
               progress = timelineData.progress;
               queuedVideos = timelineData.queuedVideos || [];
-              
-              // Ensure display status reflects the database playback_state
-              display.status = display.playback_state === 'playing' ? 'playing' : 
-                              display.playback_state === 'paused' ? 'paused' : 'idle';
               
               // Enhance with WebSocket video progress if available
               if (wsStatus?.playlistProgress?.videoProgress && progress) {
@@ -909,15 +720,16 @@ export default function AdminDashboard() {
       const results = await Promise.all(displayPromises);
       const validDisplays = results.filter(d => d !== null) as DisplayWithProgress[];
       
+      setDisplays(validDisplays);
+
       // Calculate stats
       const total = validDisplays.length;
       const online = validDisplays.filter(d => d.isOnline).length;
       const playing = validDisplays.filter(d => d.status === 'playing').length;
       setStats({ total, online, playing });
-      setDisplays(validDisplays);
       setError(null);
     } catch (err) {
-      console.error('❌ Admin: Error fetching displays:', err);
+      console.error('Error fetching displays:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch displays');
     } finally {
       setLoading(false);
@@ -1471,81 +1283,6 @@ export default function AdminDashboard() {
     }));
   };
 
-  const toggleBlock = async (blockId: string, display: DisplayWithProgress) => {
-    setExpandedBlocks(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(blockId)) {
-        newSet.delete(blockId);
-      } else {
-        newSet.add(blockId);
-        // Load videos for this block when expanding
-        loadBlockVideos(display, blockId);
-      }
-      return newSet;
-    });
-  };
-
-  const loadBlockVideos = async (display: DisplayWithProgress, blockId: string) => {
-    try {
-      const videos = await getBlockVideos(display, blockId);
-      setBlockVideos(prev => ({
-        ...prev,
-        [blockId]: videos
-      }));
-    } catch (error) {
-      console.error('Error loading block videos:', error);
-    }
-  };
-
-  const getBlockColor = (blockName: string) => {
-    const colors = {
-      'commercial': 'bg-red-100 text-gray-900 border-red-200',
-      'Interdimensional Cable Channel 42': 'bg-purple-100 text-gray-900 border-purple-200',
-      'show trailer': 'bg-blue-100 text-gray-900 border-blue-200',
-      'Music Video': 'bg-green-100 text-gray-900 border-green-200',
-      'Movie Trailer': 'bg-orange-100 text-gray-900 border-orange-200',
-      'Stand Up': 'bg-yellow-100 text-gray-900 border-yellow-200',
-    };
-    return colors[blockName as keyof typeof colors] || 'bg-gray-100 text-gray-900 border-gray-200';
-  };
-
-  const getBlockVideos = async (display: DisplayWithProgress, blockId: string) => {
-    try {
-      // First try to get videos from queuedVideos
-      if (display.queuedVideos) {
-        // Match on various block ID formats
-        const blockVideos = display.queuedVideos.filter(video => {
-          return video.block_id === blockId || 
-                 video.block_id === blockId.slice(-6) ||
-                 video.block_id === blockId.replace(/^LVOYMR-/, '') ||
-                 blockId.endsWith(video.block_id);
-        });
-        if (blockVideos.length > 0) {
-          return blockVideos;
-        }
-      }
-      
-      // If no videos found in queuedVideos, fetch from timeline API
-      const response = await fetch(`/api/timeline/${display.id}?t=${Date.now()}`);
-      if (response.ok) {
-        const timelineData = await response.json();
-        const timelineVideos = timelineData.queuedVideos || [];
-        // Match on various block ID formats
-        const blockVideos = timelineVideos.filter((video: any) => {
-          return video.block_id === blockId || 
-                 video.block_id === blockId.slice(-6) ||
-                 video.block_id === blockId.replace(/^LVOYMR-/, '') ||
-                 blockId.endsWith(video.block_id);
-        });
-        return blockVideos;
-      }
-    } catch (error) {
-      console.error('Error fetching block videos:', error);
-    }
-    
-    return [];
-  };
-
   useEffect(() => {
     fetchDisplays();
     
@@ -1566,8 +1303,10 @@ export default function AdminDashboard() {
             // Update online status
             updatedDisplay.isOnline = wsStatus.isConnected;
             
-            // Don't override display.status with WebSocket status - use the database playback_state as source of truth
-            // The WebSocket status is just for real-time updates, not for determining playback state
+            // Update playing status
+            if (wsStatus.currentVideo) {
+              updatedDisplay.status = 'playing';
+            }
             
             // Update progress with WebSocket video progress (smooth block progression)
             if (wsStatus.playlistProgress?.videoProgress && display.progress) {
@@ -1857,11 +1596,7 @@ export default function AdminDashboard() {
                 {/* Current Video Info */}
                 {(() => {
                   const wsStatus = displayStatuses.get(display.id);
-                  // Only show "Now Playing" if display is actually playing/paused AND has a current video
-                  const shouldShowNowPlaying = wsStatus?.currentVideo && 
-                    (display.playback_state === 'playing' || display.playback_state === 'paused');
-                  
-                  return shouldShowNowPlaying ? (
+                  return wsStatus?.currentVideo ? (
                     <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-400">
                       <div className="text-sm font-medium text-blue-900 mb-1">Now Playing</div>
                       <div className="text-sm text-blue-800">
@@ -1885,7 +1620,7 @@ export default function AdminDashboard() {
                           <>
                             <button
                               onClick={() => handleExportPlaylist(display)}
-                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 hover:bg-blue-200 text-gray-900 rounded-lg transition-colors"
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
                               title="Export Playlist as CSV"
                             >
                               <Download className="w-3 h-3" />
@@ -1897,7 +1632,7 @@ export default function AdminDashboard() {
                               className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
                                 importingToDisplay === display.id
                                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                  : 'bg-purple-100 hover:bg-purple-200 text-gray-900'
+                                  : 'bg-purple-100 hover:bg-purple-200 text-purple-700'
                               }`}
                               title="Import Playlist from CSV"
                             >
@@ -1954,7 +1689,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
 
-                    {/* Refactored Playlist Blocks - Color Coded and Expandable */}
+                    {/* Detailed View - Collapsible */}
                     <AnimatePresence>
                       {expandedSections[`playlist-${display.id}`] && (
                         <motion.div
@@ -1964,93 +1699,165 @@ export default function AdminDashboard() {
                           transition={{ duration: 0.3 }}
                           className="mt-4"
                         >
-                          <div className="space-y-3">
-                            {/* Add Block Button/Form - Always first */}
-                            {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
-                              <div>
-                                {addingBlockToDisplay === display.id ? (
-                                  <InlineAddBlock
-                                    onSave={handleSaveNewBlock}
-                                    onCancel={handleCancelNewBlock}
-                                  />
-                                ) : (
-                                  <button
-                                    onClick={() => handleAddBlock(display.id, 0)}
-                                    className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors group"
-                                  >
-                                    <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-gray-700">
-                                      <Plus className="w-4 h-4" />
-                                      <span className="text-sm font-medium">Add Block</span>
-                                    </div>
-                                  </button>
+                          <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={(event) => handleDragEnd(event, display.id)}
+                          >
+                            <SortableContext
+                              items={display.progress.blocks.map((block: any, index: number) => `${block.name}-${index}`)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="space-y-3">
+                                {/* Add Block Button/Form - Always first */}
+                                {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
+                                  <div>
+                                    {addingBlockToDisplay === display.id ? (
+                                      <InlineAddBlock
+                                        onSave={handleSaveNewBlock}
+                                        onCancel={handleCancelNewBlock}
+                                      />
+                                    ) : (
+                                      <button
+                                        onClick={() => handleAddBlock(display.id, 0)}
+                                        className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition-colors group"
+                                      >
+                                        <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-gray-700">
+                                          <Plus className="w-4 h-4" />
+                                          <span className="text-sm font-medium">Add Block</span>
+                                        </div>
+                                      </button>
+                                    )}
+                                  </div>
                                 )}
-                              </div>
-                            )}
 
-                            {display.progress.blocks.map((block: any, blockIndex: number) => {
-                              const isStopped = stoppedDisplays.has(display.id) || display.playback_state === 'idle';
-                              const blockId = `${display.id}-${block.id}`;
-                              const isExpanded = expandedBlocks.has(blockId);
-                              
-                              // Auto-expand the currently active block
-                              const shouldAutoExpand = block.isActive;
-                              
-                              // Also auto-expand the block containing the current video
-                              const blockContainsCurrentVideo = display.current_video_id && blockVideos[blockId]?.some((v: any) => v.video_id === display.current_video_id);
-                              const shouldExpandForCurrentVideo = blockContainsCurrentVideo && display.playback_state === 'playing';
-                              
-                              // Auto-load videos for the currently active block OR block with current video
-                              if ((shouldAutoExpand || shouldExpandForCurrentVideo) && !blockVideos[blockId]) {
-                                loadBlockVideos(display, blockId);
-                              }
-                              
-                              return (
-                                <div key={`${block.name}-${blockIndex}`}>
-                                  {/* Show inline add block form at the specified position */}
-                                  {addingBlockToDisplay === display.id && addingBlockAtPosition === blockIndex + 1 && (
-                                    <InlineAddBlock
-                                      onSave={handleSaveNewBlock}
-                                      onCancel={handleCancelNewBlock}
-                                    />
-                                  )}
+                                {display.progress.blocks.map((block: any, blockIndex: number) => {
+                                  const isStopped = stoppedDisplays.has(display.id) || display.playback_state === 'idle';
                                   
-                                  <PlaylistBlockCard
-                                    key={`${display.id}-${blockId}`}
-                                    block={{
-                                      ...block,
-                                      id: block.id,
-                                      name: block.name,
-                                      videoCount: block.videoCount || block.video_count,
-                                      format: block.format,
-                                      timesPlayed: block.timesPlayed || 0,
-                                      seenCount: block.seenCount || 0,
-                                      totalAvailable: block.totalAvailable || 0
-                                    }}
-                                    isActive={block.isActive}
-                                    isCompleted={block.isCompleted}
-                                    isExpanded={isExpanded || shouldAutoExpand || shouldExpandForCurrentVideo}
-                                    onToggle={() => toggleBlock(blockId, display)}
-                                    blockVideos={blockVideos[blockId] || []}
-                                    currentVideoId={display.current_video_id}
-                                    // Debug: Log when a block contains the current video
-                                    _debugDisplayId={display.id}
-                                    _debugCurrentVideoId={display.current_video_id}
-                                    onEdit={isStopped ? (block) => {
-                                      setEditingBlock(block);
-                                      setSelectedDisplay(display);
-                                    } : () => {}}
-                                    onDelete={isStopped ? (block) => handleBlockDelete(block, blockIndex, display.id) : () => {}}
-                                    showEditButtons={isStopped}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
+                                  return (
+                                    <div key={`${block.name}-${blockIndex}`}>
+                                      {/* Show inline add block form at the specified position */}
+                                      {addingBlockToDisplay === display.id && addingBlockAtPosition === blockIndex + 1 && (
+                                        <InlineAddBlock
+                                          onSave={handleSaveNewBlock}
+                                          onCancel={handleCancelNewBlock}
+                                        />
+                                      )}
+                                      
+                                      {isStopped ? (
+                                        <InlineEditableBlock
+                                          block={block}
+                                          blockIndex={blockIndex}
+                                          displayId={display.id}
+                                          onSave={handleBlockSave}
+                                          onDelete={handleBlockDelete}
+                                        />
+                                      ) : (
+                                        <SortableBlock
+                                          block={{
+                                            ...block,
+                                            id: `${block.name}-${blockIndex}`,
+                                            isActive: block.isActive, // Use the isActive value from the API
+                                            isCompleted: block.isCompleted, // Use the isCompleted value from the API
+                                            currentVideo: block.isActive ? display.progress?.currentBlock?.currentVideo : undefined,
+                                            totalVideos: block.videoCount || block.video_count,
+                                            videoCount: block.videoCount || block.video_count, // Ensure videoCount is available
+                                            progress: block.isActive ? display.progress?.currentBlock?.progress : undefined
+                                          }}
+                                          isActive={block.isActive} // Use the isActive value from the API
+                                          isCompleted={block.isCompleted} // Use the isCompleted value from the API
+                                          onEdit={() => {}} // Disabled when playing
+                                          onDelete={() => {}} // Disabled when playing
+                                          showEditButtons={false} // Hide edit buttons when playing
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </SortableContext>
+                          </DndContext>
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </div>
                 )}
+
+                {/* Upcoming Videos - Collapsible */}
+                <div className="p-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-semibold text-gray-900">Upcoming Videos</h4>
+                    <button
+                      onClick={() => toggleSection(`upcoming-${display.id}`)}
+                      className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                    >
+                      {expandedSections[`upcoming-${display.id}`] ? 'Collapse' : 'Expand'}
+                      {expandedSections[`upcoming-${display.id}`] ? 
+                        <ChevronDown className="w-4 h-4" /> : 
+                        <ChevronRight className="w-4 h-4" />
+                      }
+                    </button>
+                  </div>
+                  
+                  <AnimatePresence>
+                    {expandedSections[`upcoming-${display.id}`] && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="space-y-2"
+                      >
+                        {(() => {
+                          // Get upcoming videos from display data (fetched from timeline API)
+                          const upcomingVideos = display.queuedVideos || [];
+                          
+                          if (upcomingVideos.length === 0) {
+                            return (
+                              <div className="text-center py-8 text-gray-500">
+                                <Clock className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                                <p>No upcoming videos</p>
+                              </div>
+                            );
+                          }
+                          
+                          return upcomingVideos.slice(0, 10).map((video: any, index: number) => {
+                            // video_data is already parsed by the timeline API
+                            const videoData = video.video_data;
+                            
+                            return (
+                              <motion.div
+                                key={video.id || index}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.1 }}
+                                className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group relative"
+                                title={videoData?.post?.text || 'No description available'}
+                              >
+                                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-sm font-medium text-blue-600">
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-gray-900 truncate">
+                                    @{videoData?.profile?.username || 'Unknown User'}
+                                  </div>
+                                  <div className="text-sm text-gray-600 truncate">
+                                    {videoData?.post?.text || 'No description available'}
+                                  </div>
+                                </div>
+                                {videoData?.post?.duration && (
+                                  <div className="text-xs text-gray-500">
+                                    {Math.round(videoData.post.duration)}s
+                                  </div>
+                                )}
+                              </motion.div>
+                            );
+                          });
+                        })()}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 {/* Controls - Mobile Optimized */}
                 <div className="p-4 bg-gray-50">

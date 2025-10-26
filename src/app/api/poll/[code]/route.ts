@@ -28,29 +28,6 @@ export async function POST(
       last_video_start_time: currentVideoId !== display.current_video_id ? Date.now() : display.last_video_start_time
     });
 
-    // Trigger force population when display starts playing
-    if (status === 'playing' && display.playback_state !== 'playing') {
-      console.log(`🚀 Display ${code} started playing, triggering force population`);
-      const playlist = PlaylistManager.getActivePlaylist(code);
-      if (playlist) {
-        // Start force population in the background (don't await)
-        QueueManager.forcePopulateAllBlocks(code, playlist.id).catch(error => {
-          console.error(`❌ Error in force population for ${code}:`, error);
-        });
-      }
-    }
-
-    // Trigger block refill during playback to maintain continuous content
-    if (display.playback_state === 'playing') {
-      const playlist = PlaylistManager.getActivePlaylist(code);
-      if (playlist) {
-        // Start block refill in the background (don't await)
-        QueueManager.refillBlocksDuringPlayback(code, playlist.id).catch(error => {
-          console.error(`❌ Error in block refill for ${code}:`, error);
-        });
-      }
-    }
-
     // Get pending commands
     const commands = DisplayManager.getAndClearCommands(code);
     
@@ -58,7 +35,7 @@ export async function POST(
     let nextVideo = null;
     let timelineVideo = QueueManager.getNextTimelineVideo(code);
     
-    console.log(`📊 Poll check - currentTimelineVideoId: ${currentTimelineVideoId?.slice(-6) || 'none'}, timelineVideo: ${timelineVideo?.video_id.slice(-6) || 'none'} (ID: ${timelineVideo?.id.slice(-6) || 'none'}), status: ${status}, isPlaying: ${display.is_playing}`);
+    console.log(`📊 Poll check - currentTimelineVideoId: ${currentTimelineVideoId?.slice(-6)}, nextTimelineVideo.id: ${timelineVideo?.id.slice(-6)}`);
     
     // If no timeline video found, check if we need to repopulate timeline from playlist
     // Only repopulate if the display is actually playing, not if it's stopped
@@ -82,8 +59,8 @@ export async function POST(
     // Only return nextVideo if the display is actually playing or paused
     if (display.playback_state === 'playing' || display.playback_state === 'paused') {
       if (timelineVideo) {
-        // Only return nextVideo if it's different from current video (by video_id)
-        if (!currentTimelineVideoId || timelineVideo.video_id !== currentTimelineVideoId) {
+        // Only return nextVideo if it's different from current timeline video (by timeline ID, not video_id)
+        if (!currentTimelineVideoId || timelineVideo.id !== currentTimelineVideoId) {
           console.log(`✅ Returning nextVideo: ${timelineVideo.video_id.slice(-6)} (timeline ID: ${timelineVideo.id.slice(-6)})`);
           // Get the total videos in the current block
           const totalVideosInBlock = QueueManager.getTotalVideosInBlock(timelineVideo.block_id);
