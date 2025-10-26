@@ -1164,6 +1164,32 @@ export class QueueManager {
       created_at: row.created_at
     }));
   }
+  
+  // Get videos for a specific block
+  static getVideosForBlock(blockId: string): TimelineVideo[] {
+    const stmt = queueDb.prepare(`
+      SELECT * FROM timeline_videos 
+      WHERE block_id = ?
+      ORDER BY block_position ASC
+    `);
+    
+    const rows = stmt.all(blockId) as any[];
+    
+    return rows.map(row => ({
+      id: row.id,
+      display_id: row.display_id,
+      playlist_id: row.playlist_id,
+      block_id: row.block_id,
+      video_id: row.video_id,
+      block_position: row.block_position,
+      timeline_position: row.timeline_position,
+      loop_iteration: row.loop_iteration,
+      status: row.status,
+      played_at: row.played_at,
+      video_data: row.video_data,
+      created_at: row.created_at
+    }));
+  }
 
   // Force populate all blocks immediately - used when display starts
   static async forcePopulateAllBlocks(displayId: string, playlistId: string): Promise<void> {

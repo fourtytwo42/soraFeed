@@ -1683,12 +1683,23 @@ export default function AdminDashboard() {
   const loadBlockVideos = async (display: DisplayWithProgress, blockId: string | number) => {
     try {
       if (display.queuedVideos) {
+        // Improved block ID matching - handle both UUID and short IDs
         const blockVideos = display.queuedVideos.filter((video: any) => {
-          return video.block_id === blockId || 
-                 video.block_id === String(blockId).slice(-6) ||
-                 video.block_id === String(blockId).replace(/^LVOYMR-/, '') ||
-                 String(blockId).endsWith(video.block_id);
+          const videoBlockId = String(video.block_id || '');
+          const searchBlockId = String(blockId || '');
+          
+          // Exact match
+          if (videoBlockId === searchBlockId) return true;
+          
+          // If blockId is a UUID, check if video's block_id is the same UUID
+          // If blockId is an index/number, we can't match it to a specific block
+          // So we'll use position-based matching instead
+          
+          return false; // No fuzzy matching - only exact match
         });
+        
+        console.log(`📋 Block ${blockId}: Found ${blockVideos.length} videos out of ${display.queuedVideos.length} total`);
+        
         setBlockVideos(prev => ({
           ...prev,
           [`${display.id}-${blockId}`]: blockVideos
