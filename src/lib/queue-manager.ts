@@ -1,5 +1,5 @@
 import { queueDb } from './sqlite';
-import { getClient } from './db'; // PostgreSQL connection for database data
+import { getClient, releaseClient } from './db'; // PostgreSQL connection for database data
 import { TimelineVideo, VideoHistory } from '@/types/timeline';
 import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
@@ -8,6 +8,16 @@ import { v4 as uuidv4 } from 'uuid';
 // Cache for database counts (2 hour TTL)
 const dbCountCache = new Map<string, { count: number; timestamp: number }>();
 const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds - longer cache to reduce DB load
+
+// Queue for pending count queries to prevent overwhelming the database
+const countQueryQueue: Array<{
+  searchTerm: string;
+  format: string;
+  resolve: (count: number) => void;
+  reject: (error: Error) => void;
+}> = [];
+let activeCountQueries = 0;
+const MAX_CONCURRENT_COUNT_QUERIES = 1; // Process one at a time to avoid overwhelming DB
 
 // Helper function to get cached database count
 async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
@@ -51,7 +61,48 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
 
   console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
   
-  // Fetch from database and cache
+  // Use a queue to prevent overwhelming the database
+  return new Promise<number>((resolve, reject) => {
+    // Add to queue
+    countQueryQueue.push({
+      searchTerm,
+      format,
+      resolve,
+      reject
+    });
+    
+    // Process queue
+    processCountQueryQueue();
+  });
+}
+
+// Process queued count queries one at a time
+async function processCountQueryQueue() {
+  // Skip if already processing or queue is empty
+  if (activeCountQueries >= MAX_CONCURRENT_COUNT_QUERIES || countQueryQueue.length === 0) {
+    return;
+  }
+  
+  // Get next query from queue
+  const queryTask = countQueryQueue.shift();
+  if (!queryTask) return;
+  
+  activeCountQueries++;
+  
+  try {
+    await executeCountQuery(queryTask.searchTerm, queryTask.format)
+      .then(queryTask.resolve)
+      .catch(queryTask.reject);
+  } finally {
+    activeCountQueries--;
+    // Process next query in queue
+    setTimeout(() => processCountQueryQueue(), 500); // Small delay between queries
+  }
+}
+
+// Execute a single count query
+async function executeCountQuery(searchTerm: string, format: string): Promise<number> {
+  let client: any = null;
   try {
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -59,7 +110,7 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     });
     
     const clientPromise = getClient();
-    const client = await Promise.race([clientPromise, timeoutPromise]);
+    client = await Promise.race([clientPromise, timeoutPromise]);
     
     // Parse search query to separate include and exclude terms
     const parseSearchQuery = (searchQuery: string) => {
@@ -164,6 +215,11 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     // Return a reasonable default if no cache available
     console.log(`⚠️ No cache available for ${searchTerm}, using default count of 100`);
     return 100;
+  } finally {
+    // Release the client
+    if (client && typeof client.release === 'function') {
+      releaseClient(client);
+    }
   }
 }
 
