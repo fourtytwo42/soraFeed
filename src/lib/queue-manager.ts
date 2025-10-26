@@ -69,10 +69,13 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
 
   console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
   
-  // TEMPORARY: Skip count queries due to performance issues
-  // These queries take 3-5 seconds each and block the admin page
-  console.log(`⚡ Skipping slow count query for "${searchTerm}", using default estimate`);
-  return 1000; // Return sensible default
+  // Execute fast optimized count query
+  try {
+    return await executeCountQuery(searchTerm, format, cacheKey);
+  } catch (error) {
+    console.error(`Error in count query for "${searchTerm}":`, error);
+    return 1000; // Fallback to sensible default
+  }
   
   // Use a queue to prevent overwhelming the database
   // return new Promise<number>((resolve, reject) => {
@@ -166,17 +169,11 @@ async function executeCountQuery(searchTerm: string, format: string, cacheKey: s
       ).join(' ');
     }
 
-    // Comprehensive count query - multiple search methods with format filtering
+    // Optimized count query - ILIKE only (fast)
     const countQuery = `
       SELECT COUNT(*) as total_count
       FROM sora_posts p
-      WHERE (
-        -- Exact phrase match (most common case)
-        p.text ILIKE '%' || $1 || '%'
-        OR
-        -- Full-text search for better matching
-        to_tsvector('english', COALESCE(p.text, '')) @@ plainto_tsquery('english', $1)
-      )
+      WHERE p.text ILIKE '%' || $1 || '%'
       ${formatClause}
       ${excludeConditions}
     `;
@@ -542,6 +539,10 @@ export class QueueManager {
     loopIteration: number = 0
   ): Promise<void> {
     console.log(`🎵 Populating timeline videos for playlist ${playlistId}, loop ${loopIteration}`);
+    
+    // CRITICAL: Clear existing timeline videos to prevent duplicates
+    const deleteResult = queueDb.prepare('DELETE FROM timeline_videos WHERE display_id = ?').run(displayId);
+    console.log(`🗑️ Cleared ${deleteResult.changes} existing timeline videos for display ${displayId}`);
     
     const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
     let timelinePosition = 0;
