@@ -9,21 +9,48 @@ export interface TestCase {
 export interface TestSuite {
   name: string;
   tests: TestCase[];
+  beforeHook?: (() => void | Promise<void>) | null;
+  afterHook?: (() => void | Promise<void>) | null;
 }
 
 const suites: TestSuite[] = [];
 let currentSuiteName: string | null = null;
 let currentTests: TestCase[] = [];
+let suiteBeforeHook: (() => void | Promise<void>) | null = null;
+let suiteAfterHook: (() => void | Promise<void>) | null = null;
 
 export function describe(name: string, fn: () => void) {
+  const parentSuiteName = currentSuiteName;
+  const parentTests = currentTests;
+  const parentBeforeHook = suiteBeforeHook;
+  const parentAfterHook = suiteAfterHook;
+  
+  // Save hooks from parent suite if they exist
+  const inheritedBeforeHook = suiteBeforeHook;
+  const inheritedAfterHook = suiteAfterHook;
+  
   currentSuiteName = name;
   currentTests = [];
+  suiteBeforeHook = null;
+  suiteAfterHook = null;
+  
   fn();
-  if (currentTests.length > 0) {
-    suites.push({ name, tests: [...currentTests] });
+  
+  // For nested describes, only push if there are tests or hooks defined
+  if (currentTests.length > 0 || suiteBeforeHook || suiteAfterHook) {
+    // If this is a nested describe and has hooks, use them; otherwise inherit
+    suites.push({ 
+      name: parentSuiteName ? `${parentSuiteName} > ${name}` : name, 
+      tests: [...currentTests],
+      beforeHook: suiteBeforeHook || inheritedBeforeHook || null,
+      afterHook: suiteAfterHook || inheritedAfterHook || null
+    });
   }
-  currentSuiteName = null;
-  currentTests = [];
+  
+  currentSuiteName = parentSuiteName;
+  currentTests = parentTests;
+  suiteBeforeHook = parentBeforeHook;
+  suiteAfterHook = parentAfterHook;
 }
 
 export function it(name: string, fn: () => void | Promise<void>) {
@@ -86,15 +113,16 @@ export async function runTests(): Promise<any[]> {
   const results: any[] = [];
   
   for (const suite of suites) {
-    for (const test of suite.tests) {
+    for (let i = 0; i < suite.tests.length; i++) {
+      const test = suite.tests[i];
       const startTime = Date.now();
       let passed = false;
       let error: string | undefined;
       
       try {
-        // Run before hook if it exists
-        if (beforeHook) {
-          await beforeHook();
+        // Run suite's before hook if it exists
+        if (suite.beforeHook) {
+          await suite.beforeHook();
         }
         
         // Run the test
@@ -104,10 +132,10 @@ export async function runTests(): Promise<any[]> {
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
       } finally {
-        // Run after hook if it exists
-        if (afterHook) {
+        // Run suite's after hook if it exists
+        if (suite.afterHook) {
           try {
-            await afterHook();
+            await suite.afterHook();
           } catch (e) {
             // Ignore errors in after hook
           }
@@ -127,15 +155,15 @@ export async function runTests(): Promise<any[]> {
   return results;
 }
 
-// Store beforeEach and afterEach hooks
-let beforeHook: (() => void | Promise<void>) | null = null;
-let afterHook: (() => void | Promise<void>) | null = null;
-
 // Export common test utilities
 export const beforeEach = (fn: () => void | Promise<void>) => {
-  beforeHook = fn;
+  if (currentSuiteName) {
+    suiteBeforeHook = fn;
+  }
 };
 
 export const afterEach = (fn: () => void | Promise<void>) => {
-  afterHook = fn;
+  if (currentSuiteName) {
+    suiteAfterHook = fn;
+  }
 };

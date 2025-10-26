@@ -5,6 +5,21 @@ import { queueDb } from '@/lib/sqlite';
 const testDisplayId = 'TEST123';
 
 describe('DisplayManager', () => {
+  beforeEach(async () => {
+    try {
+      queueDb.prepare('DELETE FROM displays WHERE id = ?').run(testDisplayId);
+    } catch (e) {
+      // Ignore errors
+    }
+  });
+
+  afterEach(async () => {
+    try {
+      queueDb.prepare('DELETE FROM displays WHERE id = ?').run(testDisplayId);
+    } catch (e) {
+      // Ignore errors
+    }
+  });
 
   describe('createDisplay', () => {
     it('should create a new display with auto-generated code', () => {

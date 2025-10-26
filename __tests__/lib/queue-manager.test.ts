@@ -4,10 +4,10 @@ import { PlaylistManager } from '@/lib/playlist-manager';
 import { DisplayManager } from '@/lib/display-manager';
 import { queueDb } from '@/lib/sqlite';
 
-describe('QueueManager', () => {
-  const testDisplayId = 'TESTQ1';
-  const testPlaylistId = 'test-playlist-123';
+const testDisplayId = 'TESTQ1';
+let testPlaylistId: string = '';
 
+describe('QueueManager', () => {
   beforeEach(async () => {
     // Clean up test data
     try {
@@ -20,11 +20,14 @@ describe('QueueManager', () => {
 
     // Create test display and playlist
     DisplayManager.createDisplayWithCode('Test Display', testDisplayId);
-    PlaylistManager.createPlaylist(testDisplayId, 'Test Playlist', testPlaylistId);
     
-    // Add test blocks
-    PlaylistManager.addBlock(testPlaylistId, 'commercial', 2, 'random', 'wide');
-    PlaylistManager.addBlock(testPlaylistId, 'movie trailer', 3, 'random', 'wide');
+    // Create playlist with blocks
+    const playlist = PlaylistManager.createPlaylist(testDisplayId, 'Test Playlist', [
+      { searchTerm: 'commercial', videoCount: 2, fetchMode: 'random', format: 'wide' },
+      { searchTerm: 'movie trailer', videoCount: 3, fetchMode: 'random', format: 'wide' }
+    ]);
+    
+    testPlaylistId = playlist.id;
   });
 
   afterEach(async () => {
