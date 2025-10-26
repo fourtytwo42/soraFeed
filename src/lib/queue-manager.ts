@@ -65,73 +65,36 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     return cached.count;
   }
   
-  // Use EXPLAIN to get fast row count estimate from PostgreSQL planner
-  // Much faster than COUNT(*) - uses statistics, not full scan
-  console.log(`⚡ EXPLAIN query for "${searchTerm}" (fast planner estimate)`);
+  // SKIP database queries - just use cached or sensible defaults
+  // Database queries are too slow and causing 10s timeouts
+  console.log(`⚡ Using cached/default count for "${searchTerm}"`);
   
-  try {
-    const client = await getClient();
-    
-    // Add timeout to prevent hanging
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('EXPLAIN query timeout')), 3000); // 3 second timeout
-    });
-    
-    // Build format clause
-    let formatClause = '';
-    if (format === 'wide') {
-      formatClause = 'AND width > height';
-    } else if (format === 'tall') {
-      formatClause = 'AND height > width';
-    }
-    
-    // Use EXPLAIN to get the planner's row estimate
-    // This is very fast - just reads statistics, no actual scan
-    const explainQuery = `
-      EXPLAIN (FORMAT JSON) 
-      SELECT id FROM sora_posts 
-      WHERE text ILIKE '%' || $1 || '%'
-      ${formatClause}
-    `;
-    
-    const queryPromise = client.query(explainQuery, [searchTerm]);
-    const result = await Promise.race([queryPromise, timeoutPromise]);
-    releaseClient(client);
-    
-    // Extract row estimate from EXPLAIN output
-    const explainPlan = result.rows[0].explain.rows;
-    const rows = explainPlan[0];
-    
-    // Get the row count estimate from the plan
-    let count = 0;
-    if (rows && rows.Plan && typeof rows.Plan.rows === 'number') {
-      count = Math.round(rows.Plan.rows);
-    }
-    
-    console.log(`📊 EXPLAIN estimate for "${searchTerm}": ${count} rows`);
-    
-    // Cache the result
-    dbCountCache.set(cacheKey, { count, timestamp: Date.now() });
-    
-    return count;
-    
-  } catch (error) {
-    console.error(`Error in fast count query for "${searchTerm}":`, error);
-    
-    // Return cached value if available
-    if (cached) {
-      return cached.count;
-    }
-    
-    // Return sensible defaults
-    if (searchTerm.length > 30 || wordCount > 5) {
-      return 500;
-    }
-    if (wordCount === 1) {
-      return 1000;
-    }
-    return 500;
+  // Return cached value if available
+  if (cached) {
+    console.log(`💾 Using cached count: ${cached.count}`);
+    return cached.count;
   }
+  
+  // Return sensible defaults based on term characteristics
+  let estimatedCount = 500;
+  
+  if (wordCount === 1) {
+    // Single word searches likely have many results
+    estimatedCount = 1000;
+  } else if (wordCount === 2) {
+    // Two word phrases - moderate results
+    estimatedCount = 500;
+  } else if (wordCount >= 3) {
+    // Long, specific phrases - fewer results
+    estimatedCount = 200;
+  }
+  
+  console.log(`📊 Estimated count for "${searchTerm}" (${wordCount} words): ${estimatedCount}`);
+  
+  // Cache the estimate
+  dbCountCache.set(cacheKey, { count: estimatedCount, timestamp: Date.now() });
+  
+  return estimatedCount;
   
   // Use a queue to prevent overwhelming the database
   // return new Promise<number>((resolve, reject) => {
