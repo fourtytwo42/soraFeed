@@ -1146,4 +1146,46 @@ export class QueueManager {
       throw error;
     }
   }
+
+  // Reset blocks to their target video counts
+  static resetBlocksToTargetCounts(displayId: string, playlistId: string): void {
+    console.log(`🧹 Resetting blocks to target counts for display ${displayId}`);
+    
+    try {
+      const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
+      
+      const transaction = queueDb.transaction(() => {
+        blocks.forEach((block, index) => {
+          // Get current count of queued videos in this block
+          const countStmt = queueDb.prepare(`
+            SELECT COUNT(*) as count FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ? AND status = 'queued'
+          `);
+          const currentCount = (countStmt.get(displayId, block.id) as any).count;
+          
+          // If we have more videos than we should, remove excess
+          if (currentCount > block.video_count) {
+            const excess = currentCount - block.video_count;
+            console.log(`⚠️ Block "${block.search_term}" has ${currentCount} videos, target is ${block.video_count}, removing ${excess} excess`);
+            
+            // Delete excess videos (keep the first ones based on block_position)
+            const deleteStmt = queueDb.prepare(`
+              DELETE FROM timeline_videos 
+              WHERE display_id = ? AND block_id = ? AND status = 'queued'
+              AND block_position >= ?
+            `);
+            const deletedCount = deleteStmt.run(displayId, block.id, block.video_count).changes;
+            console.log(`🗑️ Deleted ${deletedCount} excess videos from block "${block.search_term}"`);
+          }
+        });
+      });
+      
+      transaction();
+      
+      console.log(`✅ Finished resetting blocks to target counts for display ${displayId}`);
+    } catch (error) {
+      console.error(`❌ Error resetting blocks to target counts for display ${displayId}:`, error);
+      throw error;
+    }
+  }
 }
