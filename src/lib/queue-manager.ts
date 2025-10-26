@@ -23,23 +23,6 @@ const MAX_CONCURRENT_COUNT_QUERIES = 2; // Match PostgreSQL client pool to stay 
 // Prevent concurrent timeline repopulation for the same display
 const timelinePopulationPromises = new Map<string, Promise<void>>();
 
-// Shared search term parser so count + fetch stay in sync
-function parseSearchQuery(searchQuery: string) {
-  const words = searchQuery.trim().split(/\s+/);
-  const includeTerms: string[] = [];
-  const excludeTerms: string[] = [];
-
-  for (const word of words) {
-    if (word.startsWith('-') && word.length > 1) {
-      excludeTerms.push(word.substring(1));
-    } else if (word.length > 0) {
-      includeTerms.push(word);
-    }
-  }
-
-  return { includeTerms, excludeTerms };
-}
-
 // Helper function to get cached database count
 async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
   const normalizedTerm = searchTerm.trim();
