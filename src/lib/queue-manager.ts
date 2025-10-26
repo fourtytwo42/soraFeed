@@ -60,22 +60,26 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     return 200;
   }
 
-  // TEMPORARY FIX: Skip long search terms to prevent timeout
-  // Long terms like "Interdimensional Cable Channel 42" are causing 25+ second timeouts
-  if (searchTerm.length > 30 || wordCount > 5) {
-    console.log(`⚡ Using fast default count for long search term "${searchTerm}" (${wordCount} words), skipping slow DB query`);
-    return 500; // Return reasonable default instead of querying
-  }
-
-  console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
+  // CRITICAL: Skip ALL database count queries for now
+  // These queries are timing out on 3M+ row database
+  // Use cached values or sensible defaults
+  console.log(`⚡ Using fast cached/estimated count for "${searchTerm}", skipping slow DB query`);
   
-  // Execute fast optimized count query
-  try {
-    return await executeCountQuery(searchTerm, format, cacheKey);
-  } catch (error) {
-    console.error(`Error in count query for "${searchTerm}":`, error);
-    return 1000; // Fallback to sensible default
+  // Return cached value if available
+  if (cached) {
+    return cached.count;
   }
+  
+  // Return sensible defaults based on term characteristics
+  if (searchTerm.length > 30 || wordCount > 5) {
+    return 500; // Long specific terms
+  }
+  
+  if (wordCount === 1) {
+    return 1000; // Single word searches
+  }
+  
+  return 500; // Default for phrases
   
   // Use a queue to prevent overwhelming the database
   // return new Promise<number>((resolve, reject) => {
