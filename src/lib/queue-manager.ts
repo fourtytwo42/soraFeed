@@ -1,6 +1,6 @@
 import { queueDb } from './sqlite';
 import { getClient, releaseClient } from './db'; // PostgreSQL connection for database data
-import { TimelineVideo, VideoHistory } from '@/types/timeline';
+import { TimelineVideo } from '@/types/timeline';
 import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
 import { v4 as uuidv4 } from 'uuid';
@@ -18,98 +18,63 @@ const countQueryQueue: Array<{
   reject: (error: Error) => void;
 }> = [];
 let activeCountQueries = 0;
-const MAX_CONCURRENT_COUNT_QUERIES = 1; // Process one at a time to avoid overwhelming DB
+const MAX_CONCURRENT_COUNT_QUERIES = 2; // Match PostgreSQL client pool to stay responsive
 
 // Helper function to get cached database count
 async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
-  const cacheKey = `${searchTerm}:${format}`;
+  const normalizedTerm = searchTerm.trim();
+  if (!normalizedTerm) return 0;
+  
+  const cacheKey = `${normalizedTerm}:${format}`;
   const cached = dbCountCache.get(cacheKey);
   
   // Return cached value if still valid
   if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-    console.log(`💾 Using cached count for "${searchTerm}": ${cached.count} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s)`);
+    console.log(`💾 Using cached count for "${normalizedTerm}": ${cached.count} (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s)`);
     return cached.count;
   }
 
   if (cached) {
-    console.log(`⏰ Cache expired for "${searchTerm}" (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s), fetching fresh data`);
+    console.log(`⏰ Cache expired for "${normalizedTerm}" (age: ${Math.round((Date.now() - cached.timestamp) / 1000)}s), fetching fresh data`);
   } else {
-    console.log(`🆕 No cache found for "${searchTerm}", fetching from database`);
+    console.log(`🆕 No cache found for "${normalizedTerm}", fetching from database`);
   }
 
   // Add debugging for all search terms
-  console.log(`🔍 Processing search term: "${searchTerm}" (length: ${searchTerm.length})`);
+  console.log(`🔍 Processing search term: "${normalizedTerm}" (length: ${normalizedTerm.length})`);
 
   // Only skip extremely short terms (1-2 characters)
-  if (searchTerm.length < 2) {
-    console.log(`⚠️ Skipping very short search term "${searchTerm}", using default count of 50`);
+  if (normalizedTerm.length < 2) {
+    console.log(`⚠️ Skipping very short search term "${normalizedTerm}", using default count of 50`);
     return 50;
   }
 
   // Only skip the most common single words that would be extremely expensive
   const veryCommonWords = ['the', 'and', 'a', 'an'];
-  if (veryCommonWords.includes(searchTerm.toLowerCase()) && searchTerm.split(/\s+/).length === 1) {
-    console.log(`⚠️ Skipping very common word "${searchTerm}", using default count of 100`);
+  if (veryCommonWords.includes(normalizedTerm.toLowerCase()) && normalizedTerm.split(/\s+/).length === 1) {
+    console.log(`⚠️ Skipping very common word "${normalizedTerm}", using default count of 100`);
     return 100;
   }
 
   // Only skip extremely complex queries (more than 10 words or very long)
-  const wordCount = searchTerm.trim().split(/\s+/).length;
-  if (wordCount > 10 || searchTerm.length > 200) {
-    console.log(`⚠️ Skipping extremely complex search term "${searchTerm}" (${wordCount} words), using default count of 200`);
+  const wordCount = normalizedTerm.split(/\s+/).length;
+  if (wordCount > 10 || normalizedTerm.length > 200) {
+    console.log(`⚠️ Skipping extremely complex search term "${normalizedTerm}" (${wordCount} words), using default count of 200`);
     return 200;
   }
 
-  // Return cached value if available
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-    return cached.count;
-  }
-  
-  // SKIP database queries - just use cached or sensible defaults
-  // Database queries are too slow and causing 10s timeouts
-  console.log(`⚡ Using cached/default count for "${searchTerm}"`);
-  
-  // Return cached value if available
-  if (cached) {
-    console.log(`💾 Using cached count: ${cached.count}`);
-    return cached.count;
-  }
-  
-  // Return sensible defaults based on term characteristics
-  let estimatedCount = 500;
-  
-  if (wordCount === 1) {
-    // Single word searches likely have many results
-    estimatedCount = 1000;
-  } else if (wordCount === 2) {
-    // Two word phrases - moderate results
-    estimatedCount = 500;
-  } else if (wordCount >= 3) {
-    // Long, specific phrases - fewer results
-    estimatedCount = 200;
-  }
-  
-  console.log(`📊 Estimated count for "${searchTerm}" (${wordCount} words): ${estimatedCount}`);
-  
-  // Cache the estimate
-  dbCountCache.set(cacheKey, { count: estimatedCount, timestamp: Date.now() });
-  
-  return estimatedCount;
-  
   // Use a queue to prevent overwhelming the database
-  // return new Promise<number>((resolve, reject) => {
-  //   // Add to queue
-  //   countQueryQueue.push({
-  //     searchTerm,
-  //     format,
-  //     cacheKey,
-  //     resolve,
-  //     reject
-  //   });
-  //   
-  //   // Process queue
-  //   processCountQueryQueue();
-  // });
+  return new Promise<number>((resolve, reject) => {
+    countQueryQueue.push({
+      searchTerm: normalizedTerm,
+      format,
+      cacheKey,
+      resolve,
+      reject
+    });
+    
+    processCountQueryQueue();
+  });
 }
 
 // Process queued count queries one at a time
@@ -132,7 +97,7 @@ async function processCountQueryQueue() {
   } finally {
     activeCountQueries--;
     // Process next query in queue
-    setTimeout(() => processCountQueryQueue(), 500); // Small delay between queries
+    setTimeout(() => processCountQueryQueue(), 50); // Small delay between queries to keep pressure low
   }
 }
 
@@ -169,6 +134,7 @@ async function executeCountQuery(searchTerm: string, format: string, cacheKey: s
     const includeQuery = includeTerms.join(' ');
     
     if (includeTerms.length === 0) {
+      dbCountCache.set(cacheKey, { count: 0, timestamp: Date.now() });
       return 0;
     }
 
@@ -180,53 +146,36 @@ async function executeCountQuery(searchTerm: string, format: string, cacheKey: s
       formatClause = ' AND p.height > p.width';
     }
 
-    // Build exclude conditions - optimized with ILIKE
-    let excludeConditions = '';
-    if (excludeTerms.length > 0) {
-      excludeConditions = excludeTerms.map((term, index) => 
-        `AND p.text NOT ILIKE '%${term}%'`
-      ).join(' ');
-    }
+    const includePattern = `%${includeQuery}%`;
+    const params: any[] = [includePattern];
+    let nextParamIndex = 2;
 
-    // Optimized count query - ILIKE only (fast)
+    // Build exclude conditions with parameter binding
+    const excludeConditions = excludeTerms.length > 0
+      ? excludeTerms.map(term => {
+          params.push(`%${term}%`);
+          return `AND p.text NOT ILIKE $${nextParamIndex++}`;
+        }).join(' ')
+      : '';
+
     const countQuery = `
       SELECT COUNT(*) as total_count
       FROM sora_posts p
-      WHERE p.text ILIKE '%' || $1 || '%'
+      WHERE p.text ILIKE $1
       ${formatClause}
       ${excludeConditions}
     `;
 
-    // Add debugging
-    console.log(`🔍 Debug query for "${searchTerm}":`, {
-      includeQuery,
-      format,
-      formatClause,
-      excludeConditions,
-      fullQuery: countQuery
-    });
-
-    // Test query without format filtering to see if that's the issue
-    const testQuery = `
-      SELECT COUNT(*) as total_count
-      FROM sora_posts p
-      WHERE p.text ILIKE '%' || $1 || '%'
-    `;
-    const testResult = await client.query(testQuery, [includeQuery]);
-    const testCount = parseInt(testResult.rows[0].total_count);
-    console.log(`🧪 Test query (no format filter) for "${searchTerm}": ${testCount} videos found`);
-
     // Add timeout to query execution
-    const queryPromise = client.query(countQuery, [includeQuery]);
+    const queryPromise = client.query(countQuery, params);
     const queryTimeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('Query execution timeout')), 20000); // 20 second timeout
     });
     
     const countResult = await Promise.race([queryPromise, queryTimeoutPromise]);
-    const totalCount = parseInt(countResult.rows[0].total_count);
+    const totalCount = parseInt(countResult.rows[0].total_count, 10) || 0;
     
-    console.log(`📊 Query result for "${searchTerm}": ${totalCount} videos found (with format: ${format})`);
-    console.log(`🧪 Test query (no format filter) for "${searchTerm}": ${testCount} videos found`);
+    console.log(`📊 Query result for "${searchTerm}": ${totalCount} videos found (format: ${format}, excludes: ${excludeTerms.length})`);
     
     // Cache the result
     dbCountCache.set(cacheKey, { count: totalCount, timestamp: Date.now() });
@@ -234,22 +183,13 @@ async function executeCountQuery(searchTerm: string, format: string, cacheKey: s
     return totalCount;
   } catch (error) {
     console.error(`Error fetching cached count for ${searchTerm}:`, error);
-    
-    // If we have a cached value (even if expired), return it as fallback
-    const cached = dbCountCache.get(cacheKey);
-    if (cached) {
-      console.log(`🔄 Using expired cache for ${searchTerm}: ${cached.count}`);
-      return cached.count;
-    }
-    
-    // Return a reasonable default if no cache available
-    console.log(`⚠️ No cache available for ${searchTerm}, using default count of 100`);
-    return 100;
+    const fallback = dbCountCache.get(cacheKey)?.count ?? 100;
+    dbCountCache.set(cacheKey, { count: fallback, timestamp: Date.now() });
+    console.log(`⚠️ Using fallback count for "${searchTerm}": ${fallback}`);
+    return fallback;
   } finally {
     // Release the client
-    if (client && typeof client.release === 'function') {
-      releaseClient(client);
-    }
+    releaseClient(client);
   }
 }
 
@@ -450,7 +390,7 @@ export class QueueManager {
         }
       }));
     } finally {
-      client.release();
+      releaseClient(client);
     }
   }
 
@@ -969,57 +909,45 @@ export class QueueManager {
     
     console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
     
-    // Fetch database counts for each block using cache
-    // Process blocks sequentially to avoid overwhelming the database
-    const blocksWithCounts = [];
-    for (const [index, block] of blocks.entries()) {
-      try {
-        // Get cached total count from PostgreSQL (or default if cache miss)
-        const totalCount = await getCachedDbCount(block.search_term, block.format);
+    // Kick off database count lookups in parallel (actual concurrency is capped by client pool)
+    const totalCounts = await Promise.all(
+      blocks.map(block =>
+        getCachedDbCount(block.search_term, block.format).catch(error => {
+          console.error(`Error fetching count for block "${block.search_term}":`, error);
+          return 100;
+        })
+      )
+    );
 
-        // Query SQLite for watched videos count (always fresh)
-        let seenCount = 0;
-        try {
-          // Get watched video IDs for this search term and display from SQLite
-          const watchedVideosStmt = queueDb.prepare(`
-            SELECT DISTINCT vh.video_id 
-            FROM video_history vh
-            JOIN playlist_blocks pb ON vh.block_id = pb.id
-            WHERE pb.search_term = ? AND vh.display_id = ?
-          `);
-          const watchedVideos = watchedVideosStmt.all(block.search_term, displayId);
-          seenCount = watchedVideos.length;
-        } catch (error) {
-          console.error(`Error querying SQLite for watched videos:`, error);
-          seenCount = 0;
-        }
-        
-        blocksWithCounts.push({
-          id: block.id,
-          name: block.search_term,
-          videoCount: block.video_count,
-          isActive: index === blockIndex,
-          isCompleted: index < blockIndex,
-          timesPlayed: block.times_played,
-          totalAvailable: totalCount,
-          seenCount: seenCount,
-          format: block.format
-        });
+    const blocksWithCounts = blocks.map((block, index) => {
+      // Query SQLite for watched videos count (always fresh)
+      let seenCount = 0;
+      try {
+        const watchedVideosStmt = queueDb.prepare(`
+          SELECT DISTINCT vh.video_id 
+          FROM video_history vh
+          JOIN playlist_blocks pb ON vh.block_id = pb.id
+          WHERE pb.search_term = ? AND vh.display_id = ?
+        `);
+        const watchedVideos = watchedVideosStmt.all(block.search_term, displayId);
+        seenCount = watchedVideos.length;
       } catch (error) {
-        console.error(`Error fetching counts for block ${block.search_term}:`, error);
-        blocksWithCounts.push({
-          id: block.id,
-          name: block.search_term,
-          videoCount: block.video_count,
-          isActive: index === blockIndex,
-          isCompleted: index < blockIndex,
-          timesPlayed: block.times_played,
-          totalAvailable: 100, // Default fallback
-          seenCount: 0,
-          format: block.format
-        });
+        console.error(`Error querying SQLite for watched videos:`, error);
+        seenCount = 0;
       }
-    }
+
+      return {
+        id: block.id,
+        name: block.search_term,
+        videoCount: block.video_count,
+        isActive: index === blockIndex,
+        isCompleted: index < blockIndex,
+        timesPlayed: block.times_played,
+        totalAvailable: totalCounts[index] ?? 100,
+        seenCount,
+        format: block.format
+      };
+    });
     
     return {
       playlistId: playlist.id, // Include playlist ID in the response
