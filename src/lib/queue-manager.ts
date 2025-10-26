@@ -65,16 +65,16 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     return cached.count;
   }
   
-  // Try fast LIMIT query instead of COUNT(*)
-  // This is much faster on large databases
-  console.log(`⚡ Fast LIMIT query for "${searchTerm}" (estimated count)`);
+  // Use EXPLAIN to get fast row count estimate from PostgreSQL planner
+  // Much faster than COUNT(*) - uses statistics, not full scan
+  console.log(`⚡ EXPLAIN query for "${searchTerm}" (fast planner estimate)`);
   
   try {
     const client = await getClient();
     
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Fast count query timeout')), 2000); // 2 second timeout
+      setTimeout(() => reject(new Error('EXPLAIN query timeout')), 3000); // 3 second timeout
     });
     
     // Build format clause
@@ -85,40 +85,35 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
       formatClause = 'AND height > width';
     }
     
-    // Fast query: just fetch 200 rows and estimate based on results
-    const fastQuery = `
+    // Use EXPLAIN to get the planner's row estimate
+    // This is very fast - just reads statistics, no actual scan
+    const explainQuery = `
+      EXPLAIN (FORMAT JSON) 
       SELECT id FROM sora_posts 
       WHERE text ILIKE '%' || $1 || '%'
       ${formatClause}
-      LIMIT 200
     `;
     
-    const queryPromise = client.query(fastQuery, [searchTerm]);
+    const queryPromise = client.query(explainQuery, [searchTerm]);
     const result = await Promise.race([queryPromise, timeoutPromise]);
     releaseClient(client);
     
-    const rowCount = result.rows.length;
+    // Extract row estimate from EXPLAIN output
+    const explainPlan = result.rows[0].explain.rows;
+    const rows = explainPlan[0];
     
-    // If we got 200 rows, the actual count is probably much higher
-    // Estimate: if we get 200 in the first batch, likely 500+
-    // If we get fewer, use a multiplier
-    let estimate;
-    if (rowCount === 200) {
-      estimate = 500; // Conservative estimate for large result sets
-    } else if (rowCount >= 100) {
-      estimate = rowCount * 2; // Scale up moderately
-    } else if (rowCount >= 50) {
-      estimate = rowCount * 3; // Scale up more
-    } else {
-      estimate = rowCount * 5; // Small results, higher multiplier
+    // Get the row count estimate from the plan
+    let count = 0;
+    if (rows && rows.Plan && typeof rows.Plan.rows === 'number') {
+      count = Math.round(rows.Plan.rows);
     }
     
-    console.log(`📊 Fast query result: ${rowCount} rows sampled, estimating ${estimate} total`);
+    console.log(`📊 EXPLAIN estimate for "${searchTerm}": ${count} rows`);
     
-    // Cache the estimate
-    dbCountCache.set(cacheKey, { count: estimate, timestamp: Date.now() });
+    // Cache the result
+    dbCountCache.set(cacheKey, { count, timestamp: Date.now() });
     
-    return estimate;
+    return count;
     
   } catch (error) {
     console.error(`Error in fast count query for "${searchTerm}":`, error);
