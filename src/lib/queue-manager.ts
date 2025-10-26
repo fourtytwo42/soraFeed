@@ -13,6 +13,7 @@ const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds - longer cache 
 const countQueryQueue: Array<{
   searchTerm: string;
   format: string;
+  cacheKey: string;
   resolve: (count: number) => void;
   reject: (error: Error) => void;
 }> = [];
@@ -67,6 +68,7 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     countQueryQueue.push({
       searchTerm,
       format,
+      cacheKey,
       resolve,
       reject
     });
@@ -90,7 +92,7 @@ async function processCountQueryQueue() {
   activeCountQueries++;
   
   try {
-    await executeCountQuery(queryTask.searchTerm, queryTask.format)
+    await executeCountQuery(queryTask.searchTerm, queryTask.format, queryTask.cacheKey)
       .then(queryTask.resolve)
       .catch(queryTask.reject);
   } finally {
@@ -101,7 +103,7 @@ async function processCountQueryQueue() {
 }
 
 // Execute a single count query
-async function executeCountQuery(searchTerm: string, format: string): Promise<number> {
+async function executeCountQuery(searchTerm: string, format: string, cacheKey: string): Promise<number> {
   let client: any = null;
   try {
     // Add timeout to prevent hanging
@@ -936,56 +938,56 @@ export class QueueManager {
     console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
     
     // Fetch database counts for each block using cache
-    const blocksWithCounts = await Promise.all(
-      blocks.map(async (block, index) => {
-        try {
-          // Get cached total count from PostgreSQL
-          const totalCount = await getCachedDbCount(block.search_term, block.format);
+    // Process blocks sequentially to avoid overwhelming the database
+    const blocksWithCounts = [];
+    for (const [index, block] of blocks.entries()) {
+      try {
+        // Get cached total count from PostgreSQL (or default if cache miss)
+        const totalCount = await getCachedDbCount(block.search_term, block.format);
 
-          // Query SQLite for watched videos count (always fresh)
-          let seenCount = 0;
-          try {
-            // Get watched video IDs for this search term and display from SQLite
-            const watchedVideosStmt = queueDb.prepare(`
-              SELECT DISTINCT vh.video_id 
-              FROM video_history vh
-              JOIN playlist_blocks pb ON vh.block_id = pb.id
-              WHERE pb.search_term = ? AND vh.display_id = ?
-            `);
-            const watchedVideos = watchedVideosStmt.all(block.search_term, displayId);
-            seenCount = watchedVideos.length;
-          } catch (error) {
-            console.error(`Error querying SQLite for watched videos:`, error);
-            seenCount = 0;
-          }
-          
-          return {
-            id: block.id,
-            name: block.search_term,
-            videoCount: block.video_count,
-            isActive: index === blockIndex,
-            isCompleted: index < blockIndex,
-            timesPlayed: block.times_played,
-            totalAvailable: totalCount,
-            seenCount: seenCount,
-            format: block.format
-          };
+        // Query SQLite for watched videos count (always fresh)
+        let seenCount = 0;
+        try {
+          // Get watched video IDs for this search term and display from SQLite
+          const watchedVideosStmt = queueDb.prepare(`
+            SELECT DISTINCT vh.video_id 
+            FROM video_history vh
+            JOIN playlist_blocks pb ON vh.block_id = pb.id
+            WHERE pb.search_term = ? AND vh.display_id = ?
+          `);
+          const watchedVideos = watchedVideosStmt.all(block.search_term, displayId);
+          seenCount = watchedVideos.length;
         } catch (error) {
-          console.error(`Error fetching counts for block ${block.search_term}:`, error);
-          return {
-            id: block.id,
-            name: block.search_term,
-            videoCount: block.video_count,
-            isActive: index === blockIndex,
-            isCompleted: index < blockIndex,
-            timesPlayed: block.times_played,
-            totalAvailable: 0,
-            seenCount: 0,
-            format: block.format
-          };
+          console.error(`Error querying SQLite for watched videos:`, error);
+          seenCount = 0;
         }
-      })
-    );
+        
+        blocksWithCounts.push({
+          id: block.id,
+          name: block.search_term,
+          videoCount: block.video_count,
+          isActive: index === blockIndex,
+          isCompleted: index < blockIndex,
+          timesPlayed: block.times_played,
+          totalAvailable: totalCount,
+          seenCount: seenCount,
+          format: block.format
+        });
+      } catch (error) {
+        console.error(`Error fetching counts for block ${block.search_term}:`, error);
+        blocksWithCounts.push({
+          id: block.id,
+          name: block.search_term,
+          videoCount: block.video_count,
+          isActive: index === blockIndex,
+          isCompleted: index < blockIndex,
+          timesPlayed: block.times_played,
+          totalAvailable: 100, // Default fallback
+          seenCount: 0,
+          format: block.format
+        });
+      }
+    }
     
     return {
       playlistId: playlist.id, // Include playlist ID in the response
