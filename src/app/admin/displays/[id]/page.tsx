@@ -387,7 +387,7 @@ export default function DisplayManagement() {
                         
                         <button
                           onClick={() => deletePlaylist(playlist.id)}
-                          className="text-xs px-3 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 transition-colors"
+                          className="text-xs px-3 py-1 bg-red-100 text-gray-900 rounded hover:bg-red-200 transition-colors"
                         >
                           Delete
                         </button>

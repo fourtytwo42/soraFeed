@@ -28,14 +28,25 @@ export async function POST(
       last_video_start_time: currentVideoId !== display.current_video_id ? Date.now() : display.last_video_start_time
     });
 
-    // Trigger lazy population when display starts playing
+    // Trigger force population when display starts playing
     if (status === 'playing' && display.playback_state !== 'playing') {
-      console.log(`🚀 Display ${code} started playing, triggering lazy population`);
+      console.log(`🚀 Display ${code} started playing, triggering force population`);
       const playlist = PlaylistManager.getActivePlaylist(code);
       if (playlist) {
-        // Start lazy population in the background (don't await)
-        QueueManager.populateAllBlocksLazily(code, playlist.id).catch(error => {
-          console.error(`❌ Error in lazy population for ${code}:`, error);
+        // Start force population in the background (don't await)
+        QueueManager.forcePopulateAllBlocks(code, playlist.id).catch(error => {
+          console.error(`❌ Error in force population for ${code}:`, error);
+        });
+      }
+    }
+
+    // Trigger block refill during playback to maintain continuous content
+    if (display.playback_state === 'playing') {
+      const playlist = PlaylistManager.getActivePlaylist(code);
+      if (playlist) {
+        // Start block refill in the background (don't await)
+        QueueManager.refillBlocksDuringPlayback(code, playlist.id).catch(error => {
+          console.error(`❌ Error in block refill for ${code}:`, error);
         });
       }
     }

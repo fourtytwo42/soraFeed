@@ -22,11 +22,11 @@ export async function GET(
     const progress = await QueueManager.getTimelineProgressWithCounts(displayId);
     console.log(`📊 Timeline progress result:`, progress ? 'Found' : 'None');
     
-    // Only return queued videos if the display is playing or paused
+    // Return all videos for admin page (not just queued ones)
     let queuedVideos: any[] = [];
     if (display.playback_state === 'playing' || display.playback_state === 'paused') {
-      queuedVideos = QueueManager.getQueuedVideos(displayId, 10);
-      console.log(`📋 Returning ${queuedVideos.length} queued videos for ${display.playback_state} display`);
+      queuedVideos = QueueManager.getAllVideosForDisplay(displayId);
+      console.log(`📋 Returning ${queuedVideos.length} total videos for ${display.playback_state} display`);
     } else {
       console.log(`⏸️ Display is ${display.playback_state}, returning empty queued videos`);
     }

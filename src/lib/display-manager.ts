@@ -190,6 +190,19 @@ export class DisplayManager {
       playback_state: 'playing',
       is_playing: true
     });
+    
+    // Trigger full population of all blocks when starting playback
+    const { PlaylistManager } = require('./playlist-manager');
+    const { QueueManager } = require('./queue-manager');
+    
+    const playlist = PlaylistManager.getActivePlaylist(displayId);
+    if (playlist) {
+      console.log(`🚀 Display ${displayId} started playing, force populating all blocks`);
+      // Force populate all blocks immediately when starting playback
+      QueueManager.forcePopulateAllBlocks(displayId, playlist.id).catch(error => {
+        console.error(`❌ Error in force population for ${displayId}:`, error);
+      });
+    }
   }
 
   static pauseDisplay(displayId: string): void {

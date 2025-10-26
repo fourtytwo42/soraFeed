@@ -1,5 +1,5 @@
 import { queueDb } from './sqlite';
-import { getClient } from './db'; // PostgreSQL connection for database data
+import { getClient, releaseClient } from './db'; // PostgreSQL connection for database data
 import { TimelineVideo, VideoHistory } from '@/types/timeline';
 import { SoraFeedItem } from '@/types/sora';
 import { PlaylistManager } from './playlist-manager';
@@ -8,6 +8,10 @@ import { v4 as uuidv4 } from 'uuid';
 // Cache for database counts (2 hour TTL)
 const dbCountCache = new Map<string, { count: number; timestamp: number }>();
 const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds - longer cache to reduce DB load
+
+// Track active count queries to prevent overwhelming the database
+const activeCountQueries = new Set<string>();
+const MAX_CONCURRENT_COUNT_QUERIES = 1;
 
 // Helper function to get cached database count
 async function getCachedDbCount(searchTerm: string, format: string): Promise<number> {
@@ -51,7 +55,17 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
 
   console.log(`✅ Search term "${searchTerm}" passed all filters, proceeding with database query`);
   
+  // Check if we're already at max concurrent count queries
+  if (activeCountQueries.size >= MAX_CONCURRENT_COUNT_QUERIES) {
+    console.log(`⏳ Too many concurrent count queries (${activeCountQueries.size}/${MAX_CONCURRENT_COUNT_QUERIES}), using default count for ${searchTerm}`);
+    return 100;
+  }
+  
+  // Mark this query as active
+  activeCountQueries.add(cacheKey);
+  
   // Fetch from database and cache
+  let client: any = null;
   try {
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -59,7 +73,7 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     });
     
     const clientPromise = getClient();
-    const client = await Promise.race([clientPromise, timeoutPromise]);
+    client = await Promise.race([clientPromise, timeoutPromise]);
     
     // Parse search query to separate include and exclude terms
     const parseSearchQuery = (searchQuery: string) => {
@@ -164,11 +178,32 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     // Return a reasonable default if no cache available
     console.log(`⚠️ No cache available for ${searchTerm}, using default count of 100`);
     return 100;
+  } finally {
+    // Always release the client and remove from active queries
+    if (client) {
+      releaseClient(client);
+    }
+    activeCountQueries.delete(cacheKey);
   }
 }
 
 // Track displays currently starting a new loop to prevent race conditions
 const loopStartInProgress = new Set<string>();
+
+// Track last refill time for each display to throttle refill operations
+const lastRefillTime = new Map<string, number>();
+const REFILL_THROTTLE_MS = 30000; // Refill every 30 seconds per display (reduced frequency)
+
+// Track last population time for each display to throttle population operations
+const lastPopulationTime = new Map<string, number>();
+const POPULATION_THROTTLE_MS = 10000; // Populate every 10 seconds per display (more frequent)
+
+// Track active operations to prevent too many concurrent database operations
+const activeOperations = new Set<string>();
+const MAX_CONCURRENT_OPERATIONS = 2; // Maximum concurrent database operations
+
+// Track block completion status for each display
+const blockCompletionStatus = new Map<string, Map<string, { completed: boolean; lastRefill: number }>>();
 
 export class QueueManager {
   // Search for videos in PostgreSQL database
@@ -364,7 +399,7 @@ export class QueueManager {
         }
       }));
     } finally {
-      client.release();
+      releaseClient(client);
     }
   }
 
@@ -656,8 +691,45 @@ export class QueueManager {
     console.log(`✅ Timeline populated with ${timelinePosition} videos`);
   }
 
+  // Force populate all blocks immediately - used when display starts
+  static async forcePopulateAllBlocks(displayId: string, playlistId: string): Promise<void> {
+    console.log(`🚀 Force populating all blocks for display ${displayId}`);
+    
+    // Reset throttling to allow immediate population
+    lastPopulationTime.delete(displayId);
+    
+    // Call the lazy population function
+    const result = await this.populateAllBlocksLazily(displayId, playlistId);
+    console.log(`✅ Force population completed for display ${displayId}`);
+    return result;
+  }
+
   // Lazy population strategy - populate all blocks while first block plays
   static async populateAllBlocksLazily(displayId: string, playlistId: string): Promise<void> {
+    // Check if we're already at max concurrent operations
+    if (activeOperations.size >= MAX_CONCURRENT_OPERATIONS) {
+      console.log(`⏳ Too many concurrent operations (${activeOperations.size}/${MAX_CONCURRENT_OPERATIONS}), skipping population for ${displayId}`);
+      return;
+    }
+    
+    // Throttle population operations to avoid overwhelming the database
+    const now = Date.now();
+    const lastPopulation = lastPopulationTime.get(displayId) || 0;
+    
+    // Allow immediate population if no blocks have videos yet
+    const hasAnyVideos = queueDb.prepare(`
+      SELECT COUNT(*) as count FROM timeline_videos WHERE display_id = ?
+    `).get(displayId);
+    
+    if (now - lastPopulation < POPULATION_THROTTLE_MS && hasAnyVideos.count > 0) {
+      return; // Silently skip throttled population only if we already have videos
+    }
+    
+    // Mark this operation as active
+    const operationId = `populate-${displayId}-${now}`;
+    activeOperations.add(operationId);
+    lastPopulationTime.set(displayId, now);
+    
     console.log(`🚀 Starting lazy population for all blocks in playlist ${playlistId}`);
     
     try {
@@ -665,34 +737,68 @@ export class QueueManager {
       const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
       console.log(`📋 Found ${blocks.length} blocks to populate lazily`);
       
-      // Populate each block in parallel (but with a small delay to avoid overwhelming the DB)
-      const populatePromises = blocks.map(async (block, index) => {
-        // Add a small delay between each block to avoid overwhelming the database
-        await new Promise(resolve => setTimeout(resolve, index * 100));
+      if (blocks.length === 0) {
+        console.log(`❌ No blocks found for playlist ${playlistId}`);
+        return;
+      }
+      
+      // First, check which blocks need population
+      const blocksToPopulate = [];
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const existingVideos = queueDb.prepare(`
+          SELECT COUNT(*) as count FROM timeline_videos 
+          WHERE display_id = ? AND block_id = ?
+        `).get(displayId, block.id);
         
+        if (existingVideos.count < block.video_count) {
+          blocksToPopulate.push({ block, index: i, current: existingVideos.count });
+          console.log(`📝 Block ${i + 1} "${block.search_term}" needs population (${existingVideos.count}/${block.video_count} videos)`);
+        } else {
+          console.log(`✅ Block ${i + 1} "${block.search_term}" already has ${existingVideos.count}/${block.video_count} videos`);
+        }
+      }
+      
+      if (blocksToPopulate.length === 0) {
+        console.log(`🎉 All blocks already populated, skipping lazy population`);
+        return;
+      }
+      
+      console.log(`🎯 Need to populate ${blocksToPopulate.length} blocks`);
+      
+      // Calculate timeline positions for all blocks upfront
+      let currentTimelinePosition = 0;
+      const timelinePositions = [];
+      
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const existingVideos = queueDb.prepare(`
+          SELECT COUNT(*) as count FROM timeline_videos 
+          WHERE display_id = ? AND block_id = ?
+        `).get(displayId, block.id);
+        
+        timelinePositions[i] = currentTimelinePosition;
+        // Always reserve space for the full target count to maintain consistent timeline positions
+        currentTimelinePosition += block.video_count;
+      }
+      
+      // Populate blocks sequentially to avoid timeline position conflicts
+      for (const { block, index, current } of blocksToPopulate) {
         try {
-          console.log(`🎯 Lazy populating block ${index + 1}/${blocks.length}: "${block.search_term}"`);
+          console.log(`🎯 Populating block ${index + 1}/${blocks.length}: "${block.search_term}"`);
           
-          // Check if this block already has timeline videos
-          const existingVideos = queueDb.prepare(`
-            SELECT COUNT(*) as count FROM timeline_videos 
-            WHERE display_id = ? AND block_id = ?
-          `).get(displayId, block.id);
-          
-          if (existingVideos.count > 0) {
-            console.log(`⏭️ Block "${block.search_term}" already has ${existingVideos.count} videos, skipping`);
-            return;
-          }
+          // Calculate how many videos we need to reach full target count
+          const videosNeeded = block.video_count - (current || 0);
           
           // Search for videos for this block
-          const videos = await this.searchVideos(block.search_term, block.video_count, block.format, block.fetch_mode);
+          const videos = await this.searchVideos(block.search_term, videosNeeded, block.fetch_mode, block.format);
           
           if (videos.length === 0) {
             console.log(`⚠️ No videos found for block "${block.search_term}"`);
-            return;
+            continue;
           }
           
-          // Add videos to timeline
+          // Add videos to timeline with correct positions
           const transaction = queueDb.transaction(() => {
             const stmt = queueDb.prepare(`
               INSERT INTO timeline_videos (
@@ -702,16 +808,15 @@ export class QueueManager {
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
             `);
             
-            // Calculate timeline position for this block
-            let timelinePosition = 0;
-            const previousBlocks = blocks.slice(0, index);
-            for (const prevBlock of previousBlocks) {
-              const prevVideoCount = queueDb.prepare(`
-                SELECT COUNT(*) as count FROM timeline_videos 
-                WHERE display_id = ? AND block_id = ?
-              `).get(displayId, prevBlock.id);
-              timelinePosition += prevVideoCount.count;
-            }
+            // Use the pre-calculated timeline positions for proper ordering
+            const startTimelinePosition = timelinePositions[index];
+            
+            // Get the current block position to append new videos
+            const currentBlockPosition = queueDb.prepare(`
+              SELECT MAX(block_position) as max_pos FROM timeline_videos 
+              WHERE display_id = ? AND block_id = ?
+            `).get(displayId, block.id);
+            const startBlockPosition = (currentBlockPosition?.max_pos || -1) + 1;
             
             videos.forEach((video, videoIndex) => {
               const videoId = uuidv4();
@@ -748,8 +853,8 @@ export class QueueManager {
                 playlistId,
                 block.id,
                 video.post.id,
-                videoIndex,
-                timelinePosition + videoIndex,
+                startBlockPosition + videoIndex, // Append to existing block videos
+                startTimelinePosition + videoIndex, // Append to timeline
                 0, // loop iteration
                 JSON.stringify(essentialVideoData)
               );
@@ -757,19 +862,213 @@ export class QueueManager {
           });
           
           transaction();
-          console.log(`✅ Lazy populated block "${block.search_term}" with ${videos.length} videos`);
+          console.log(`✅ Populated block "${block.search_term}" with ${videos.length} videos (timeline positions ${startTimelinePosition} to ${startTimelinePosition + videos.length - 1})`);
+          
+                // Longer delay between blocks to avoid overwhelming the database
+                await new Promise(resolve => setTimeout(resolve, 1000));
           
         } catch (error) {
-          console.error(`❌ Error lazy populating block "${block.search_term}":`, error);
+          console.error(`❌ Error populating block "${block.search_term}":`, error);
         }
-      });
+      }
       
-      // Wait for all blocks to be populated
-      await Promise.all(populatePromises);
       console.log(`🎉 Lazy population completed for all blocks`);
       
     } catch (error) {
       console.error('❌ Error in lazy population:', error);
+    } finally {
+      // Always remove the operation from active operations
+      activeOperations.delete(operationId);
+    }
+  }
+
+  // Refill blocks during playback to maintain continuous content
+  static async refillBlocksDuringPlayback(displayId: string, playlistId: string): Promise<void> {
+    // Temporarily disabled to prevent overpopulation
+    console.log(`⏸️ Block refill temporarily disabled to prevent overpopulation`);
+    return;
+    
+    // Check if we're already at max concurrent operations
+    if (activeOperations.size >= MAX_CONCURRENT_OPERATIONS) {
+      console.log(`⏳ Too many concurrent operations (${activeOperations.size}/${MAX_CONCURRENT_OPERATIONS}), skipping refill for ${displayId}`);
+      return;
+    }
+    
+    // Throttle refill operations to avoid overwhelming the database
+    const now = Date.now();
+    const lastRefill = lastRefillTime.get(displayId) || 0;
+    
+    if (now - lastRefill < REFILL_THROTTLE_MS) {
+      return; // Silently skip throttled refills
+    }
+    
+    // Mark this operation as active
+    const operationId = `refill-${displayId}-${now}`;
+    activeOperations.add(operationId);
+    lastRefillTime.set(displayId, now);
+    
+    console.log(`🔄 Starting block refill during playback for display ${displayId}`);
+    
+    try {
+      // Get all blocks for this playlist
+      const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
+      
+      // Check which blocks need refilling (have less than 50% of their target videos remaining)
+      const blocksToRefill = [];
+      
+      for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const remainingVideos = queueDb.prepare(`
+          SELECT COUNT(*) as count FROM timeline_videos 
+          WHERE display_id = ? AND block_id = ? AND status = 'queued'
+        `).get(displayId, block.id);
+        
+        const targetVideos = block.video_count;
+        const remainingCount = remainingVideos.count;
+        const refillThreshold = Math.ceil(targetVideos * 0.1); // Refill only when less than 10% remaining (very conservative)
+        
+        if (remainingCount < refillThreshold) {
+          blocksToRefill.push({ block, index: i, remaining: remainingCount, target: targetVideos });
+          console.log(`🔄 Block ${i + 1} "${block.search_term}" needs refill: ${remainingCount}/${targetVideos} remaining`);
+        }
+      }
+      
+      if (blocksToRefill.length === 0) {
+        console.log(`✅ All blocks have sufficient videos, no refill needed`);
+        return;
+      }
+      
+      console.log(`🎯 Refilling ${blocksToRefill.length} blocks`);
+      
+      // Refill blocks sequentially to avoid overwhelming the database
+      for (const { block, index, remaining, target } of blocksToRefill) {
+        try {
+          // Only add the missing videos to reach target count
+          const videosNeeded = target - remaining;
+          
+          // Double-check that we actually need videos (safety check)
+          if (videosNeeded <= 0) {
+            console.log(`✅ Block "${block.search_term}" already has enough videos (${remaining}/${target}), skipping refill`);
+            continue;
+          }
+          
+          console.log(`🔄 Refilling block "${block.search_term}" with ${videosNeeded} videos (${remaining}/${target} existing)`);
+          
+          // Search for additional videos for this block
+          const videos = await this.searchVideos(block.search_term, videosNeeded, block.fetch_mode, block.format);
+          
+          if (videos.length === 0) {
+            console.log(`⚠️ No additional videos found for block "${block.search_term}"`);
+            continue;
+          }
+          
+          // Get the current block position to append new videos
+          const currentBlockPosition = queueDb.prepare(`
+            SELECT MAX(block_position) as max_pos FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ?
+          `).get(displayId, block.id);
+          const startBlockPosition = (currentBlockPosition?.max_pos || -1) + 1;
+          
+          // Get the current timeline position to append new videos
+          const currentTimelinePosition = queueDb.prepare(`
+            SELECT MAX(timeline_position) as max_pos FROM timeline_videos 
+            WHERE display_id = ?
+          `).get(displayId);
+          const startTimelinePosition = (currentTimelinePosition?.max_pos || -1) + 1;
+          
+          // Add new videos to timeline
+          const transaction = queueDb.transaction(() => {
+            const stmt = queueDb.prepare(`
+              INSERT INTO timeline_videos (
+                id, display_id, playlist_id, block_id, video_id,
+                block_position, timeline_position, loop_iteration,
+                status, video_data
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
+            `);
+            
+            videos.forEach((video, videoIndex) => {
+              const videoId = uuidv4();
+              
+              // Store essential video data
+              const essentialVideoData = {
+                post: {
+                  id: video.post.id,
+                  text: video.post.text,
+                  permalink: video.post.permalink,
+                  attachments: video.post.attachments ? [{
+                    generation_id: video.post.attachments[0]?.generation_id,
+                    task_id: video.post.attachments[0]?.task_id,
+                    width: video.post.attachments[0]?.width,
+                    height: video.post.attachments[0]?.height,
+                    encodings: {
+                      source: { path: video.post.attachments[0]?.encodings?.source?.path },
+                      md: { path: video.post.attachments[0]?.encodings?.md?.path },
+                      thumbnail: { path: video.post.attachments[0]?.encodings?.thumbnail?.path }
+                    }
+                  }] : []
+                },
+                profile: {
+                  user_id: video.profile.user_id,
+                  username: video.profile.username,
+                  display_name: video.profile.display_name,
+                  profile_picture_url: video.profile.profile_picture_url
+                }
+              };
+              
+              stmt.run(
+                videoId,
+                displayId,
+                playlistId,
+                block.id,
+                video.post.id,
+                startBlockPosition + videoIndex, // Append to existing block videos
+                startTimelinePosition + videoIndex, // Append to timeline
+                0, // loop iteration
+                JSON.stringify(essentialVideoData)
+              );
+            });
+          });
+          
+          transaction();
+          
+          // Verify we didn't exceed target count
+          const finalCount = queueDb.prepare(`
+            SELECT COUNT(*) as count FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ?
+          `).get(displayId, block.id);
+          
+          if (finalCount.count > target) {
+            console.log(`⚠️ Block "${block.search_term}" exceeded target (${finalCount.count}/${target}), cleaning up`);
+            // Remove excess videos (keep the first N by timeline_position)
+            const cleanupStmt = queueDb.prepare(`
+              DELETE FROM timeline_videos 
+              WHERE display_id = ? AND block_id = ? AND id NOT IN (
+                SELECT id FROM timeline_videos 
+                WHERE display_id = ? AND block_id = ? 
+                ORDER BY timeline_position ASC 
+                LIMIT ?
+              )
+            `);
+            const cleaned = cleanupStmt.run(displayId, block.id, displayId, block.id, target);
+            console.log(`🧹 Removed ${cleaned.changes} excess videos from block "${block.search_term}"`);
+          }
+          
+          console.log(`✅ Refilled block "${block.search_term}" with ${videos.length} additional videos (final count: ${finalCount.count}/${target})`);
+          
+          // Add a longer delay between blocks to avoid overwhelming the database
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+        } catch (error) {
+          console.error(`❌ Error refilling block "${block.search_term}":`, error);
+          // Continue with next block even if this one fails
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in block refill:', error);
+    } finally {
+      // Always remove the operation from active operations
+      activeOperations.delete(operationId);
     }
   }
 
@@ -855,13 +1154,13 @@ export class QueueManager {
       // Update block play statistics
       PlaylistManager.updateBlockPlayStats(video.block_id);
 
-      // Update display's timeline position to the next video position
+      // Increment display's timeline position by 1
       const updateDisplayStmt = queueDb.prepare(`
         UPDATE displays 
-        SET timeline_position = ? 
+        SET timeline_position = timeline_position + 1 
         WHERE id = ?
       `);
-      updateDisplayStmt.run(video.timeline_position + 1, video.display_id);
+      updateDisplayStmt.run(video.display_id);
     });
 
     transaction();
@@ -883,14 +1182,28 @@ export class QueueManager {
     
     const currentPosition = display.timeline_position || 0;
     
-    // Check if there are any queued videos at or after the current position
+    // Get the total count of all videos in the timeline
+    const totalStmt = queueDb.prepare(`
+      SELECT COUNT(*) as count FROM timeline_videos WHERE display_id = ?
+    `);
+    const totalCount = (totalStmt.get(displayId) as any).count;
+    
+    // If we've reached the end of the timeline (position >= total count or no more queued videos)
     const queuedStmt = queueDb.prepare(`
       SELECT COUNT(*) as count FROM timeline_videos 
       WHERE display_id = ? AND status = 'queued' AND timeline_position >= ?
     `);
     const queuedCount = (queuedStmt.get(displayId, currentPosition) as any).count;
-
-    if (queuedCount > 0) return false; // Still have videos to play at current position
+    
+    // Check if we've exhausted all videos (either no queued videos or reached the end)
+    const shouldRestart = queuedCount === 0 && currentPosition >= totalCount;
+    
+    if (!shouldRestart) {
+      console.log(`📊 Timeline position ${currentPosition}/${totalCount}, ${queuedCount} queued videos remaining - continuing current loop`);
+      return false; // Still have videos to play
+    }
+    
+    console.log(`🔄 End of timeline reached (position ${currentPosition}/${totalCount}, ${queuedCount} queued) - restarting from beginning`);
 
     // Set flag to prevent concurrent loop starts
     loopStartInProgress.add(displayId);
@@ -905,6 +1218,15 @@ export class QueueManager {
     // Increment loop count
     PlaylistManager.incrementLoopCount(playlist.id);
 
+    // Mark all remaining queued videos as played (clean up the timeline)
+    const markRemainingStmt = queueDb.prepare(`
+      UPDATE timeline_videos 
+      SET status = 'played', played_at = CURRENT_TIMESTAMP 
+      WHERE display_id = ? AND status = 'queued'
+    `);
+    const markedCount = markRemainingStmt.run(displayId).changes;
+    console.log(`🧹 Marked ${markedCount} remaining videos as played before loop restart`);
+
     // Clear old timeline videos for this display
     const clearStmt = queueDb.prepare(`
       DELETE FROM timeline_videos WHERE display_id = ?
@@ -918,7 +1240,7 @@ export class QueueManager {
     resetPositionStmt.run(displayId);
     console.log(`🔄 Reset timeline_position to 0 for display ${displayId}`);
 
-    // Populate new timeline with next loop iteration
+    // Populate new timeline with next loop iteration (will exclude already-played videos)
     await this.populateTimelineVideos(displayId, playlist.id, playlist.loop_count + 1);
 
     // Check if we actually got any videos in the new loop (check from position 0 since we reset)
@@ -958,9 +1280,7 @@ export class QueueManager {
 
   // Get timeline progress for display with database counts
   static async getTimelineProgressWithCounts(displayId: string) {
-    console.log(`🔍 Getting active playlist for display ${displayId}`);
     const playlist = PlaylistManager.getActivePlaylist(displayId);
-    console.log(`🔍 Active playlist found:`, playlist ? playlist.id : 'None');
     if (!playlist) return null;
 
     const blocks = PlaylistManager.getPlaylistBlocks(playlist.id);
@@ -971,9 +1291,6 @@ export class QueueManager {
     `);
     const currentPosition = (positionStmt.get(displayId) as any)?.timeline_position || 0;
 
-    console.log(`📊 Progress calc START: currentPosition=${currentPosition}, totalBlocks=${blocks.length}`);
-    console.log(`📊 Block breakdown:`, blocks.map((b, i) => `Block ${i}: ${b.video_count} videos (${b.search_term})`));
-
     // Calculate which block we're in
     let blockIndex = 0;
     let positionInBlock = 0;
@@ -982,21 +1299,25 @@ export class QueueManager {
     
     for (let i = 0; i < blocks.length; i++) {
       const blockEnd = totalVideosProcessed + blocks[i].video_count;
-      console.log(`📊 Checking block ${i}: totalProcessed=${totalVideosProcessed}, blockEnd=${blockEnd}, condition: ${currentPosition} < ${blockEnd} = ${currentPosition < blockEnd}`);
       if (currentPosition < blockEnd) {
         blockIndex = i;
         positionInBlock = currentPosition - totalVideosProcessed;
-        console.log(`📊 ✅ Found block ${blockIndex}, positionInBlock=${positionInBlock}`);
         break;
       }
       totalVideosProcessed += blocks[i].video_count;
     }
 
-    // Handle overflow - if position is beyond all blocks, use last block
+    // Handle overflow - if position is beyond all blocks, reset to start of last block
     if (currentPosition >= totalVideosInPlaylist && blocks.length > 0) {
-      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, using last block`);
+      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, resetting to start of last block`);
       blockIndex = blocks.length - 1;
-      positionInBlock = blocks[blockIndex]?.video_count || 0;
+      positionInBlock = 0;
+      
+      // Reset the timeline position to prevent future overflows
+      const resetStmt = queueDb.prepare(`
+        UPDATE displays SET timeline_position = ? WHERE id = ?
+      `);
+      resetStmt.run(totalVideosInPlaylist - 1, displayId);
     }
 
     const currentBlock = blocks[blockIndex] || blocks[0];
@@ -1005,7 +1326,10 @@ export class QueueManager {
     const clampedPositionInBlock = currentBlock ? Math.min(positionInBlock, currentBlock.video_count - 1) : 0;
     const blockProgress = currentBlock ? (clampedPositionInBlock / currentBlock.video_count) * 100 : 0;
     
-    console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
+    // Only log when there's an issue or overflow
+    if (currentPosition >= totalVideosInPlaylist) {
+      console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
+    }
     
     // Fetch database counts for each block using cache
     const blocksWithCounts = await Promise.all(
@@ -1102,21 +1426,25 @@ export class QueueManager {
     
     for (let i = 0; i < blocks.length; i++) {
       const blockEnd = totalVideosProcessed + blocks[i].video_count;
-      console.log(`📊 Checking block ${i}: totalProcessed=${totalVideosProcessed}, blockEnd=${blockEnd}, condition: ${currentPosition} < ${blockEnd} = ${currentPosition < blockEnd}`);
       if (currentPosition < blockEnd) {
         blockIndex = i;
         positionInBlock = currentPosition - totalVideosProcessed;
-        console.log(`📊 ✅ Found block ${blockIndex}, positionInBlock=${positionInBlock}`);
         break;
       }
       totalVideosProcessed += blocks[i].video_count;
     }
 
-    // Handle overflow - if position is beyond all blocks, use last block
+    // Handle overflow - if position is beyond all blocks, reset to start of last block
     if (currentPosition >= totalVideosInPlaylist && blocks.length > 0) {
-      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, using last block`);
+      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, resetting to start of last block`);
       blockIndex = blocks.length - 1;
-      positionInBlock = blocks[blockIndex]?.video_count || 0;
+      positionInBlock = 0;
+      
+      // Reset the timeline position to prevent future overflows
+      const resetStmt = queueDb.prepare(`
+        UPDATE displays SET timeline_position = ? WHERE id = ?
+      `);
+      resetStmt.run(totalVideosInPlaylist - 1, displayId);
     }
 
     const currentBlock = blocks[blockIndex] || blocks[0];
@@ -1125,7 +1453,10 @@ export class QueueManager {
     const clampedPositionInBlock = currentBlock ? Math.min(positionInBlock, currentBlock.video_count - 1) : 0;
     const blockProgress = currentBlock ? (clampedPositionInBlock / currentBlock.video_count) * 100 : 0;
     
-    console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
+    // Only log when there's an issue or overflow
+    if (currentPosition >= totalVideosInPlaylist) {
+      console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
+    }
     
     return {
       currentBlock: {
@@ -1159,6 +1490,65 @@ export class QueueManager {
     `);
     
     const rows = stmt.all(displayId, limit) as any[];
+    
+    return rows.map(row => ({
+      id: row.id,
+      display_id: row.display_id,
+      playlist_id: row.playlist_id,
+      block_id: row.block_id,
+      video_id: row.video_id,
+      block_position: row.block_position,
+      timeline_position: row.timeline_position,
+      loop_iteration: row.loop_iteration,
+      status: row.status,
+      played_at: row.played_at,
+      video_data: row.video_data,
+      created_at: row.created_at
+    }));
+  }
+
+  // Reset blocks to their target video counts (remove excess videos)
+  static resetBlocksToTargetCounts(displayId: string, playlistId: string): void {
+    console.log(`🧹 Resetting blocks to target counts for display ${displayId}`);
+    
+    const blocks = PlaylistManager.getPlaylistBlocks(playlistId);
+    
+    for (const block of blocks) {
+      // Get current video count for this block
+      const currentCount = queueDb.prepare(`
+        SELECT COUNT(*) as count FROM timeline_videos 
+        WHERE display_id = ? AND block_id = ?
+      `).get(displayId, block.id);
+      
+      if (currentCount.count > block.video_count) {
+        console.log(`🧹 Block "${block.search_term}" has ${currentCount.count} videos, reducing to ${block.video_count}`);
+        
+        // Delete excess videos (keep the first N videos by timeline_position)
+        const deleteStmt = queueDb.prepare(`
+          DELETE FROM timeline_videos 
+          WHERE display_id = ? AND block_id = ? AND id NOT IN (
+            SELECT id FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ? 
+            ORDER BY timeline_position ASC 
+            LIMIT ?
+          )
+        `);
+        
+        const deleted = deleteStmt.run(displayId, block.id, displayId, block.id, block.video_count);
+        console.log(`✅ Removed ${deleted.changes} excess videos from block "${block.search_term}"`);
+      }
+    }
+  }
+
+  // Get all videos for all blocks (for admin page)
+  static getAllVideosForDisplay(displayId: string): TimelineVideo[] {
+    const stmt = queueDb.prepare(`
+      SELECT * FROM timeline_videos 
+      WHERE display_id = ?
+      ORDER BY timeline_position ASC
+    `);
+    
+    const rows = stmt.all(displayId) as any[];
     
     return rows.map(row => ({
       id: row.id,
