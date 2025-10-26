@@ -27,6 +27,188 @@ interface DashboardStats {
   playing: number;
 }
 
+// Refactored Playlist Block Component
+function PlaylistBlockCard({ 
+  block, 
+  isActive, 
+  isCompleted, 
+  onEdit, 
+  onDelete, 
+  showEditButtons = true,
+  isExpanded,
+  onToggle,
+  blockVideos = [],
+  currentVideoId = null,
+}: {
+  block: any;
+  isActive: boolean;
+  isCompleted: boolean;
+  onEdit: (block: any) => void;
+  onDelete: (block: any) => void;
+  showEditButtons?: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  blockVideos?: any[];
+  currentVideoId?: string | null;
+}) {
+  const getBlockColor = (blockName: string) => {
+    const colors = {
+      'commercial': 'bg-red-100 text-gray-900 border-red-200',
+      'Interdimensional Cable Channel 42': 'bg-purple-100 text-gray-900 border-purple-200',
+      'show trailer': 'bg-blue-100 text-gray-900 border-blue-200',
+      'Music Video': 'bg-green-100 text-gray-900 border-green-200',
+      'Movie Trailer': 'bg-orange-100 text-gray-900 border-orange-200',
+      'Stand Up': 'bg-yellow-100 text-gray-900 border-yellow-200',
+    };
+    return colors[blockName as keyof typeof colors] || 'bg-gray-100 text-gray-900 border-gray-200';
+  };
+
+  const colorClasses = getBlockColor(block.name);
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className={`relative group rounded-lg border transition-all duration-200 ${
+        isActive ? 'border-blue-400 shadow-md shadow-blue-100' : 
+        isCompleted ? 'border-green-300 bg-green-50/50' : 
+        'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+      }`}
+    >
+      {/* Block Header */}
+      <div 
+        className={`p-3 cursor-pointer ${colorClasses} rounded-lg`}
+        onClick={onToggle}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className={`w-3 h-3 rounded-full flex-shrink-0 ${
+              isActive ? 'bg-blue-500 animate-pulse' : 
+              isCompleted ? 'bg-green-500' : 
+              'bg-gray-300'
+            }`} />
+            <h3 className="font-semibold truncate">{block.name}</h3>
+            <span className="text-xs opacity-90">
+              {block.format}
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Progress indicator */}
+            <div className="text-xs opacity-90">
+              {block.seenCount || 0}/{block.totalAvailable || 0} watched
+            </div>
+            
+            {/* Expand/Collapse button */}
+            <button className="p-1 hover:bg-black/10 rounded">
+              {isExpanded ? 
+                <ChevronDown className="w-4 h-4" /> : 
+                <ChevronRight className="w-4 h-4" />
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Content */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="border-t border-gray-200 bg-white"
+          >
+            <div className="p-3">
+              {/* Block Videos List */}
+              <div className="space-y-2 mb-3">
+                <h4 className="text-sm font-medium text-gray-700">Videos in this block:</h4>
+                {blockVideos.length > 0 ? (
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {blockVideos.map((video, index) => {
+                      // Parse video data if it's a string
+                      let videoData = video.video_data;
+                      if (typeof videoData === 'string') {
+                        try {
+                          videoData = JSON.parse(videoData);
+                        } catch (e) {
+                          console.error('Error parsing video data:', e);
+                          videoData = null;
+                        }
+                      }
+                      
+                      const videoText = videoData?.post?.text || video.text || 'No description available';
+                      const isCurrentVideo = currentVideoId && video.video_id === currentVideoId;
+                      
+                      return (
+                        <div 
+                          key={video.id || index} 
+                          className={`flex items-center gap-2 p-2 rounded text-xs transition-colors ${
+                            isCurrentVideo 
+                              ? 'bg-blue-100 border-2 border-blue-300 shadow-sm' 
+                              : 'bg-gray-50'
+                          }`}
+                        >
+                          <span className={`w-6 text-center font-medium ${
+                            isCurrentVideo ? 'text-blue-700' : 'text-gray-700'
+                          }`}>
+                            {isCurrentVideo ? '▶' : index + 1}
+                          </span>
+                          <span className={`flex-1 truncate font-medium ${
+                            isCurrentVideo ? 'text-blue-900' : 'text-gray-900'
+                          }`} title={videoText}>
+                            {videoText.substring(0, 60)}...
+                          </span>
+                          <span className={`font-mono text-xs ${
+                            isCurrentVideo ? 'text-blue-600' : 'text-gray-600'
+                          }`}>
+                            {video.video_id?.slice(-6)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-700 italic">No videos loaded yet</div>
+                )}
+              </div>
+
+              {/* Edit/Delete buttons */}
+              {showEditButtons && (
+                <div className="flex gap-2 pt-2 border-t border-gray-100">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(block);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-gray-900 rounded transition-colors"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(block);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 hover:bg-red-200 text-gray-900 rounded transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
 // Sortable Block Component
 function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEditButtons = true }: {
   block: any;
@@ -72,8 +254,8 @@ function SortableBlock({ block, isActive, isCompleted, onEdit, onDelete, showEdi
     >
       {/* Drag Handle */}
       <div
-        {...(showEditButtons ? attributes : {})}
-        {...(showEditButtons ? listeners : {})}
+        {...attributes}
+        {...listeners}
         className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1"
       >
         <GripVertical className="w-3 h-3 text-gray-400" />
@@ -393,8 +575,8 @@ function InlineEditableBlock({ block, blockIndex, displayId, onSave, onDelete }:
       className="relative group bg-white rounded-lg border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
     >
       {/* Drag Handle */}
-      <div
-        {...attributes}
+      <div 
+        {...attributes} 
         {...listeners}
         className="absolute left-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1"
       >
@@ -574,6 +756,8 @@ export default function AdminDashboard() {
   const [selectedDisplay, setSelectedDisplay] = useState<DisplayWithProgress | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({});
+  const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
+  const [blockVideos, setBlockVideos] = useState<{[key: string]: any[]}>({});
   const [addingBlockToDisplay, setAddingBlockToDisplay] = useState<string | null>(null);
   const [addingBlockAtPosition, setAddingBlockAtPosition] = useState<number | null>(null);
   const [stoppedDisplays, setStoppedDisplays] = useState<Set<string>>(new Set());
@@ -1382,6 +1566,39 @@ export default function AdminDashboard() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAddDropdown]);
 
+  // Toggle block expansion
+  const toggleBlock = (blockKey: string, display: DisplayWithProgress) => {
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(blockKey)) {
+        newSet.delete(blockKey);
+      } else {
+        newSet.add(blockKey);
+      }
+      return newSet;
+    });
+  };
+
+  // Load block videos
+  const loadBlockVideos = async (display: DisplayWithProgress, blockId: string | number) => {
+    try {
+      if (display.queuedVideos) {
+        const blockVideos = display.queuedVideos.filter((video: any) => {
+          return video.block_id === blockId || 
+                 video.block_id === String(blockId).slice(-6) ||
+                 video.block_id === String(blockId).replace(/^LVOYMR-/, '') ||
+                 String(blockId).endsWith(video.block_id);
+        });
+        setBlockVideos(prev => ({
+          ...prev,
+          [`${display.id}-${blockId}`]: blockVideos
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading block videos:', error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
@@ -1761,22 +1978,23 @@ export default function AdminDashboard() {
                                           onDelete={handleBlockDelete}
                                         />
                                       ) : (
-                                        <SortableBlock
-                                          block={{
-                                            ...block,
-                                            id: `${block.name}-${blockIndex}`,
-                                            isActive: block.isActive, // Use the isActive value from the API
-                                            isCompleted: block.isCompleted, // Use the isCompleted value from the API
-                                            currentVideo: block.isActive ? display.progress?.currentBlock?.currentVideo : undefined,
-                                            totalVideos: block.videoCount || block.video_count,
-                                            videoCount: block.videoCount || block.video_count, // Ensure videoCount is available
-                                            progress: block.isActive ? display.progress?.currentBlock?.progress : undefined
+                                        <PlaylistBlockCard
+                                          block={block}
+                                          isActive={block.isActive}
+                                          isCompleted={block.isCompleted}
+                                          onEdit={() => {}}
+                                          onDelete={() => {}}
+                                          showEditButtons={false}
+                                          isExpanded={expandedBlocks.has(`${display.id}-${block.id || blockIndex}`)}
+                                          onToggle={() => {
+                                            const blockKey = `${display.id}-${block.id || blockIndex}`;
+                                            if (!expandedBlocks.has(blockKey)) {
+                                              loadBlockVideos(display, block.id || blockIndex);
+                                            }
+                                            toggleBlock(blockKey, display);
                                           }}
-                                          isActive={block.isActive} // Use the isActive value from the API
-                                          isCompleted={block.isCompleted} // Use the isCompleted value from the API
-                                          onEdit={() => {}} // Disabled when playing
-                                          onDelete={() => {}} // Disabled when playing
-                                          showEditButtons={false} // Hide edit buttons when playing
+                                          blockVideos={blockVideos[`${display.id}-${block.id || blockIndex}`] || []}
+                                          currentVideoId={display.current_video_id}
                                         />
                                       )}
                                     </div>
