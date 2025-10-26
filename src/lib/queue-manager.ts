@@ -798,6 +798,22 @@ export class QueueManager {
             continue;
           }
           
+          // Check for existing videos to prevent duplicates
+          const existingVideoIds = queueDb.prepare(`
+            SELECT video_id FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ?
+          `).all(displayId, block.id) as Array<{video_id: string}>;
+          
+          const existingIdsSet = new Set(existingVideoIds.map(v => v.video_id));
+          const uniqueVideos = videos.filter(video => !existingIdsSet.has(video.post.id));
+          
+          if (uniqueVideos.length === 0) {
+            console.log(`⚠️ All videos for block "${block.search_term}" are already in timeline, skipping`);
+            continue;
+          }
+          
+          console.log(`📋 Filtered ${uniqueVideos.length} new videos (removed ${videos.length - uniqueVideos.length} duplicates) for block "${block.search_term}"`);
+          
           // Add videos to timeline with correct positions
           const transaction = queueDb.transaction(() => {
             const stmt = queueDb.prepare(`
@@ -818,7 +834,7 @@ export class QueueManager {
             `).get(displayId, block.id);
             const startBlockPosition = (currentBlockPosition?.max_pos || -1) + 1;
             
-            videos.forEach((video, videoIndex) => {
+            uniqueVideos.forEach((video, videoIndex) => {
               const videoId = uuidv4();
               
               // Store essential video data
@@ -962,6 +978,22 @@ export class QueueManager {
             continue;
           }
           
+          // Check for existing videos to prevent duplicates
+          const existingVideoIds = queueDb.prepare(`
+            SELECT video_id FROM timeline_videos 
+            WHERE display_id = ? AND block_id = ?
+          `).all(displayId, block.id) as Array<{video_id: string}>;
+          
+          const existingIdsSet = new Set(existingVideoIds.map(v => v.video_id));
+          const uniqueVideos = videos.filter(video => !existingIdsSet.has(video.post.id));
+          
+          if (uniqueVideos.length === 0) {
+            console.log(`⚠️ All videos for block "${block.search_term}" are already in timeline, skipping refill`);
+            continue;
+          }
+          
+          console.log(`📋 Filtered ${uniqueVideos.length} new videos (removed ${videos.length - uniqueVideos.length} duplicates) for block "${block.search_term}"`);
+          
           // Get the current block position to append new videos
           const currentBlockPosition = queueDb.prepare(`
             SELECT MAX(block_position) as max_pos FROM timeline_videos 
@@ -986,7 +1018,7 @@ export class QueueManager {
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)
             `);
             
-            videos.forEach((video, videoIndex) => {
+            uniqueVideos.forEach((video, videoIndex) => {
               const videoId = uuidv4();
               
               // Store essential video data
