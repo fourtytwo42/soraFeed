@@ -58,7 +58,7 @@ export async function POST(
     let nextVideo = null;
     let timelineVideo = QueueManager.getNextTimelineVideo(code);
     
-    console.log(`📊 Poll check - currentTimelineVideoId: ${currentTimelineVideoId?.slice(-6)}, nextTimelineVideo.id: ${timelineVideo?.id.slice(-6)}`);
+    console.log(`📊 Poll check - currentTimelineVideoId: ${currentTimelineVideoId?.slice(-6) || 'none'}, timelineVideo: ${timelineVideo?.video_id.slice(-6) || 'none'} (ID: ${timelineVideo?.id.slice(-6) || 'none'}), status: ${status}, isPlaying: ${display.is_playing}`);
     
     // If no timeline video found, check if we need to repopulate timeline from playlist
     // Only repopulate if the display is actually playing, not if it's stopped
