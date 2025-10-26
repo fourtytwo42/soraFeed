@@ -18,19 +18,19 @@ export function initQueueDatabase() {
     return;
   }
   
-  // Check if tables already exist to avoid unnecessary work
-  const tablesExist = queueDb.prepare(`
+  const tables = queueDb.prepare(`
     SELECT name FROM sqlite_master 
     WHERE type='table' AND name IN ('displays', 'playlists', 'playlist_blocks', 'timeline_videos', 'video_history')
   `).all();
-  
-  if (tablesExist.length === 5) {
-    // All tables exist, just set the flag and return
-    (global as any)[INIT_FLAG_KEY] = true;
-    return;
+
+  const isFreshInstall = tables.length !== 5;
+
+  if (isFreshInstall) {
+    console.log('🗄️ Initializing queue database...');
+  } else {
+    console.log('🗄️ Queue tables detected, running migrations to keep schema up to date...');
   }
-  
-  console.log('🗄️ Initializing queue database...');
+
   (global as any)[INIT_FLAG_KEY] = true;
 
   // 1. displays table
@@ -44,6 +44,7 @@ export function initQueueDatabase() {
       current_video_id TEXT,
       current_position INTEGER DEFAULT 0,
       current_block_id TEXT,
+      current_timeline_video_id TEXT,
       current_playlist_id TEXT,
       timeline_position INTEGER DEFAULT 0,
       commands TEXT DEFAULT '[]',
@@ -135,6 +136,12 @@ export function initQueueDatabase() {
     CREATE INDEX IF NOT EXISTS idx_history_display_video ON video_history(display_id, video_id);
   `);
 
+  runMigrations();
+
+  console.log('✅ Queue database initialized successfully');
+}
+
+function runMigrations() {
   // Migration: Add format column if it doesn't exist
   const formatColumnExists = queueDb.prepare(`
     SELECT COUNT(*) as count FROM pragma_table_info('playlist_blocks') WHERE name = 'format'
@@ -186,7 +193,19 @@ export function initQueueDatabase() {
     }
   }
 
-  console.log('✅ Queue database initialized successfully');
+  // Migration: ensure current_timeline_video_id exists
+  const currentTimelineColumn = queueDb.prepare(`
+    SELECT COUNT(*) as count FROM pragma_table_info('displays') WHERE name = 'current_timeline_video_id'
+  `).get() as { count: number };
+  
+  if (currentTimelineColumn.count === 0) {
+    try {
+      queueDb.exec(`ALTER TABLE displays ADD COLUMN current_timeline_video_id TEXT`);
+      console.log('✅ Added current_timeline_video_id column to displays table');
+    } catch (error) {
+      console.error('❌ Failed to add current_timeline_video_id column:', error);
+    }
+  }
 }
 
 // Helper functions for database operations

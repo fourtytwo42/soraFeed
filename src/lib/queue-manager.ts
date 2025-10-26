@@ -547,40 +547,66 @@ export class QueueManager {
 
         // If we didn't find enough videos, check if we should reset exclusions for this search term
         if (videos.length < block.video_count) {
+          const missingCount = block.video_count - videos.length;
           console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
+          console.log(`   Need ${missingCount} more videos – allowing repeats for this block if necessary`);
           
-          // Check if we've exhausted content for this search term
+          // Diagnostic fetch to understand availability (best effort)
           const totalAvailableVideos = await this.searchVideos(
             block.search_term,
-            1000, // Get a large number to see total available
+            1000,
             block.fetch_mode,
             block.format,
-            [] // No exclusions to see total available
+            []
           );
           
-          console.log(`📊 Total available videos for "${block.search_term}": ${totalAvailableVideos.length}`);
+          console.log(`📊 Total available videos glimpsed for "${block.search_term}": ${totalAvailableVideos.length}`);
+
+          if (missingCount > 0) {
+            console.log(`🛟 Fetching additional videos for "${block.search_term}" without global exclusions`);
+            const perBlockExcludes = videos.map(video => video.post.id);
+            const fallbackRequestSize = Math.max(block.video_count, missingCount * 2);
+            
+            const fallbackVideos = await this.searchVideos(
+              block.search_term,
+              fallbackRequestSize,
+              block.fetch_mode,
+              block.format,
+              perBlockExcludes
+            );
+
+            for (const video of fallbackVideos) {
+              if (videos.length >= block.video_count) break;
+              if (!perBlockExcludes.includes(video.post.id)) {
+                videos.push(video);
+                perBlockExcludes.push(video.post.id);
+              }
+            }
+          }
           
-          // Check if we've exhausted videos for this specific search term
-          // We should reset if we can't find enough videos for this block
           if (videos.length === 0) {
-            console.log(`🔄 No videos found for "${block.search_term}" - resetting exclusions and starting fresh`);
-            
-            // Reset exclusions for this specific search term by clearing video history
+            console.log(`🔄 Still no videos for "${block.search_term}" after fallback - clearing exclusions and retrying`);
             this.resetExclusionsForSearchTerm(block.search_term, playlistId);
-            
-            // Search again without exclusions
             videos = await this.searchVideos(
               block.search_term,
               block.video_count,
               block.fetch_mode,
               block.format,
-              [] // No exclusions after reset
+              []
             );
-            
             console.log(`✅ After reset: found ${videos.length} videos for "${block.search_term}"`);
-          } else {
-            console.log(`⚠️ Only found ${videos.length} videos (requested ${block.video_count}) for "${block.search_term}"`);
-            console.log(`   This suggests the search term might be too specific or there's a database issue`);
+          }
+
+          if (videos.length < block.video_count && videos.length > 0) {
+            console.log(`♻️ Only ${videos.length} unique videos available for "${block.search_term}". Duplicating to fill block.`);
+            const duplicatePool = [...videos];
+            while (videos.length < block.video_count) {
+              const duplicateVideo = duplicatePool[videos.length % duplicatePool.length];
+              videos.push(duplicateVideo);
+            }
+            console.log(`✅ Duplicated videos so block now has ${videos.length} entries`);
+          } else if (videos.length < block.video_count) {
+            console.log(`❌ Unable to find any videos for "${block.search_term}" even after resets. Block will be empty this loop.`);
           }
         }
 
@@ -1152,6 +1178,32 @@ export class QueueManager {
       video_data: row.video_data,
       created_at: row.created_at
     }));
+  }
+
+  // Get a single timeline video by its ID
+  static getTimelineVideoById(timelineVideoId: string): TimelineVideo | null {
+    const stmt = queueDb.prepare(`
+      SELECT * FROM timeline_videos
+      WHERE id = ?
+      LIMIT 1
+    `);
+    const row = stmt.get(timelineVideoId) as any;
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      display_id: row.display_id,
+      playlist_id: row.playlist_id,
+      block_id: row.block_id,
+      video_id: row.video_id,
+      block_position: row.block_position,
+      timeline_position: row.timeline_position,
+      loop_iteration: row.loop_iteration,
+      status: row.status,
+      played_at: row.played_at,
+      video_data: row.video_data,
+      created_at: row.created_at
+    };
   }
   
   // Get videos for a specific block

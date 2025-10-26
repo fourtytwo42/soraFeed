@@ -19,12 +19,25 @@ interface DisplayWithProgress extends Display {
   isOnline: boolean;
   progress?: TimelineProgress;
   queuedVideos?: any[];
+  nowPlaying?: NowPlayingInfo | null;
 }
 
 interface DashboardStats {
   total: number;
   online: number;
   playing: number;
+}
+
+interface NowPlayingInfo {
+  timelineId: string;
+  videoId: string;
+  blockId: string;
+  blockName?: string | null;
+  blockPosition: number;
+  totalVideosInBlock: number;
+  videoData: any;
+  status: string;
+  timelinePosition?: number;
 }
 
 // Refactored Playlist Block Component
@@ -770,7 +783,6 @@ export default function AdminDashboard() {
   const [isMobile, setIsMobile] = useState(false);
   const [expandedSections, setExpandedSections] = useState<{[key: string]: boolean}>({});
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
-  const [blockVideos, setBlockVideos] = useState<{[key: string]: any[]}>({});
   const [addingBlockToDisplay, setAddingBlockToDisplay] = useState<string | null>(null);
   const [addingBlockAtPosition, setAddingBlockAtPosition] = useState<number | null>(null);
   const [stoppedDisplays, setStoppedDisplays] = useState<Set<string>>(new Set());
@@ -803,6 +815,21 @@ export default function AdminDashboard() {
   
   // Track previous video IDs to detect changes
   const previousVideoIdsRef = useRef<Map<string, string>>(new Map());
+
+  // Map of block -> videos derived from the latest timeline payload
+  const blockVideoMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    displays.forEach(display => {
+      (display.queuedVideos || []).forEach((video: any) => {
+        const blockKey = `${display.id}-${video.block_id || 'unassigned'}`;
+        if (!map.has(blockKey)) {
+          map.set(blockKey, []);
+        }
+        map.get(blockKey)!.push(video);
+      });
+    });
+    return map;
+  }, [displays]);
 
   // Check if mobile
   useEffect(() => {
@@ -890,11 +917,13 @@ export default function AdminDashboard() {
             // Get timeline progress - prioritize API data for consistency
             let progress = null;
             let queuedVideos = [];
+            let nowPlaying = null;
             if (timelineResponse.ok) {
               // Use API progress data as primary source
               const timelineData = await timelineResponse.json();
               progress = timelineData.progress;
               queuedVideos = timelineData.queuedVideos || [];
+              nowPlaying = timelineData.nowPlaying || null;
               
               // Enhance with WebSocket video progress if available
               if (wsStatus?.playlistProgress?.videoProgress && progress) {
@@ -902,18 +931,20 @@ export default function AdminDashboard() {
                 // The API already calculated the correct position within the current block
                 const currentVideoInBlock = progress.currentBlock.currentVideo; // This is already correct from API
                 const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
-                const totalVideosInBlock = progress.currentBlock.totalVideos;
+                const totalVideosInBlock = progress.currentBlock.totalVideos || 0;
                 
                 // Calculate smooth progress: (current video - 1 + video progress) / total videos
                 // Subtract 1 because currentVideo is 1-based, but we need 0-based for calculation
-                const smoothBlockProgress = (((currentVideoInBlock - 1) + videoProgressFraction) / totalVideosInBlock) * 100;
+                const smoothBlockProgress = totalVideosInBlock > 0
+                  ? (((currentVideoInBlock - 1) + videoProgressFraction) / totalVideosInBlock) * 100
+                  : 0;
                 
                 progress.currentBlock.progress = Math.min(smoothBlockProgress, 100);
                 // Keep the API-calculated currentVideo as it's already correct
               }
             }
             
-            return { ...display, isOnline, progress, queuedVideos };
+            return { ...display, isOnline, progress, queuedVideos, nowPlaying };
           } else if (displayResponse.status === 404) {
             // Display was deleted, remove from owned list
             removeOwnedDisplayCode(code);
@@ -1582,49 +1613,89 @@ export default function AdminDashboard() {
 
   // Update displays when WebSocket status changes
   useEffect(() => {
-    if (displays.length > 0 && wsConnected) {
-      setDisplays(prevDisplays => 
-        prevDisplays.map(display => {
-          const wsStatus = displayStatuses.get(display.id);
-          if (wsStatus) {
-            let updatedDisplay = { ...display };
-            
-            // Update online status
-            updatedDisplay.isOnline = wsStatus.isConnected;
-            
-            // Update playing status
-            if (wsStatus.currentVideo) {
-              updatedDisplay.status = 'playing';
-            }
-            
-            // Update progress with WebSocket video progress (smooth block progression)
-            if (wsStatus.playlistProgress?.videoProgress && display.progress) {
-              // Use the existing API-calculated position as the source of truth
-              const currentVideoInBlock = display.progress.currentBlock.currentVideo; // Already correct from API
-              const videoProgressFraction = (wsStatus.playlistProgress.videoProgress || 0) / 100;
-              const totalVideosInBlock = display.progress.currentBlock.totalVideos;
-              
-              // Calculate smooth progress: (current video - 1 + video progress) / total videos
-              // Subtract 1 because currentVideo is 1-based, but we need 0-based for calculation
-              const smoothBlockProgress = (((currentVideoInBlock - 1) + videoProgressFraction) / totalVideosInBlock) * 100;
-              
-              updatedDisplay.progress = {
-                ...display.progress,
-                currentBlock: {
-                  ...display.progress.currentBlock,
-                  progress: Math.min(smoothBlockProgress, 100)
-                  // Keep the existing currentVideo as it's already correct from API
-                }
-              };
-            }
-            
-            return updatedDisplay;
+    if (displayStatuses.size === 0 || displays.length === 0) return;
+    
+    setDisplays(prevDisplays =>
+      prevDisplays.map(display => {
+        const wsStatus = displayStatuses.get(display.id);
+        if (!wsStatus) return display;
+
+        const updatedDisplay = { ...display };
+        updatedDisplay.isOnline = wsStatus.isConnected;
+
+        if (wsStatus.currentVideo) {
+          updatedDisplay.status = 'playing';
+          const mergedNowPlaying: NowPlayingInfo = {
+            timelineId: wsStatus.currentVideo.timelineId || wsStatus.currentVideo.id || display.nowPlaying?.timelineId || '',
+            videoId: wsStatus.currentVideo.videoId || wsStatus.currentVideo.id,
+            blockId: wsStatus.currentVideo.blockId || display.nowPlaying?.blockId || '',
+            blockName: wsStatus.currentVideo.blockName ?? display.nowPlaying?.blockName ?? null,
+            blockPosition: wsStatus.currentVideo.blockPosition ?? display.nowPlaying?.blockPosition ?? 1,
+            totalVideosInBlock: wsStatus.currentVideo.totalVideosInBlock ?? display.nowPlaying?.totalVideosInBlock ?? display.progress?.currentBlock.totalVideos ?? 1,
+            videoData: display.nowPlaying?.videoData || {
+              post: {
+                text: wsStatus.currentVideo.description
+              },
+              profile: {
+                username: wsStatus.currentVideo.username
+              }
+            },
+            status: 'playing',
+            timelinePosition: wsStatus.currentVideo.timelinePosition ?? wsStatus.playlistProgress?.timelinePosition ?? display.nowPlaying?.timelinePosition
+          };
+          updatedDisplay.nowPlaying = mergedNowPlaying;
+
+          if (updatedDisplay.queuedVideos?.length) {
+            updatedDisplay.queuedVideos = updatedDisplay.queuedVideos.map(video => {
+              if (video.id === mergedNowPlaying.timelineId) {
+                return { ...video, status: 'playing' };
+              }
+              return video;
+            });
           }
-          return display;
-        })
-      );
-    }
-  }, [displayStatuses, displays.length, wsConnected]);
+        }
+
+        if (wsStatus.playlistProgress && updatedDisplay.progress) {
+          const totalVideosInBlock =
+            updatedDisplay.nowPlaying?.totalVideosInBlock ||
+            wsStatus.currentVideo?.totalVideosInBlock ||
+            updatedDisplay.progress.currentBlock.totalVideos ||
+            1;
+
+          const blockPositionZeroBased =
+            wsStatus.playlistProgress.blockPosition ??
+            ((updatedDisplay.nowPlaying?.blockPosition ?? 1) - 1);
+
+          const videoProgressFraction = (wsStatus.playlistProgress.videoProgress ?? 0) / 100;
+
+          const smoothBlockProgress = totalVideosInBlock > 0
+            ? ((blockPositionZeroBased + videoProgressFraction) / totalVideosInBlock) * 100
+            : updatedDisplay.progress.currentBlock.progress;
+
+          const currentVideoNumber = Math.min(
+            totalVideosInBlock,
+            blockPositionZeroBased + 1
+          );
+
+          updatedDisplay.progress = {
+            ...updatedDisplay.progress,
+            currentBlock: {
+              ...updatedDisplay.progress.currentBlock,
+              currentVideo: currentVideoNumber,
+              totalVideos: totalVideosInBlock,
+              progress: Math.min(100, smoothBlockProgress)
+            },
+            overallProgress: {
+              ...updatedDisplay.progress.overallProgress,
+              currentPosition: wsStatus.playlistProgress.timelinePosition ?? updatedDisplay.progress.overallProgress.currentPosition
+            }
+          };
+        }
+
+        return updatedDisplay;
+      })
+    );
+  }, [displayStatuses, displays.length]);
 
   // Detect video changes and refresh display data from API
   useEffect(() => {
@@ -1656,6 +1727,22 @@ export default function AdminDashboard() {
     }
   }, [wsConnected, registerDisplays]);
 
+  // Keep high-level stats in sync with real-time updates
+  useEffect(() => {
+    if (displays.length === 0) {
+      setStats({ total: 0, online: 0, playing: 0 });
+      return;
+    }
+
+    const online = displays.filter(display => display.isOnline).length;
+    const playing = displays.filter(display => display.status === 'playing').length;
+    setStats({
+      total: displays.length,
+      online,
+      playing
+    });
+  }, [displays]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1669,7 +1756,7 @@ export default function AdminDashboard() {
   }, [showAddDropdown]);
 
   // Toggle block expansion
-  const toggleBlock = (blockKey: string, display: DisplayWithProgress) => {
+  const toggleBlock = (blockKey: string) => {
     setExpandedBlocks(prev => {
       const newSet = new Set(prev);
       if (newSet.has(blockKey)) {
@@ -1681,36 +1768,25 @@ export default function AdminDashboard() {
     });
   };
 
-  // Load block videos
-  const loadBlockVideos = async (display: DisplayWithProgress, blockId: string | number) => {
-    try {
-      if (display.queuedVideos) {
-        // Improved block ID matching - handle both UUID and short IDs
-        const blockVideos = display.queuedVideos.filter((video: any) => {
-          const videoBlockId = String(video.block_id || '');
-          const searchBlockId = String(blockId || '');
-          
-          // Exact match
-          if (videoBlockId === searchBlockId) return true;
-          
-          // If blockId is a UUID, check if video's block_id is the same UUID
-          // If blockId is an index/number, we can't match it to a specific block
-          // So we'll use position-based matching instead
-          
-          return false; // No fuzzy matching - only exact match
-        });
-        
-        console.log(`📋 Block ${blockId}: Found ${blockVideos.length} videos out of ${display.queuedVideos.length} total`);
-        
-        setBlockVideos(prev => ({
-          ...prev,
-          [`${display.id}-${blockId}`]: blockVideos
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading block videos:', error);
-    }
-  };
+  // Ensure the active block is always expanded
+  useEffect(() => {
+    setExpandedBlocks(prev => {
+      let changed = false;
+      const next = new Set(prev);
+      displays.forEach(display => {
+        const activeBlock = display.progress?.blocks?.find(block => block.isActive);
+        if (activeBlock) {
+          const index = display.progress?.blocks?.indexOf(activeBlock) ?? 0;
+          const blockKey = `${display.id}-${activeBlock.id || index}`;
+          if (!next.has(blockKey)) {
+            next.add(blockKey);
+            changed = true;
+          }
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [displays]);
 
   if (loading) {
     return (
@@ -1935,6 +2011,37 @@ export default function AdminDashboard() {
                 {/* Current Video Info */}
                 {(() => {
                   const wsStatus = displayStatuses.get(display.id);
+                  const nowPlaying = display.nowPlaying;
+                  
+                  if (nowPlaying) {
+                    const videoData = nowPlaying.videoData || {};
+                    const username = videoData.profile?.username || 'Unknown';
+                    const description = videoData.post?.text || 'No description available';
+                    const blockLabelParts = [];
+                    if (nowPlaying.blockName) {
+                      blockLabelParts.push(nowPlaying.blockName);
+                    }
+                    if (nowPlaying.totalVideosInBlock) {
+                      blockLabelParts.push(`Video ${nowPlaying.blockPosition} of ${nowPlaying.totalVideosInBlock}`);
+                    }
+                    const blockLabel = blockLabelParts.join(' • ');
+                    
+                    return (
+                      <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-400">
+                        <div className="text-sm font-medium text-blue-900 mb-1">Now Playing</div>
+                        <div className="text-sm text-blue-800">
+                          <div className="font-medium">@{username}</div>
+                          {blockLabel && (
+                            <div className="text-xs text-blue-700 mb-1">{blockLabel}</div>
+                          )}
+                          <div className="text-xs text-blue-600 mt-1 line-clamp-2">
+                            {description}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
                   return wsStatus?.currentVideo ? (
                     <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-l-4 border-blue-400">
                       <div className="text-sm font-medium text-blue-900 mb-1">Now Playing</div>
@@ -1950,7 +2057,20 @@ export default function AdminDashboard() {
 
                 {/* Timeline Progress or Empty State */}
                 {display.progress ? (
-                  <div className="p-4">
+                  (() => {
+                    const overallProgressPercent = display.progress.overallProgress.totalInCurrentLoop > 0
+                      ? (display.progress.overallProgress.currentPosition / display.progress.overallProgress.totalInCurrentLoop) * 100
+                      : 0;
+                    const safeOverallProgress = Number.isFinite(overallProgressPercent) ? overallProgressPercent : 0;
+                    const blockName = display.nowPlaying?.blockName || display.progress.currentBlock.name;
+                    const currentBlockVideo = display.nowPlaying?.blockPosition || display.progress.currentBlock.currentVideo;
+                    const totalBlockVideos = display.nowPlaying?.totalVideosInBlock || display.progress.currentBlock.totalVideos;
+                    const blockProgressPercent = Number.isFinite(display.progress.currentBlock.progress)
+                      ? display.progress.currentBlock.progress
+                      : 0;
+                    
+                    return (
+                      <div className="p-4">
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="font-semibold text-gray-900">Playlist Blocks</h4>
                       <div className="flex items-center gap-2">
@@ -1997,13 +2117,13 @@ export default function AdminDashboard() {
                     <div className="mb-4">
                       <div className="flex justify-between text-sm text-gray-600 mb-2">
                         <span>Overall Progress</span>
-                        <span>{Math.round((display.progress.overallProgress.currentPosition / display.progress.overallProgress.totalInCurrentLoop) * 100)}%</span>
+                        <span>{Math.round(safeOverallProgress)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
                         <motion.div
                           className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full"
                           initial={{ width: 0 }}
-                          animate={{ width: `${(display.progress.overallProgress.currentPosition / display.progress.overallProgress.totalInCurrentLoop) * 100}%` }}
+                          animate={{ width: `${safeOverallProgress}%` }}
                           transition={{ duration: 0.5 }}
                         />
                       </div>
@@ -2012,17 +2132,17 @@ export default function AdminDashboard() {
                     {/* Current Block */}
                     <div className="bg-gray-50 rounded-lg p-3">
                       <div className="text-sm font-medium text-gray-900 mb-2">
-                        {display.progress.currentBlock.name}
+                        {blockName}
                       </div>
                       <div className="flex justify-between text-sm text-gray-600 mb-2">
-                        <span>Video {display.progress.currentBlock.currentVideo} of {display.progress.currentBlock.totalVideos}</span>
-                        <span>{Math.round(display.progress.currentBlock.progress)}%</span>
+                        <span>Video {currentBlockVideo} of {totalBlockVideos}</span>
+                        <span>{Math.round(blockProgressPercent)}%</span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-1.5">
                         <motion.div
                           className="bg-blue-500 h-1.5 rounded-full"
                           initial={{ width: 0 }}
-                          animate={{ width: `${display.progress.currentBlock.progress}%` }}
+                          animate={{ width: `${blockProgressPercent}%` }}
                           transition={{ duration: 0.5 }}
                         />
                       </div>
@@ -2101,12 +2221,9 @@ export default function AdminDashboard() {
                                           const blockKey = `${display.id}-${block.id || blockIndex}`;
                                           const shouldAutoExpand = block.isActive;
                                           const isExpanded = expandedBlocks.has(blockKey);
-                                          
-                                          // Auto-expand and load videos for active blocks
-                                          if (shouldAutoExpand && !isExpanded) {
-                                            loadBlockVideos(display, block.id || blockIndex);
-                                            toggleBlock(blockKey, display);
-                                          }
+                                          const showExpanded = isExpanded || shouldAutoExpand;
+                                          const videosForBlock = blockVideoMap.get(blockKey) || [];
+                                          const currentVideoId = display.nowPlaying?.videoId || display.current_video_id;
                                           
                                           return (
                                             <PlaylistBlockCard
@@ -2116,15 +2233,10 @@ export default function AdminDashboard() {
                                               onEdit={() => {}}
                                               onDelete={() => {}}
                                               showEditButtons={false}
-                                              isExpanded={isExpanded || shouldAutoExpand}
-                                              onToggle={() => {
-                                                if (!isExpanded) {
-                                                  loadBlockVideos(display, block.id || blockIndex);
-                                                }
-                                                toggleBlock(blockKey, display);
-                                              }}
-                                              blockVideos={blockVideos[blockKey] || []}
-                                              currentVideoId={display.current_video_id}
+                                              isExpanded={showExpanded}
+                                              onToggle={() => toggleBlock(blockKey)}
+                                              blockVideos={videosForBlock}
+                                              currentVideoId={currentVideoId || undefined}
                                             />
                                           );
                                         })()
@@ -2138,7 +2250,9 @@ export default function AdminDashboard() {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </div>
+                      </div>
+                    );
+                  })()
                 ) : (
                   /* No progress/playlist - show empty state */
                   <div className="p-4">

@@ -46,6 +46,7 @@ export class DisplayManager {
       current_video_id: row.current_video_id,
       current_position: row.current_position,
       current_block_id: row.current_block_id,
+      current_timeline_video_id: row.current_timeline_video_id,
       current_playlist_id: row.current_playlist_id,
       timeline_position: row.timeline_position,
       commands: row.commands,
@@ -71,6 +72,7 @@ export class DisplayManager {
       current_video_id: row.current_video_id,
       current_position: row.current_position,
       current_block_id: row.current_block_id,
+      current_timeline_video_id: row.current_timeline_video_id,
       current_playlist_id: row.current_playlist_id,
       timeline_position: row.timeline_position,
       commands: row.commands,
@@ -86,7 +88,7 @@ export class DisplayManager {
   // Update display status (called by VM client)
   static updateDisplayStatus(
     id: string, 
-    updates: Partial<Pick<Display, 'status' | 'current_video_id' | 'current_position' | 'current_block_id' | 'timeline_position' | 'last_video_start_time'>>
+    updates: Partial<Pick<Display, 'status' | 'current_video_id' | 'current_position' | 'current_block_id' | 'current_timeline_video_id' | 'timeline_position' | 'last_video_start_time'>>
   ): void {
     const setParts: string[] = [];
     const values: any[] = [];
@@ -106,6 +108,10 @@ export class DisplayManager {
     if (updates.current_block_id !== undefined) {
       setParts.push('current_block_id = ?');
       values.push(updates.current_block_id);
+    }
+    if (updates.current_timeline_video_id !== undefined) {
+      setParts.push('current_timeline_video_id = ?');
+      values.push(updates.current_timeline_video_id);
     }
     if (updates.timeline_position !== undefined) {
       setParts.push('timeline_position = ?');

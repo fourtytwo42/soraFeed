@@ -3,6 +3,7 @@ import { DisplayManager } from '@/lib/display-manager';
 import { QueueManager } from '@/lib/queue-manager';
 import { PlaylistManager } from '@/lib/playlist-manager';
 import { queueDb } from '@/lib/sqlite';
+import { TimelineVideo } from '@/types/timeline';
 
 // POST /api/poll/[code] - VM client polling endpoint
 export async function POST(
@@ -22,16 +23,37 @@ export async function POST(
     }
 
     // Update display status
+    const activeTimelineVideo = currentTimelineVideoId
+      ? QueueManager.getTimelineVideoById(currentTimelineVideoId)
+      : null;
+
     DisplayManager.updateDisplayStatus(code, {
       status,
       current_video_id: currentVideoId,
       current_position: position,
+      current_block_id: activeTimelineVideo ? activeTimelineVideo.block_id : null,
+      current_timeline_video_id: currentTimelineVideoId ?? null,
       last_video_start_time: currentVideoId !== display.current_video_id ? Date.now() : display.last_video_start_time
     });
 
     // Get pending commands
     const commands = DisplayManager.getAndClearCommands(code);
     
+    const buildNextVideoPayload = (video: TimelineVideo | null) => {
+      if (!video) return null;
+
+      const block = PlaylistManager.getBlockById(video.block_id);
+      const totalVideosInBlock = block?.video_count ?? QueueManager.getTotalVideosInBlock(video.block_id);
+
+      return {
+        ...video,
+        blockName: block?.search_term ?? null,
+        blockFormat: block?.format ?? 'mixed',
+        video_data: video.video_data ? JSON.parse(video.video_data) : null,
+        totalVideosInBlock
+      };
+    };
+
     // Get next video - always check for next video to enable seamless transitions
     let nextVideo = null;
     let timelineVideo = QueueManager.getNextTimelineVideo(code);
@@ -66,13 +88,7 @@ export async function POST(
         // Only return nextVideo if it's different from current timeline video (by timeline ID, not video_id)
         if (!currentTimelineVideoId || timelineVideo.id !== currentTimelineVideoId) {
           console.log(`✅ Returning nextVideo: ${timelineVideo.video_id.slice(-6)} (timeline ID: ${timelineVideo.id.slice(-6)})`);
-          // Get the total videos in the current block
-          const totalVideosInBlock = QueueManager.getTotalVideosInBlock(timelineVideo.block_id);
-          nextVideo = {
-            ...timelineVideo,
-            video_data: timelineVideo.video_data ? JSON.parse(timelineVideo.video_data) : null,
-            totalVideosInBlock
-          };
+          nextVideo = buildNextVideoPayload(timelineVideo);
         } else {
           console.log(`⏭️ Skipping - same as current timeline video`);
           
@@ -90,12 +106,7 @@ export async function POST(
             const nextTimelineVideo = QueueManager.getNextTimelineVideo(code);
             if (nextTimelineVideo) {
               console.log(`✅ Auto-advanced to next video: ${nextTimelineVideo.video_id.slice(-6)}`);
-              const totalVideosInBlock = QueueManager.getTotalVideosInBlock(nextTimelineVideo.block_id);
-              nextVideo = {
-                ...nextTimelineVideo,
-                video_data: nextTimelineVideo.video_data ? JSON.parse(nextTimelineVideo.video_data) : null,
-                totalVideosInBlock
-              };
+              nextVideo = buildNextVideoPayload(nextTimelineVideo);
             }
           }
         }
@@ -105,13 +116,7 @@ export async function POST(
         if (newLoopStarted) {
           const newTimelineVideo = QueueManager.getNextTimelineVideo(code);
           if (newTimelineVideo) {
-            // Get the total videos in the current block
-            const totalVideosInBlock = QueueManager.getTotalVideosInBlock(newTimelineVideo.block_id);
-            nextVideo = {
-              ...newTimelineVideo,
-              video_data: newTimelineVideo.video_data ? JSON.parse(newTimelineVideo.video_data) : null,
-              totalVideosInBlock
-            };
+            nextVideo = buildNextVideoPayload(newTimelineVideo);
           }
         }
       }

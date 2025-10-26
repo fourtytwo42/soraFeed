@@ -6,6 +6,13 @@ export interface DisplayStatus {
   isConnected: boolean;
   currentVideo?: {
     id: string;
+    videoId?: string;
+    timelineId?: string;
+    timelinePosition?: number;
+    blockId?: string;
+    blockName?: string | null;
+    blockPosition?: number;
+    totalVideosInBlock?: number;
     username: string;
     description: string;
     duration: number;
@@ -17,6 +24,8 @@ export interface DisplayStatus {
     playlistName: string;
     videoProgress?: number;
     enhancedPosition?: number;
+    timelinePosition?: number;
+    blockPosition?: number;
   };
   lastUpdate: number;
 }
@@ -129,6 +138,7 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
             
             newMap.set(message.displayId!, {
               ...existing,
+              isConnected: true,
               playlistProgress: message.data.playlistProgress,
               lastUpdate: Date.now()
             });
@@ -150,14 +160,14 @@ export function useAdminWebSocket(adminId: string): AdminWebSocketHook {
             
             newMap.set(message.displayId!, {
               ...existing,
+              isConnected: true,
               currentVideo: message.data.currentVideo,
-              playlistProgress: {
-                currentIndex: existing.playlistProgress?.currentIndex || 0,
-                totalVideos: existing.playlistProgress?.totalVideos || 0,
-                playlistName: existing.playlistProgress?.playlistName || '',
-                videoProgress: 0, // Reset video progress when video changes
-                enhancedPosition: existing.playlistProgress?.enhancedPosition || 0
-              },
+              playlistProgress: existing.playlistProgress
+                ? {
+                    ...existing.playlistProgress,
+                    videoProgress: 0 // Reset per-video progress; VM will stream new values shortly
+                  }
+                : undefined,
               lastUpdate: Date.now()
             });
             

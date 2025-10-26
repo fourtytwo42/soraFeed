@@ -15,6 +15,13 @@ export interface VMWebSocketHook {
   }) => void;
   sendVideoChange: (video: {
     id: string;
+    videoId?: string;
+    timelineId?: string;
+    timelinePosition?: number;
+    blockId?: string;
+    blockName?: string | null;
+    blockPosition?: number;
+    totalVideosInBlock?: number;
     username: string;
     description: string;
     duration: number;

@@ -7,6 +7,7 @@ export interface Display {
   current_video_id?: string;
   current_position: number;
   current_block_id?: string;
+  current_timeline_video_id?: string;
   current_playlist_id?: string;
   timeline_position: number;
   commands: string; // JSON string of pending commands

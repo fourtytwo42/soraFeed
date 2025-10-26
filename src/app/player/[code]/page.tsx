@@ -268,12 +268,20 @@ export default function VMPlayer() {
 
         // Send video change to WebSocket
         if (wsConnected && videoData) {
+          const blockPosition = (data.nextVideo.block_position ?? 0) + 1;
           sendVideoChange({
             id: videoData.post?.id || data.nextVideo.video_id,
+            videoId: data.nextVideo.video_id,
+            timelineId: data.nextVideo.id,
+            timelinePosition: data.nextVideo.timeline_position,
+            blockId: data.nextVideo.block_id,
+            blockName: data.nextVideo.blockName || null,
+            blockPosition,
+            totalVideosInBlock: data.nextVideo.totalVideosInBlock || 1,
             username: videoData.profile?.username || 'Unknown',
             description: (videoData.post?.text || '').substring(0, 100) + ((videoData.post?.text || '').length > 100 ? '...' : ''),
             duration: 0,
-            position: 0
+            position: blockPosition
           });
         }
       }
