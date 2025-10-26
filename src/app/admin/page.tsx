@@ -665,6 +665,9 @@ export default function AdminDashboard() {
           if (displayResponse.ok) {
             const display = await displayResponse.json();
             
+            // Debug logging to check is_playing value
+            console.log(`🔍 Display ${display.id} - is_playing:`, display.is_playing, 'playback_state:', display.playback_state);
+            
             // Get WebSocket status if available
             const wsStatus = displayStatuses.get(display.id);
             let isOnline = false;
@@ -1616,7 +1619,7 @@ export default function AdminDashboard() {
                       <h4 className="font-semibold text-gray-900">Playlist Blocks</h4>
                       <div className="flex items-center gap-2">
                         {/* Only show Export/Import buttons when display is stopped */}
-                        {(stoppedDisplays.has(display.id) || !display.is_playing) && (
+                        {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
                           <>
                             <button
                               onClick={() => handleExportPlaylist(display)}
@@ -1710,7 +1713,7 @@ export default function AdminDashboard() {
                             >
                               <div className="space-y-3">
                                 {/* Add Block Button/Form - Always first */}
-                                {(stoppedDisplays.has(display.id) || !display.is_playing) && (
+                                {(stoppedDisplays.has(display.id) || display.playback_state === 'idle') && (
                                   <div>
                                     {addingBlockToDisplay === display.id ? (
                                       <InlineAddBlock
@@ -1732,7 +1735,7 @@ export default function AdminDashboard() {
                                 )}
 
                                 {display.progress.blocks.map((block: any, blockIndex: number) => {
-                                  const isStopped = stoppedDisplays.has(display.id) || !display.is_playing;
+                                  const isStopped = stoppedDisplays.has(display.id) || display.playback_state === 'idle';
                                   
                                   return (
                                     <div key={`${block.name}-${blockIndex}`}>
