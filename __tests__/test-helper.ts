@@ -59,6 +59,11 @@ export function it(name: string, fn: () => void | Promise<void>) {
   }
 }
 
+// it.skip skips tests
+it.skip = function(name: string, fn: () => void | Promise<void>) {
+  // Do nothing - test is skipped
+};
+
 export function expect(value: any) {
   return {
     toBe: (expected: any) => {
