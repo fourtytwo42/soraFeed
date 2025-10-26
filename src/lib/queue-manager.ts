@@ -60,26 +60,83 @@ async function getCachedDbCount(searchTerm: string, format: string): Promise<num
     return 200;
   }
 
-  // CRITICAL: Skip ALL database count queries for now
-  // These queries are timing out on 3M+ row database
-  // Use cached values or sensible defaults
-  console.log(`⚡ Using fast cached/estimated count for "${searchTerm}", skipping slow DB query`);
-  
   // Return cached value if available
-  if (cached) {
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
     return cached.count;
   }
   
-  // Return sensible defaults based on term characteristics
-  if (searchTerm.length > 30 || wordCount > 5) {
-    return 500; // Long specific terms
-  }
+  // Try fast LIMIT query instead of COUNT(*)
+  // This is much faster on large databases
+  console.log(`⚡ Fast LIMIT query for "${searchTerm}" (estimated count)`);
   
-  if (wordCount === 1) {
-    return 1000; // Single word searches
+  try {
+    const client = await getClient();
+    
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Fast count query timeout')), 2000); // 2 second timeout
+    });
+    
+    // Build format clause
+    let formatClause = '';
+    if (format === 'wide') {
+      formatClause = 'AND width > height';
+    } else if (format === 'tall') {
+      formatClause = 'AND height > width';
+    }
+    
+    // Fast query: just fetch 200 rows and estimate based on results
+    const fastQuery = `
+      SELECT id FROM sora_posts 
+      WHERE text ILIKE '%' || $1 || '%'
+      ${formatClause}
+      LIMIT 200
+    `;
+    
+    const queryPromise = client.query(fastQuery, [searchTerm]);
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    releaseClient(client);
+    
+    const rowCount = result.rows.length;
+    
+    // If we got 200 rows, the actual count is probably much higher
+    // Estimate: if we get 200 in the first batch, likely 500+
+    // If we get fewer, use a multiplier
+    let estimate;
+    if (rowCount === 200) {
+      estimate = 500; // Conservative estimate for large result sets
+    } else if (rowCount >= 100) {
+      estimate = rowCount * 2; // Scale up moderately
+    } else if (rowCount >= 50) {
+      estimate = rowCount * 3; // Scale up more
+    } else {
+      estimate = rowCount * 5; // Small results, higher multiplier
+    }
+    
+    console.log(`📊 Fast query result: ${rowCount} rows sampled, estimating ${estimate} total`);
+    
+    // Cache the estimate
+    dbCountCache.set(cacheKey, { count: estimate, timestamp: Date.now() });
+    
+    return estimate;
+    
+  } catch (error) {
+    console.error(`Error in fast count query for "${searchTerm}":`, error);
+    
+    // Return cached value if available
+    if (cached) {
+      return cached.count;
+    }
+    
+    // Return sensible defaults
+    if (searchTerm.length > 30 || wordCount > 5) {
+      return 500;
+    }
+    if (wordCount === 1) {
+      return 1000;
+    }
+    return 500;
   }
-  
-  return 500; // Default for phrases
   
   // Use a queue to prevent overwhelming the database
   // return new Promise<number>((resolve, reject) => {
