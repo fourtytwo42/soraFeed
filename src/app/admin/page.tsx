@@ -1014,13 +1014,20 @@ export default function AdminDashboard() {
     console.log(`📤 Sending command: ${type} to ${displayId}`);
     
     try {
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
       const response = await fetch(`/api/displays/${displayId}/commands`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ type, payload })
+        body: JSON.stringify({ type, payload }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       console.log(`📥 Response status: ${response.status} for ${type} to ${displayId}`);
       
@@ -1047,7 +1054,16 @@ export default function AdminDashboard() {
       console.log(`✅ Command sent: ${type} to ${displayId}`);
     } catch (err) {
       console.error('❌ Error sending command:', err);
-      setError(err instanceof Error ? err.message : 'Failed to send command');
+      
+      // Handle timeout
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.error('⏱️ Command timed out after 5 seconds');
+        setError('Command timed out. Please try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to send command');
+      }
+      
+      throw err; // Re-throw to handle in calling function
     }
   };
 
@@ -1448,18 +1464,22 @@ export default function AdminDashboard() {
   };
 
   // Handle stop confirmation
+  const [isStopping, setIsStopping] = useState(false);
+  
   const handleStopConfirm = async () => {
-    if (!displayToStop) {
-      console.error('❌ No display to stop');
+    if (!displayToStop || isStopping) {
+      console.error('❌ No display to stop or already stopping');
       return;
     }
     
     console.log('🛑 Stopping display:', displayToStop.id);
+    setIsStopping(true);
     
     try {
       await sendCommand(displayToStop.id, 'stop');
       console.log('✅ Stop command sent successfully');
       
+      // Close modal immediately on success
       setShowStopModal(false);
       setDisplayToStop(null);
       
@@ -1467,10 +1487,12 @@ export default function AdminDashboard() {
       setTimeout(() => {
         console.log('🔄 Refreshing displays after stop');
         fetchDisplays();
+        setIsStopping(false);
       }, 500); // Small delay to ensure database changes are committed
     } catch (err) {
       console.error('❌ Error stopping display:', err);
       setError(err instanceof Error ? err.message : 'Failed to stop display');
+      setIsStopping(false);
     }
   };
 
@@ -2314,9 +2336,10 @@ export default function AdminDashboard() {
               </button>
               <button
                 onClick={handleStopConfirm}
-                className="flex-1 px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg hover:from-red-700 hover:to-pink-700 transition-all duration-200"
+                disabled={isStopping}
+                className="flex-1 px-4 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded-lg hover:from-red-700 hover:to-pink-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Stop & Reset
+                {isStopping ? 'Stopping...' : 'Stop & Reset'}
               </button>
             </div>
           </motion.div>
