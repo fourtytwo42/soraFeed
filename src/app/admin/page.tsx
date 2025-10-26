@@ -1737,6 +1737,11 @@ export default function AdminDashboard() {
                                 {display.progress.blocks.map((block: any, blockIndex: number) => {
                                   const isStopped = stoppedDisplays.has(display.id) || !display.is_playing;
                                   
+                                  // Debug logging
+                                  if (blockIndex === 0) {
+                                    console.log(`🔍 Block 0 - isStopped: ${isStopped}, stoppedDisplays.has(${display.id}): ${stoppedDisplays.has(display.id)}, !display.is_playing: ${!display.is_playing}, display.is_playing: ${display.is_playing}`);
+                                  }
+                                  
                                   return (
                                     <div key={`${block.name}-${blockIndex}`}>
                                       {/* Show inline add block form at the specified position */}
