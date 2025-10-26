@@ -1978,24 +1978,37 @@ export default function AdminDashboard() {
                                           onDelete={handleBlockDelete}
                                         />
                                       ) : (
-                                        <PlaylistBlockCard
-                                          block={block}
-                                          isActive={block.isActive}
-                                          isCompleted={block.isCompleted}
-                                          onEdit={() => {}}
-                                          onDelete={() => {}}
-                                          showEditButtons={false}
-                                          isExpanded={expandedBlocks.has(`${display.id}-${block.id || blockIndex}`)}
-                                          onToggle={() => {
-                                            const blockKey = `${display.id}-${block.id || blockIndex}`;
-                                            if (!expandedBlocks.has(blockKey)) {
-                                              loadBlockVideos(display, block.id || blockIndex);
-                                            }
+                                        (() => {
+                                          const blockKey = `${display.id}-${block.id || blockIndex}`;
+                                          const shouldAutoExpand = block.isActive;
+                                          const isExpanded = expandedBlocks.has(blockKey);
+                                          
+                                          // Auto-expand and load videos for active blocks
+                                          if (shouldAutoExpand && !isExpanded) {
+                                            loadBlockVideos(display, block.id || blockIndex);
                                             toggleBlock(blockKey, display);
-                                          }}
-                                          blockVideos={blockVideos[`${display.id}-${block.id || blockIndex}`] || []}
-                                          currentVideoId={display.current_video_id}
-                                        />
+                                          }
+                                          
+                                          return (
+                                            <PlaylistBlockCard
+                                              block={block}
+                                              isActive={block.isActive}
+                                              isCompleted={block.isCompleted}
+                                              onEdit={() => {}}
+                                              onDelete={() => {}}
+                                              showEditButtons={false}
+                                              isExpanded={isExpanded || shouldAutoExpand}
+                                              onToggle={() => {
+                                                if (!isExpanded) {
+                                                  loadBlockVideos(display, block.id || blockIndex);
+                                                }
+                                                toggleBlock(blockKey, display);
+                                              }}
+                                              blockVideos={blockVideos[blockKey] || []}
+                                              currentVideoId={display.current_video_id}
+                                            />
+                                          );
+                                        })()
                                       )}
                                     </div>
                                   );
