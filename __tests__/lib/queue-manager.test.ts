@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, afterEach, runTests } from '../test-helper';
 import { QueueManager } from '@/lib/queue-manager';
 import { PlaylistManager } from '@/lib/playlist-manager';
 import { DisplayManager } from '@/lib/display-manager';
@@ -311,3 +312,8 @@ describe('QueueManager', () => {
     });
   });
 });
+
+// Export runTests for the test runner
+export async function runAllTests() {
+  return await runTests();
+}
