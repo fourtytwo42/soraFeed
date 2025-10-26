@@ -1021,9 +1021,6 @@ export class QueueManager {
     `);
     const currentPosition = (positionStmt.get(displayId) as any)?.timeline_position || 0;
 
-    console.log(`📊 Progress calc START: currentPosition=${currentPosition}, totalBlocks=${blocks.length}`);
-    console.log(`📊 Block breakdown:`, blocks.map((b, i) => `Block ${i}: ${b.video_count} videos (${b.search_term})`));
-
     // Calculate which block we're in
     let blockIndex = 0;
     let positionInBlock = 0;
@@ -1032,11 +1029,9 @@ export class QueueManager {
     
     for (let i = 0; i < blocks.length; i++) {
       const blockEnd = totalVideosProcessed + blocks[i].video_count;
-      console.log(`📊 Checking block ${i}: totalProcessed=${totalVideosProcessed}, blockEnd=${blockEnd}, condition: ${currentPosition} < ${blockEnd} = ${currentPosition < blockEnd}`);
       if (currentPosition < blockEnd) {
         blockIndex = i;
         positionInBlock = currentPosition - totalVideosProcessed;
-        console.log(`📊 ✅ Found block ${blockIndex}, positionInBlock=${positionInBlock}`);
         break;
       }
       totalVideosProcessed += blocks[i].video_count;
@@ -1044,7 +1039,6 @@ export class QueueManager {
 
     // Handle overflow - if position is beyond all blocks, use last block
     if (currentPosition >= totalVideosInPlaylist && blocks.length > 0) {
-      console.log(`📊 ⚠️ OVERFLOW: position ${currentPosition} >= total ${totalVideosInPlaylist}, using last block`);
       blockIndex = blocks.length - 1;
       positionInBlock = blocks[blockIndex]?.video_count || 0;
     }
@@ -1054,8 +1048,6 @@ export class QueueManager {
     // Clamp positionInBlock to not exceed block size
     const clampedPositionInBlock = currentBlock ? Math.min(positionInBlock, currentBlock.video_count - 1) : 0;
     const blockProgress = currentBlock ? (clampedPositionInBlock / currentBlock.video_count) * 100 : 0;
-    
-    console.log(`📊 Progress calc FINAL: position=${currentPosition}, block=${blockIndex}/${blocks.length}, posInBlock=${clampedPositionInBlock}/${positionInBlock}, blockSize=${currentBlock?.video_count}, progress=${Math.round(blockProgress)}%`);
     
     return {
       currentBlock: {
